@@ -50,7 +50,7 @@ func main() {
 	}
 	log.Info("ADO client created successfully")
 
-	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.StateTransitions)
+	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.StateTransitions, cfg.PollInterval)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	log.Info("Starting TUI")

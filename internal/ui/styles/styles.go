@@ -42,6 +42,10 @@ var (
 			Foreground(Muted).
 			MarginTop(1)
 
+	// Muted text style
+	MutedStyle = lipgloss.NewStyle().
+			Foreground(Muted)
+
 	// Selected item style
 	SelectedStyle = lipgloss.NewStyle().
 			Bold(true).

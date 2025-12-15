@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -8,6 +10,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/keymap"
 	"sentinovo.ai/bizInt/internal/ui/dashboard"
+	"sentinovo.ai/bizInt/internal/ui/pipelines"
 	"sentinovo.ai/bizInt/internal/ui/prs"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/ui/workitems"
@@ -31,13 +34,14 @@ type Model struct {
 	dashboard        dashboard.Model
 	workitems        workitems.Model
 	prs              prs.Model
+	pipelines        pipelines.Model
 	view             View
 	width            int
 	height           int
 	err              error
 }
 
-func NewModel(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string) Model {
+func NewModel(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string, pollInterval time.Duration) Model {
 	return Model{
 		client:           client,
 		projects:         projects,
@@ -47,6 +51,7 @@ func NewModel(client *ado.Client, orgURL string, projects []string, stateTransit
 		dashboard:        dashboard.New(client, orgURL, projects),
 		workitems:        workitems.New(client, projects, stateTransitions),
 		prs:              prs.New(client, projects),
+		pipelines:        pipelines.New(client, projects, pollInterval),
 		view:             DashboardView,
 	}
 }
@@ -83,6 +88,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.prs.Init()
 			}
 			return m, nil
+		case key.Matches(msg, m.keys.Tab4):
+			if m.view != PipelinesView {
+				m.view = PipelinesView
+				// Initialize pipelines if switching to it
+				return m, m.pipelines.Init()
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -90,11 +102,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.Width = msg.Width
 		// Propagate WindowSizeMsg to ALL sub-models
-		var dashCmd, workitemsCmd, prsCmd tea.Cmd
+		var dashCmd, workitemsCmd, prsCmd, pipelinesCmd tea.Cmd
 		m.dashboard, dashCmd = m.dashboard.Update(msg)
 		m.workitems, workitemsCmd = m.workitems.Update(msg)
 		m.prs, prsCmd = m.prs.Update(msg)
-		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd)
+		m.pipelines, pipelinesCmd = m.pipelines.Update(msg)
+		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd, pipelinesCmd)
 	}
 
 	// Update current view (skip WindowSizeMsg since already handled above)
@@ -111,6 +124,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case PRsView:
 			var cmd tea.Cmd
 			m.prs, cmd = m.prs.Update(msg)
+			cmds = append(cmds, cmd)
+		case PipelinesView:
+			var cmd tea.Cmd
+			m.pipelines, cmd = m.pipelines.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -131,6 +148,8 @@ func (m Model) View() string {
 		content = m.workitems.View()
 	case PRsView:
 		content = m.prs.View()
+	case PipelinesView:
+		content = m.pipelines.View()
 	default:
 		content = "View not implemented"
 	}

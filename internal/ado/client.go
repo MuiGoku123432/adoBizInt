@@ -412,6 +412,37 @@ type PullRequest struct {
 	ApprovalStatus string
 }
 
+// PipelineRun represents a single pipeline/build run for display
+type PipelineRun struct {
+	ID            int
+	BuildNumber   string
+	PipelineName  string
+	PipelineID    int
+	Project       string
+	Status        string // "inProgress", "completed", "cancelling", "postponed", "notStarted", "none"
+	Result        string // "succeeded", "partiallySucceeded", "failed", "canceled", "none"
+	SourceBranch  string
+	SourceVersion string
+	RequestedBy   string
+	RequestedFor  string
+	StartTime     time.Time
+	FinishTime    time.Time
+	QueueTime     time.Time
+	Duration      time.Duration
+	RepositoryID  string
+}
+
+// PipelineDefinition represents a pipeline definition for triggering new runs
+type PipelineDefinition struct {
+	ID            int
+	Name          string
+	Path          string
+	Project       string
+	RepositoryID  string
+	DefaultBranch string
+	QueueStatus   string // "enabled", "paused", "disabled"
+}
+
 // GetWorkItems fetches work items for the specified projects
 func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkItem, error) {
 	log := logging.Logger()
@@ -1022,4 +1053,301 @@ func (c *Client) CompletePullRequest(ctx context.Context, project, repositoryID 
 
 	log.Info("Pull request completed", "prID", prID)
 	return nil
+}
+
+// GetPipelineRuns fetches recent pipeline runs for configured pipelines
+// Returns last 25 runs filtered to only configured pipeline names
+func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]PipelineRun, error) {
+	log := logging.Logger()
+
+	// If no pipelines configured, return empty
+	if len(c.pipelines) == 0 {
+		log.Info("No pipelines configured, skipping pipeline runs fetch")
+		return []PipelineRun{}, nil
+	}
+
+	targetProjects := projects
+	if len(targetProjects) == 0 {
+		targetProjects = c.projects
+	}
+
+	// Build pipeline name set for filtering (case-insensitive)
+	pipelineSet := make(map[string]bool)
+	for _, p := range c.pipelines {
+		pipelineSet[strings.ToLower(p)] = true
+	}
+
+	var allRuns []PipelineRun
+
+	for _, project := range targetProjects {
+		// Fetch more builds to ensure we get 25 per configured pipeline after filtering
+		top := 100
+		queryOrder := build.BuildQueryOrderValues.StartTimeDescending
+
+		builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
+			Project:    &project,
+			Top:        &top,
+			QueryOrder: &queryOrder,
+		})
+		if err != nil {
+			log.Error("Failed to get builds", "project", project, "error", err)
+			continue
+		}
+
+		if builds == nil || builds.Value == nil {
+			continue
+		}
+
+		// Track count per pipeline to limit to 25 per pipeline
+		pipelineCounts := make(map[string]int)
+
+		for _, b := range builds.Value {
+			if b.Definition == nil || b.Definition.Name == nil {
+				continue
+			}
+
+			defName := *b.Definition.Name
+			defNameLower := strings.ToLower(defName)
+
+			// Skip if not in configured pipelines
+			if !pipelineSet[defNameLower] {
+				continue
+			}
+
+			// Skip if we already have 25 runs for this pipeline
+			if pipelineCounts[defNameLower] >= 25 {
+				continue
+			}
+			pipelineCounts[defNameLower]++
+
+			run := PipelineRun{
+				Project:      project,
+				PipelineName: defName,
+			}
+
+			if b.Id != nil {
+				run.ID = *b.Id
+			}
+			if b.BuildNumber != nil {
+				run.BuildNumber = *b.BuildNumber
+			}
+			if b.Definition.Id != nil {
+				run.PipelineID = *b.Definition.Id
+			}
+			if b.Status != nil {
+				run.Status = string(*b.Status)
+			}
+			if b.Result != nil {
+				run.Result = string(*b.Result)
+			}
+			if b.SourceBranch != nil {
+				run.SourceBranch = strings.TrimPrefix(*b.SourceBranch, "refs/heads/")
+			}
+			if b.SourceVersion != nil {
+				run.SourceVersion = *b.SourceVersion
+			}
+			if b.RequestedBy != nil && b.RequestedBy.DisplayName != nil {
+				run.RequestedBy = *b.RequestedBy.DisplayName
+			}
+			if b.RequestedFor != nil && b.RequestedFor.DisplayName != nil {
+				run.RequestedFor = *b.RequestedFor.DisplayName
+			}
+			if b.StartTime != nil {
+				run.StartTime = b.StartTime.Time
+			}
+			if b.FinishTime != nil {
+				run.FinishTime = b.FinishTime.Time
+			}
+			if b.QueueTime != nil {
+				run.QueueTime = b.QueueTime.Time
+			}
+			if b.Repository != nil && b.Repository.Id != nil {
+				run.RepositoryID = *b.Repository.Id
+			}
+
+			// Calculate duration if we have both start and finish times
+			if !run.StartTime.IsZero() && !run.FinishTime.IsZero() {
+				run.Duration = run.FinishTime.Sub(run.StartTime)
+			} else if !run.StartTime.IsZero() && run.Status == "inProgress" {
+				// For in-progress builds, show duration so far
+				run.Duration = time.Since(run.StartTime)
+			}
+
+			allRuns = append(allRuns, run)
+		}
+	}
+
+	log.Info("Pipeline runs fetched", "total_count", len(allRuns), "configured_pipelines", c.pipelines)
+	return allRuns, nil
+}
+
+// GetPipelineDefinitions fetches pipeline definitions for configured pipelines
+func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) ([]PipelineDefinition, error) {
+	log := logging.Logger()
+
+	// If no pipelines configured, return empty
+	if len(c.pipelines) == 0 {
+		log.Info("No pipelines configured, skipping definitions fetch")
+		return []PipelineDefinition{}, nil
+	}
+
+	targetProjects := projects
+	if len(targetProjects) == 0 {
+		targetProjects = c.projects
+	}
+
+	// Build pipeline name set for filtering (case-insensitive)
+	pipelineSet := make(map[string]bool)
+	for _, p := range c.pipelines {
+		pipelineSet[strings.ToLower(p)] = true
+	}
+
+	var allDefs []PipelineDefinition
+
+	for _, project := range targetProjects {
+		definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
+			Project: &project,
+		})
+		if err != nil {
+			log.Error("Failed to get pipeline definitions", "project", project, "error", err)
+			continue
+		}
+
+		if definitions == nil || definitions.Value == nil {
+			continue
+		}
+
+		for _, d := range definitions.Value {
+			if d.Name == nil {
+				continue
+			}
+
+			defNameLower := strings.ToLower(*d.Name)
+			if !pipelineSet[defNameLower] {
+				continue
+			}
+
+			def := PipelineDefinition{
+				Project: project,
+				Name:    *d.Name,
+			}
+
+			if d.Id != nil {
+				def.ID = *d.Id
+			}
+			if d.Path != nil {
+				def.Path = *d.Path
+			}
+			if d.QueueStatus != nil {
+				def.QueueStatus = string(*d.QueueStatus)
+			}
+
+			// Get repository info and default branch from the full definition
+			fullDef, err := c.buildClient.GetDefinition(ctx, build.GetDefinitionArgs{
+				Project:      &project,
+				DefinitionId: d.Id,
+			})
+			if err == nil && fullDef != nil {
+				if fullDef.Repository != nil {
+					if fullDef.Repository.Id != nil {
+						def.RepositoryID = *fullDef.Repository.Id
+					}
+					if fullDef.Repository.DefaultBranch != nil {
+						def.DefaultBranch = strings.TrimPrefix(*fullDef.Repository.DefaultBranch, "refs/heads/")
+					}
+				}
+			}
+
+			allDefs = append(allDefs, def)
+		}
+	}
+
+	log.Info("Pipeline definitions fetched", "total_count", len(allDefs))
+	return allDefs, nil
+}
+
+// GetBranchesForPipeline fetches available branches for a pipeline's repository
+func (c *Client) GetBranchesForPipeline(ctx context.Context, project, repositoryID string) ([]string, error) {
+	log := logging.Logger()
+
+	refs, err := c.gitClient.GetRefs(ctx, git.GetRefsArgs{
+		RepositoryId: &repositoryID,
+		Project:      &project,
+		Filter:       strPtr("heads/"),
+	})
+	if err != nil {
+		log.Error("Failed to get branches", "project", project, "repositoryID", repositoryID, "error", err)
+		return nil, err
+	}
+
+	if refs == nil || len(refs.Value) == 0 {
+		return []string{}, nil
+	}
+
+	var branches []string
+	for _, ref := range refs.Value {
+		if ref.Name != nil {
+			branch := strings.TrimPrefix(*ref.Name, "refs/heads/")
+			branches = append(branches, branch)
+		}
+	}
+
+	log.Info("Branches fetched", "project", project, "repositoryID", repositoryID, "count", len(branches))
+	return branches, nil
+}
+
+// QueuePipeline triggers a new pipeline run on the specified branch
+func (c *Client) QueuePipeline(ctx context.Context, project string, definitionID int, branch string) (*PipelineRun, error) {
+	log := logging.Logger()
+
+	sourceBranch := branch
+	if !strings.HasPrefix(branch, "refs/heads/") {
+		sourceBranch = "refs/heads/" + branch
+	}
+
+	buildToQueue := build.Build{
+		Definition: &build.DefinitionReference{
+			Id: &definitionID,
+		},
+		SourceBranch: &sourceBranch,
+	}
+
+	queuedBuild, err := c.buildClient.QueueBuild(ctx, build.QueueBuildArgs{
+		Build:   &buildToQueue,
+		Project: &project,
+	})
+	if err != nil {
+		log.Error("Failed to queue pipeline", "project", project, "definitionID", definitionID, "branch", branch, "error", err)
+		return nil, err
+	}
+
+	if queuedBuild == nil {
+		return nil, fmt.Errorf("queued build returned nil")
+	}
+
+	run := &PipelineRun{
+		Project: project,
+	}
+
+	if queuedBuild.Id != nil {
+		run.ID = *queuedBuild.Id
+	}
+	if queuedBuild.BuildNumber != nil {
+		run.BuildNumber = *queuedBuild.BuildNumber
+	}
+	if queuedBuild.Definition != nil && queuedBuild.Definition.Name != nil {
+		run.PipelineName = *queuedBuild.Definition.Name
+	}
+	if queuedBuild.Status != nil {
+		run.Status = string(*queuedBuild.Status)
+	}
+	run.SourceBranch = branch
+
+	log.Info("Pipeline queued", "project", project, "definitionID", definitionID, "branch", branch, "buildID", run.ID)
+	return run, nil
+}
+
+// strPtr is a helper to get a pointer to a string
+func strPtr(s string) *string {
+	return &s
 }
