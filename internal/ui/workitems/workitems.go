@@ -10,9 +10,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
+	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
-	"sentinovo.ai/bizInt/internal/logging"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 )
 
@@ -41,6 +41,15 @@ type WorkItemsMsg struct {
 	Err   error
 }
 
+// viewWrapper wraps a pre-rendered view string for overlay
+type viewWrapper struct {
+	content string
+}
+
+func (w viewWrapper) Init() tea.Cmd                         { return nil }
+func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd)   { return w, nil }
+func (w viewWrapper) View() string                          { return w.content }
+
 // StateUpdateMsg is sent when a work item state is updated
 type StateUpdateMsg struct {
 	ItemID   int
@@ -66,6 +75,9 @@ type Model struct {
 	stateTransitions   map[string]map[string]string
 	statusMsg          string
 	statusErr          bool
+	// Detail modal
+	detailModal *DetailModel
+	showDetail  bool
 }
 
 func New(client *ado.Client, projects []string, stateTransitions map[string]map[string]string) Model {
@@ -177,6 +189,30 @@ func (m Model) updateSelectedItemState() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Handle detail modal close message
+	if _, ok := msg.(CloseDetailMsg); ok {
+		m.showDetail = false
+		m.detailModal = nil
+		return m, nil
+	}
+
+	// Delegate to detail modal when open
+	if m.showDetail && m.detailModal != nil {
+		// Update dimensions from WindowSizeMsg if present
+		if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = wsm.Width
+			m.height = wsm.Height
+		}
+		// Always propagate current dimensions to modal before Update
+		m.detailModal.width = m.width
+		m.detailModal.height = m.height
+
+		var cmd tea.Cmd
+		newModal, cmd := m.detailModal.Update(msg)
+		m.detailModal = &newModal
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -260,7 +296,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.table = m.table.WithRows(m.buildRows())
 				return m, nil
 			}
-		case " ", "enter":
+		case " ":
 			if m.filterFocused == 1 {
 				m.assignedToMeFilter = !m.assignedToMeFilter
 				m.table = m.table.WithRows(m.buildRows())
@@ -269,6 +305,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.hideDoneFilter = !m.hideDoneFilter
 				m.table = m.table.WithRows(m.buildRows())
 				return m, nil
+			}
+		case "enter":
+			if m.filterFocused == 1 {
+				m.assignedToMeFilter = !m.assignedToMeFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			} else if m.filterFocused == 2 {
+				m.hideDoneFilter = !m.hideDoneFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			} else if m.filterFocused == 0 {
+				// Open detail modal for selected work item
+				return m, m.openDetailModal()
 			}
 		case "n":
 			// Move to next state when table is focused
@@ -288,19 +337,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) buildRows() []table.Row {
-	log := logging.Logger()
 	var rows []table.Row
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
-
-	// Log current user for debugging filter
-	if m.assignedToMeFilter {
-		log.Debug("Assigned to Me filter active", "currentUserEmail", m.currentUserEmail, "currentUser", m.currentUser)
-	}
 
 	for _, item := range m.items {
 		// Apply "Assigned to Me" filter (compare emails, case-insensitive)
 		if m.assignedToMeFilter && m.currentUserEmail != "" && !strings.EqualFold(item.AssignedToEmail, m.currentUserEmail) {
-			log.Debug("Filtered out item - email mismatch", "itemID", item.ID, "assignedToEmail", item.AssignedToEmail, "currentUserEmail", m.currentUserEmail)
 			continue
 		}
 		// Apply "Hide Done/Resolved" filter
@@ -339,6 +381,23 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
+	// If detail modal is open, use overlay to composite modal on top of table
+	if m.showDetail && m.detailModal != nil {
+		// Create overlay fresh with current state - avoids stale pointer issues
+		modalView := m.detailModal.View()
+		tableView := m.renderTableView()
+
+		fg := viewWrapper{content: modalView}
+		bg := viewWrapper{content: tableView}
+		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
+		return o.View()
+	}
+
+	return m.renderTableView()
+}
+
+// renderTableView renders the work items table view
+func (m Model) renderTableView() string {
 	var b strings.Builder
 
 	// Title
@@ -386,7 +445,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[Tab] cycle  [Space] toggle  [/] search  [n] next state  [1] Dashboard  [2] Work Items")
+	helpText := styles.HelpStyle.Render("[Tab] cycle  [Space] toggle  [/] search  [Enter] details  [n] next state  [1] Dashboard  [2] Work Items")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -453,6 +512,35 @@ func stripHTML(s string) string {
 		text = strings.ReplaceAll(text, "  ", " ")
 	}
 	return strings.TrimSpace(text)
+}
+
+// openDetailModal opens the detail modal for the currently selected work item
+func (m *Model) openDetailModal() tea.Cmd {
+	// Get the highlighted row from the table
+	highlightedRow := m.table.HighlightedRow()
+	if highlightedRow.Data == nil {
+		return nil
+	}
+
+	// Get the ID from the row data
+	idStr, ok := highlightedRow.Data[columnKeyID].(string)
+	if !ok {
+		return nil
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return nil
+	}
+
+	// Create detail modal
+	detail := NewDetailModel(m.client, id)
+	detail.width = m.width
+	detail.height = m.height
+	m.detailModal = &detail
+	m.showDetail = true
+
+	return m.detailModal.Init()
 }
 
 // getTypeStyle returns the appropriate style for a work item type
