@@ -435,16 +435,15 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		return []WorkItem{}, nil
 	}
 
-	// Fetch full work item details
+	// Fetch full work item details (without project filter - work items might be cross-project)
 	fields := []string{"System.Id", "System.Title", "System.Description", "Microsoft.VSTS.Scheduling.StoryPoints", "System.WorkItemType", "System.State", "System.AssignedTo"}
 	items, err := c.workitemClient.GetWorkItems(ctx, workitemtracking.GetWorkItemsArgs{
-		Ids:     &ids,
-		Project: &project,
-		Fields:  &fields,
+		Ids:    &ids,
+		Fields: &fields,
 	})
 	if err != nil {
 		log.Error("Failed to get work item details", "project", project, "error", err)
-		return nil, err
+		return []WorkItem{}, nil // Return empty instead of error to continue processing other projects
 	}
 
 	var workItems []WorkItem
