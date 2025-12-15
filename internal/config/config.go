@@ -40,6 +40,7 @@ type Config struct {
 	OrgURL           string                       `yaml:"org_url"`
 	Projects         StringSlice                  `yaml:"projects"`
 	Project          string                       `yaml:"project"` // Backwards compat: single project
+	Pipelines        StringSlice                  `yaml:"pipelines"` // Optional: specific pipeline names to monitor
 	PollInterval     time.Duration                `yaml:"poll_interval"`
 	StateTransitions map[string]map[string]string `yaml:"state_transitions"`
 }

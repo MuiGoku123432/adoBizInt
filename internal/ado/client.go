@@ -24,6 +24,7 @@ type Client struct {
 	gitClient      git.Client
 	buildClient    build.Client
 	projects       []string
+	pipelines      []string
 	currentUser    string
 }
 
@@ -69,6 +70,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		gitClient:      gitClient,
 		buildClient:    buildClient,
 		projects:       cfg.Projects,
+		pipelines:      cfg.Pipelines,
 		currentUser:    currentUser,
 	}, nil
 }
@@ -278,14 +280,28 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		counts.PRs = len(*prs)
 	}
 
-	// Get pipeline/build count
-	builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
-		Project: &project,
-	})
-	if err != nil {
-		log.Error("Failed to get builds", "project", project, "error", err)
-	} else if builds != nil && builds.Value != nil {
-		counts.Pipelines = len(builds.Value)
+	// Get pipeline/build count only if specific pipelines are configured
+	if len(c.pipelines) > 0 {
+		builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
+			Project: &project,
+		})
+		if err != nil {
+			log.Error("Failed to get builds", "project", project, "error", err)
+		} else if builds != nil && builds.Value != nil {
+			// Filter to only configured pipelines
+			pipelineSet := make(map[string]bool)
+			for _, p := range c.pipelines {
+				pipelineSet[p] = true
+			}
+			for _, b := range builds.Value {
+				if b.Definition != nil && b.Definition.Name != nil {
+					if pipelineSet[*b.Definition.Name] {
+						counts.Pipelines++
+					}
+				}
+			}
+			log.Info("Pipeline count", "project", project, "configured_pipelines", c.pipelines, "count", counts.Pipelines)
+		}
 	}
 
 	return counts, nil
@@ -384,11 +400,6 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		}
 	}
 
-	// Limit to first 100 for performance
-	if len(ids) > 100 {
-		log.Info("Limiting work items for performance", "project", project, "total_found", totalFound, "fetching", 100)
-		ids = ids[:100]
-	}
 
 	if len(ids) == 0 {
 		return []WorkItem{}, nil
