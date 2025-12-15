@@ -202,7 +202,7 @@ func (m DetailModel) buildContent(width int) string {
 // View renders the detail modal
 func (m DetailModel) View() string {
 	if m.width == 0 || m.height == 0 {
-		return ""
+		return styles.SubtitleStyle.Render("Loading...")
 	}
 
 	// Modal dimensions
@@ -242,12 +242,8 @@ func (m DetailModel) View() string {
 		)
 	}
 
-	modal := borderStyle.Render(content)
-
-	// Center the modal
-	return lipgloss.Place(m.width, m.height,
-		lipgloss.Center, lipgloss.Center,
-		modal)
+	// Render modal - overlay handles centering
+	return borderStyle.Render(content)
 }
 
 func (m DetailModel) renderHeader(width int) string {
