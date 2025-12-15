@@ -170,8 +170,10 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 				}
 
 				if includeIteration && node.Path != nil {
-					// Strip leading backslash from path (API returns paths like \Project\Iteration\...)
+					// Strip leading backslash and "Process\Iteration\" prefix
+					// API returns paths like \Process\Iteration\Project\Sprint but WIQL expects Project\Sprint
 					path := strings.TrimPrefix(*node.Path, "\\")
+					path = strings.TrimPrefix(path, "Process\\Iteration\\")
 					recentPaths = append(recentPaths, path)
 					log.Info("Found recent iteration", "path", path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
 				}
