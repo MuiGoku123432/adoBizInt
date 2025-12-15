@@ -605,7 +605,8 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed float64) error {
 	log := logging.Logger()
 
-	op := webapi.OperationValues.Add
+	addOp := webapi.OperationValues.Add
+	replaceOp := webapi.OperationValues.Replace
 	statePath := "/fields/System.State"
 	originalEstimatePath := "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate"
 	remainingPath := "/fields/Microsoft.VSTS.Scheduling.RemainingWork"
@@ -613,22 +614,22 @@ func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, 
 
 	document := []webapi.JsonPatchOperation{
 		{
-			Op:    &op,
+			Op:    &addOp,
 			Path:  &statePath,
 			Value: newState,
 		},
 		{
-			Op:    &op,
+			Op:    &replaceOp,
 			Path:  &originalEstimatePath,
 			Value: originalEstimate,
 		},
 		{
-			Op:    &op,
+			Op:    &replaceOp,
 			Path:  &remainingPath,
 			Value: remaining,
 		},
 		{
-			Op:    &op,
+			Op:    &replaceOp,
 			Path:  &completedPath,
 			Value: completed,
 		},
