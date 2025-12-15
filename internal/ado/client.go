@@ -600,6 +600,55 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 	return nil
 }
 
+// UpdateWorkItemStateWithEffort updates the state of a work item along with effort fields
+// Used for Tasks transitioning to Closed which require effort tracking
+func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed float64) error {
+	log := logging.Logger()
+
+	op := webapi.OperationValues.Add
+	statePath := "/fields/System.State"
+	originalEstimatePath := "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate"
+	remainingPath := "/fields/Microsoft.VSTS.Scheduling.RemainingWork"
+	completedPath := "/fields/Microsoft.VSTS.Scheduling.CompletedWork"
+
+	document := []webapi.JsonPatchOperation{
+		{
+			Op:    &op,
+			Path:  &statePath,
+			Value: newState,
+		},
+		{
+			Op:    &op,
+			Path:  &originalEstimatePath,
+			Value: originalEstimate,
+		},
+		{
+			Op:    &op,
+			Path:  &remainingPath,
+			Value: remaining,
+		},
+		{
+			Op:    &op,
+			Path:  &completedPath,
+			Value: completed,
+		},
+	}
+
+	_, err := c.workitemClient.UpdateWorkItem(ctx, workitemtracking.UpdateWorkItemArgs{
+		Id:       &itemID,
+		Document: &document,
+	})
+
+	if err != nil {
+		log.Error("Failed to update work item state with effort", "id", itemID, "state", newState, "error", err)
+		return err
+	}
+
+	log.Info("Work item state updated with effort", "id", itemID, "state", newState,
+		"originalEstimate", originalEstimate, "remaining", remaining, "completed", completed)
+	return nil
+}
+
 // GetWorkItemDetail fetches full details for a single work item
 func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail, error) {
 	log := logging.Logger()

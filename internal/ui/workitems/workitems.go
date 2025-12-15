@@ -78,6 +78,9 @@ type Model struct {
 	// Detail modal
 	detailModal *DetailModel
 	showDetail  bool
+	// Effort modal for Task state transitions
+	effortModal *EffortModal
+	showEffort  bool
 }
 
 func New(client *ado.Client, projects []string, stateTransitions map[string]map[string]string) Model {
@@ -132,7 +135,7 @@ func (m Model) fetchWorkItems() tea.Cmd {
 	}
 }
 
-func (m Model) updateSelectedItemState() tea.Cmd {
+func (m *Model) updateSelectedItemState() tea.Cmd {
 	// Get the highlighted row from the table
 	highlightedRow := m.table.HighlightedRow()
 	if highlightedRow.Data == nil {
@@ -178,6 +181,16 @@ func (m Model) updateSelectedItemState() tea.Cmd {
 		}
 	}
 
+	// For Tasks going from Active to Closed, show the effort modal
+	if item.Type == "Task" && item.State == "Active" && nextState == "Closed" {
+		effortModal := NewEffortModal(id, item.Title, nextState)
+		effortModal.width = m.width
+		effortModal.height = m.height
+		m.effortModal = &effortModal
+		m.showEffort = true
+		return m.effortModal.Init()
+	}
+
 	// Create async command to update the state
 	client := m.client
 	return func() tea.Msg {
@@ -194,6 +207,47 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.showDetail = false
 		m.detailModal = nil
 		return m, nil
+	}
+
+	// Handle effort modal close message
+	if _, ok := msg.(CloseEffortMsg); ok {
+		m.showEffort = false
+		m.effortModal = nil
+		return m, nil
+	}
+
+	// Handle effort modal submit
+	if effortMsg, ok := msg.(EffortSubmitMsg); ok {
+		m.showEffort = false
+		m.effortModal = nil
+		// Call API to update state with effort
+		client := m.client
+		return m, func() tea.Msg {
+			err := client.UpdateWorkItemStateWithEffort(
+				context.Background(),
+				effortMsg.ItemID,
+				effortMsg.NewState,
+				effortMsg.OriginalEstimate,
+				effortMsg.Remaining,
+				effortMsg.Completed,
+			)
+			return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: err}
+		}
+	}
+
+	// Delegate to effort modal when open
+	if m.showEffort && m.effortModal != nil {
+		if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = wsm.Width
+			m.height = wsm.Height
+		}
+		m.effortModal.width = m.width
+		m.effortModal.height = m.height
+
+		var cmd tea.Cmd
+		newModal, cmd := m.effortModal.Update(msg)
+		m.effortModal = &newModal
+		return m, cmd
 	}
 
 	// Delegate to detail modal when open
@@ -381,6 +435,17 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
+	// If effort modal is open, use overlay to composite modal on top of table
+	if m.showEffort && m.effortModal != nil {
+		modalView := m.effortModal.View()
+		tableView := m.renderTableView()
+
+		fg := viewWrapper{content: modalView}
+		bg := viewWrapper{content: tableView}
+		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
+		return o.View()
+	}
+
 	// If detail modal is open, use overlay to composite modal on top of table
 	if m.showDetail && m.detailModal != nil {
 		// Create overlay fresh with current state - avoids stale pointer issues
