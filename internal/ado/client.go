@@ -170,30 +170,20 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 				}
 
 				if includeIteration && node.Path != nil {
-					// Log raw path from API for debugging
-					rawPath := *node.Path
-					log.Info("DEBUG: Raw iteration path from API", "rawPath", rawPath)
-
 					// Clean up the iteration path for WIQL
 					// API returns paths like \Project\Iteration\Sprint or \Process\Iteration\Sprint
 					// WIQL expects ProjectName\Sprint (no "Iteration\" in the middle)
-					path := strings.TrimPrefix(rawPath, "\\")
-					log.Info("DEBUG: After TrimPrefix backslash", "path", path)
-
+					path := strings.TrimPrefix(*node.Path, "\\")
 					path = strings.TrimPrefix(path, "Process\\Iteration\\")
-					log.Info("DEBUG: After TrimPrefix Process\\Iteration\\", "path", path)
 
 					// Remove "\Iteration\" from the middle of the path (e.g., "Project\Iteration\Sprint" -> "Project\Sprint")
 					path = strings.Replace(path, "\\Iteration\\", "\\", 1)
-					log.Info("DEBUG: After Replace \\Iteration\\", "path", path)
 
 					// If path doesn't start with project name, prepend it
 					if !strings.HasPrefix(path, project+"\\") && !strings.HasPrefix(path, project+"/") {
-						log.Info("DEBUG: Prepending project name", "project", project, "pathBefore", path)
 						path = project + "\\" + path
 					}
 
-					log.Info("DEBUG: Final iteration path", "project", project, "finalPath", path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
 					recentPaths = append(recentPaths, path)
 				}
 			}
@@ -447,19 +437,35 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		return []WorkItem{}, nil
 	}
 
-	// Fetch full work item details (without project filter - work items might be cross-project)
+	// Fetch full work item details in batches (Azure DevOps API limit is 200 IDs per request)
+	const batchSize = 200
 	fields := []string{"System.Id", "System.Title", "System.Description", "Microsoft.VSTS.Scheduling.StoryPoints", "System.WorkItemType", "System.State", "System.AssignedTo"}
-	items, err := c.workitemClient.GetWorkItems(ctx, workitemtracking.GetWorkItemsArgs{
-		Ids:    &ids,
-		Fields: &fields,
-	})
-	if err != nil {
-		log.Error("Failed to get work item details", "project", project, "error", err)
-		return []WorkItem{}, nil // Return empty instead of error to continue processing other projects
+
+	var allItems []workitemtracking.WorkItem
+	for i := 0; i < len(ids); i += batchSize {
+		end := i + batchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batchIDs := ids[i:end]
+
+		log.Debug("Fetching work item batch", "project", project, "batch", i/batchSize+1, "ids_in_batch", len(batchIDs), "total_ids", len(ids))
+
+		items, err := c.workitemClient.GetWorkItems(ctx, workitemtracking.GetWorkItemsArgs{
+			Ids:    &batchIDs,
+			Fields: &fields,
+		})
+		if err != nil {
+			log.Error("Failed to get work item batch", "project", project, "batch", i/batchSize+1, "error", err)
+			continue // Skip failed batches, get as many as possible
+		}
+		if items != nil {
+			allItems = append(allItems, *items...)
+		}
 	}
 
 	var workItems []WorkItem
-	for _, item := range *items {
+	for _, item := range allItems {
 		if item.Fields == nil {
 			continue
 		}
