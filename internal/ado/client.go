@@ -170,8 +170,10 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 				}
 
 				if includeIteration && node.Path != nil {
-					recentPaths = append(recentPaths, *node.Path)
-					log.Info("Found recent iteration", "path", *node.Path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
+					// Strip leading backslash from path (API returns paths like \Project\Iteration\...)
+					path := strings.TrimPrefix(*node.Path, "\\")
+					recentPaths = append(recentPaths, path)
+					log.Info("Found recent iteration", "path", path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
 				}
 			}
 		}
