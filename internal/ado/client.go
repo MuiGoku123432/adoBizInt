@@ -58,23 +58,16 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	log := logging.Logger()
 	locationClient := location.NewClient(ctx, connection)
 	currentUser := ""
-	currentUserEmail := ""
+	currentUserEmail := cfg.UserEmail // Use configured email if available
 	if locationClient != nil {
 		connData, err := locationClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
 		if err == nil && connData != nil && connData.AuthorizedUser != nil {
 			if connData.AuthorizedUser.ProviderDisplayName != nil {
 				currentUser = *connData.AuthorizedUser.ProviderDisplayName
 			}
-			// Try CustomDisplayName first (often matches work item's displayName)
-			if connData.AuthorizedUser.CustomDisplayName != nil && *connData.AuthorizedUser.CustomDisplayName != "" {
-				currentUserEmail = *connData.AuthorizedUser.CustomDisplayName
-			} else if connData.AuthorizedUser.SubjectDescriptor != nil {
-				// Fall back to SubjectDescriptor as unique identifier
-				currentUserEmail = *connData.AuthorizedUser.SubjectDescriptor
-			}
-			log.Info("Current user identity", "providerDisplayName", currentUser, "currentUserEmail", currentUserEmail)
 		}
 	}
+	log.Info("Current user identity", "displayName", currentUser, "email", currentUserEmail)
 
 	return &Client{
 		connection:       connection,
