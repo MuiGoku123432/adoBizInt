@@ -333,15 +333,27 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
 		}
 		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
-		log.Debug("Using iteration filter", "project", project, "iterations", iterations)
+		log.Info("Using sprint filter", "project", project, "sprints", iterations)
+	} else {
+		log.Info("No sprint filter applied", "project", project)
+	}
+
+	// Build user filter: current user's items OR unassigned items
+	userFilter := ""
+	if c.currentUser != "" {
+		escapedUser := strings.ReplaceAll(c.currentUser, "'", "''")
+		userFilter = " AND ([System.AssignedTo] = '" + escapedUser + "' OR [System.AssignedTo] = '')"
+		log.Info("Using user filter", "project", project, "user", c.currentUser)
 	}
 
 	// Query for work items with relevant fields
-	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed')" + iterationFilter + " ORDER BY [System.Id] DESC"
+	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed')" + iterationFilter + userFilter + " ORDER BY [System.Id] DESC"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
 	}
+
+	log.Debug("Executing WIQL query", "project", project, "query", wiql)
 
 	result, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
@@ -349,8 +361,12 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	}
 
 	if result == nil || result.WorkItems == nil || len(*result.WorkItems) == 0 {
+		log.Info("Query returned no work items", "project", project)
 		return []WorkItem{}, nil
 	}
+
+	totalFound := len(*result.WorkItems)
+	log.Info("Query returned work items", "project", project, "total_found", totalFound)
 
 	// Get the IDs to fetch full details
 	var ids []int
@@ -362,6 +378,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 
 	// Limit to first 100 for performance
 	if len(ids) > 100 {
+		log.Info("Limiting work items for performance", "project", project, "total_found", totalFound, "fetching", 100)
 		ids = ids[:100]
 	}
 
