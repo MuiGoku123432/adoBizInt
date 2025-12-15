@@ -289,8 +289,8 @@ func (m Model) buildRows() []table.Row {
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
 	for _, item := range m.items {
-		// Apply "Assigned to Me" filter
-		if m.assignedToMeFilter && m.currentUser != "" && item.AssignedTo != m.currentUser {
+		// Apply "Assigned to Me" filter (case-insensitive comparison)
+		if m.assignedToMeFilter && m.currentUser != "" && !strings.EqualFold(item.AssignedTo, m.currentUser) {
 			continue
 		}
 		// Apply "Hide Done/Resolved" filter
