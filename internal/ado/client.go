@@ -248,15 +248,8 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
 	}
 
-	// Build user filter: current user's items OR unassigned items
-	userFilter := ""
-	if c.currentUser != "" {
-		escapedUser := strings.ReplaceAll(c.currentUser, "'", "''")
-		userFilter = " AND ([System.AssignedTo] = '" + escapedUser + "' OR [System.AssignedTo] = '')"
-	}
-
 	// Get work item count using WIQL query with filters
-	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed')" + iterationFilter + userFilter
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
@@ -361,16 +354,8 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		log.Info("No sprint filter applied", "project", project)
 	}
 
-	// Build user filter: current user's items OR unassigned items
-	userFilter := ""
-	if c.currentUser != "" {
-		escapedUser := strings.ReplaceAll(c.currentUser, "'", "''")
-		userFilter = " AND ([System.AssignedTo] = '" + escapedUser + "' OR [System.AssignedTo] = '')"
-		log.Info("Using user filter", "project", project, "user", c.currentUser)
-	}
-
 	// Query for work items with relevant fields
-	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed')" + iterationFilter + userFilter + " ORDER BY [System.Id] DESC"
+	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter + " ORDER BY [System.Id] DESC"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
