@@ -580,31 +580,11 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail, error) {
 	log := logging.Logger()
 
-	// Fields to fetch for detailed view
-	fields := []string{
-		"System.Id",
-		"System.Title",
-		"System.Description",
-		"System.WorkItemType",
-		"System.State",
-		"System.AssignedTo",
-		"System.CreatedDate",
-		"System.ChangedDate",
-		"System.CreatedBy",
-		"System.ChangedBy",
-		"System.IterationPath",
-		"System.AreaPath",
-		"Microsoft.VSTS.Scheduling.StoryPoints",
-		"Microsoft.VSTS.Common.AcceptanceCriteria",
-		"Microsoft.VSTS.TCM.ReproSteps",
-	}
-
-	// Use Relations expand to get attachments
+	// Use Relations expand to get attachments (can't use Fields with Expand)
 	expand := workitemtracking.WorkItemExpandValues.Relations
 
 	item, err := c.workitemClient.GetWorkItem(ctx, workitemtracking.GetWorkItemArgs{
 		Id:     &id,
-		Fields: &fields,
 		Expand: &expand,
 	})
 	if err != nil {
