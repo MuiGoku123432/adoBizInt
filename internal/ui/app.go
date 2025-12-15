@@ -79,18 +79,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.help.Width = msg.Width
+		// Propagate WindowSizeMsg to ALL sub-models
+		var dashCmd, workitemsCmd tea.Cmd
+		m.dashboard, dashCmd = m.dashboard.Update(msg)
+		m.workitems, workitemsCmd = m.workitems.Update(msg)
+		cmds = append(cmds, dashCmd, workitemsCmd)
 	}
 
-	// Update current view
-	switch m.view {
-	case DashboardView:
-		var cmd tea.Cmd
-		m.dashboard, cmd = m.dashboard.Update(msg)
-		cmds = append(cmds, cmd)
-	case WorkItemsView:
-		var cmd tea.Cmd
-		m.workitems, cmd = m.workitems.Update(msg)
-		cmds = append(cmds, cmd)
+	// Update current view (skip WindowSizeMsg since already handled above)
+	if _, isWindowSize := msg.(tea.WindowSizeMsg); !isWindowSize {
+		switch m.view {
+		case DashboardView:
+			var cmd tea.Cmd
+			m.dashboard, cmd = m.dashboard.Update(msg)
+			cmds = append(cmds, cmd)
+		case WorkItemsView:
+			var cmd tea.Cmd
+			m.workitems, cmd = m.workitems.Update(msg)
+			cmds = append(cmds, cmd)
+		}
 	}
 
 	return m, tea.Batch(cmds...)
