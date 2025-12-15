@@ -66,6 +66,9 @@ type Model struct {
 	stateTransitions   map[string]map[string]string
 	statusMsg          string
 	statusErr          bool
+	// Detail modal
+	detailModal *DetailModel
+	showDetail  bool
 }
 
 func New(client *ado.Client, projects []string, stateTransitions map[string]map[string]string) Model {
@@ -177,6 +180,26 @@ func (m Model) updateSelectedItemState() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	// Handle detail modal close message
+	if _, ok := msg.(CloseDetailMsg); ok {
+		m.showDetail = false
+		m.detailModal = nil
+		return m, nil
+	}
+
+	// Delegate to detail modal when open
+	if m.showDetail && m.detailModal != nil {
+		// Pass window size to modal
+		if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+			m.width = wsm.Width
+			m.height = wsm.Height
+		}
+		var cmd tea.Cmd
+		newModal, cmd := m.detailModal.Update(msg)
+		m.detailModal = &newModal
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -260,7 +283,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.table = m.table.WithRows(m.buildRows())
 				return m, nil
 			}
-		case " ", "enter":
+		case " ":
 			if m.filterFocused == 1 {
 				m.assignedToMeFilter = !m.assignedToMeFilter
 				m.table = m.table.WithRows(m.buildRows())
@@ -269,6 +292,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.hideDoneFilter = !m.hideDoneFilter
 				m.table = m.table.WithRows(m.buildRows())
 				return m, nil
+			}
+		case "enter":
+			if m.filterFocused == 1 {
+				m.assignedToMeFilter = !m.assignedToMeFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			} else if m.filterFocused == 2 {
+				m.hideDoneFilter = !m.hideDoneFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			} else if m.filterFocused == 0 {
+				// Open detail modal for selected work item
+				return m, m.openDetailModal()
 			}
 		case "n":
 			// Move to next state when table is focused
@@ -339,6 +375,11 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
+	// If detail modal is open, render it instead
+	if m.showDetail && m.detailModal != nil {
+		return m.detailModal.View()
+	}
+
 	var b strings.Builder
 
 	// Title
@@ -386,7 +427,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[Tab] cycle  [Space] toggle  [/] search  [n] next state  [1] Dashboard  [2] Work Items")
+	helpText := styles.HelpStyle.Render("[Tab] cycle  [Space] toggle  [/] search  [Enter] details  [n] next state  [1] Dashboard  [2] Work Items")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -453,6 +494,35 @@ func stripHTML(s string) string {
 		text = strings.ReplaceAll(text, "  ", " ")
 	}
 	return strings.TrimSpace(text)
+}
+
+// openDetailModal opens the detail modal for the currently selected work item
+func (m *Model) openDetailModal() tea.Cmd {
+	// Get the highlighted row from the table
+	highlightedRow := m.table.HighlightedRow()
+	if highlightedRow.Data == nil {
+		return nil
+	}
+
+	// Get the ID from the row data
+	idStr, ok := highlightedRow.Data[columnKeyID].(string)
+	if !ok {
+		return nil
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return nil
+	}
+
+	// Create detail modal
+	detail := NewDetailModel(m.client, id)
+	detail.width = m.width
+	detail.height = m.height
+	m.detailModal = &detail
+	m.showDetail = true
+
+	return m.detailModal.Init()
 }
 
 // getTypeStyle returns the appropriate style for a work item type

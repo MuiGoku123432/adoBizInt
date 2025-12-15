@@ -366,6 +366,28 @@ type WorkItem struct {
 	AssignedToEmail string
 }
 
+// WorkItemDetail represents a work item with full details
+type WorkItemDetail struct {
+	WorkItem
+	Description        string
+	AcceptanceCriteria string
+	ReproSteps         string // For bugs
+	Attachments        []Attachment
+	CreatedDate        time.Time
+	ModifiedDate       time.Time
+	CreatedBy          string
+	ModifiedBy         string
+	IterationPath      string
+	AreaPath           string
+}
+
+// Attachment represents a work item attachment
+type Attachment struct {
+	Name string
+	URL  string
+	Size int64
+}
+
 // GetWorkItems fetches work items for the specified projects
 func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkItem, error) {
 	log := logging.Logger()
@@ -552,6 +574,144 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 
 	log.Info("Work item state updated", "id", itemID, "state", newState)
 	return nil
+}
+
+// GetWorkItemDetail fetches full details for a single work item
+func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail, error) {
+	log := logging.Logger()
+
+	// Fields to fetch for detailed view
+	fields := []string{
+		"System.Id",
+		"System.Title",
+		"System.Description",
+		"System.WorkItemType",
+		"System.State",
+		"System.AssignedTo",
+		"System.CreatedDate",
+		"System.ChangedDate",
+		"System.CreatedBy",
+		"System.ChangedBy",
+		"System.IterationPath",
+		"System.AreaPath",
+		"Microsoft.VSTS.Scheduling.StoryPoints",
+		"Microsoft.VSTS.Common.AcceptanceCriteria",
+		"Microsoft.VSTS.TCM.ReproSteps",
+	}
+
+	// Use Relations expand to get attachments
+	expand := workitemtracking.WorkItemExpandValues.Relations
+
+	item, err := c.workitemClient.GetWorkItem(ctx, workitemtracking.GetWorkItemArgs{
+		Id:     &id,
+		Fields: &fields,
+		Expand: &expand,
+	})
+	if err != nil {
+		log.Error("Failed to get work item detail", "id", id, "error", err)
+		return nil, err
+	}
+
+	if item == nil || item.Fields == nil {
+		return nil, nil
+	}
+
+	detail := &WorkItemDetail{}
+	itemFields := *item.Fields
+
+	// Basic fields
+	detail.ID = id
+	if title, ok := itemFields["System.Title"].(string); ok {
+		detail.Title = title
+	}
+	if desc, ok := itemFields["System.Description"].(string); ok {
+		detail.Description = desc
+	}
+	if wiType, ok := itemFields["System.WorkItemType"].(string); ok {
+		detail.Type = wiType
+	}
+	if state, ok := itemFields["System.State"].(string); ok {
+		detail.State = state
+	}
+	if points, ok := itemFields["Microsoft.VSTS.Scheduling.StoryPoints"].(float64); ok {
+		detail.StoryPoints = int(points)
+	}
+	if ac, ok := itemFields["Microsoft.VSTS.Common.AcceptanceCriteria"].(string); ok {
+		detail.AcceptanceCriteria = ac
+	}
+	if repro, ok := itemFields["Microsoft.VSTS.TCM.ReproSteps"].(string); ok {
+		detail.ReproSteps = repro
+	}
+	if iter, ok := itemFields["System.IterationPath"].(string); ok {
+		detail.IterationPath = iter
+	}
+	if area, ok := itemFields["System.AreaPath"].(string); ok {
+		detail.AreaPath = area
+	}
+
+	// Assignee
+	if assignedTo, ok := itemFields["System.AssignedTo"]; ok && assignedTo != nil {
+		if v, ok := assignedTo.(map[string]interface{}); ok {
+			if displayName, ok := v["displayName"].(string); ok {
+				detail.AssignedTo = displayName
+			}
+		}
+	}
+
+	// Created/Modified info
+	if createdBy, ok := itemFields["System.CreatedBy"]; ok && createdBy != nil {
+		if v, ok := createdBy.(map[string]interface{}); ok {
+			if displayName, ok := v["displayName"].(string); ok {
+				detail.CreatedBy = displayName
+			}
+		}
+	}
+	if changedBy, ok := itemFields["System.ChangedBy"]; ok && changedBy != nil {
+		if v, ok := changedBy.(map[string]interface{}); ok {
+			if displayName, ok := v["displayName"].(string); ok {
+				detail.ModifiedBy = displayName
+			}
+		}
+	}
+
+	// Parse dates
+	if createdDate, ok := itemFields["System.CreatedDate"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, createdDate); err == nil {
+			detail.CreatedDate = t
+		}
+	}
+	if changedDate, ok := itemFields["System.ChangedDate"].(string); ok {
+		if t, err := time.Parse(time.RFC3339, changedDate); err == nil {
+			detail.ModifiedDate = t
+		}
+	}
+
+	// Extract attachments from relations
+	if item.Relations != nil {
+		for _, rel := range *item.Relations {
+			if rel.Rel != nil && *rel.Rel == "AttachedFile" {
+				attachment := Attachment{}
+				if rel.Url != nil {
+					attachment.URL = *rel.Url
+				}
+				if rel.Attributes != nil {
+					attrs := *rel.Attributes
+					if name, ok := attrs["name"].(string); ok {
+						attachment.Name = name
+					}
+					if size, ok := attrs["resourceSize"].(float64); ok {
+						attachment.Size = int64(size)
+					}
+				}
+				if attachment.Name != "" {
+					detail.Attachments = append(detail.Attachments, attachment)
+				}
+			}
+		}
+	}
+
+	log.Debug("Got work item detail", "id", id, "title", detail.Title, "attachments", len(detail.Attachments))
+	return detail, nil
 }
 
 // GetNextState returns the next state for a work item type/current state based on config
