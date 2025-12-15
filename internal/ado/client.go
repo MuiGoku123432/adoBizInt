@@ -18,14 +18,15 @@ import (
 )
 
 type Client struct {
-	connection     *azuredevops.Connection
-	workitemClient workitemtracking.Client
-	workClient     work.Client
-	gitClient      git.Client
-	buildClient    build.Client
-	projects       []string
-	pipelines      []string
-	currentUser    string
+	connection       *azuredevops.Connection
+	workitemClient   workitemtracking.Client
+	workClient       work.Client
+	gitClient        git.Client
+	buildClient      build.Client
+	projects         []string
+	pipelines        []string
+	currentUser      string
+	currentUserEmail string
 }
 
 func NewClient(cfg *config.Config) (*Client, error) {
@@ -54,24 +55,37 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	}
 
 	// Fetch current user from PAT identity
+	log := logging.Logger()
 	locationClient := location.NewClient(ctx, connection)
 	currentUser := ""
+	currentUserEmail := ""
 	if locationClient != nil {
 		connData, err := locationClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
-		if err == nil && connData != nil && connData.AuthorizedUser != nil && connData.AuthorizedUser.ProviderDisplayName != nil {
-			currentUser = *connData.AuthorizedUser.ProviderDisplayName
+		if err == nil && connData != nil && connData.AuthorizedUser != nil {
+			if connData.AuthorizedUser.ProviderDisplayName != nil {
+				currentUser = *connData.AuthorizedUser.ProviderDisplayName
+			}
+			// Try CustomDisplayName first (often matches work item's displayName)
+			if connData.AuthorizedUser.CustomDisplayName != nil && *connData.AuthorizedUser.CustomDisplayName != "" {
+				currentUserEmail = *connData.AuthorizedUser.CustomDisplayName
+			} else if connData.AuthorizedUser.SubjectDescriptor != nil {
+				// Fall back to SubjectDescriptor as unique identifier
+				currentUserEmail = *connData.AuthorizedUser.SubjectDescriptor
+			}
+			log.Info("Current user identity", "providerDisplayName", currentUser, "currentUserEmail", currentUserEmail)
 		}
 	}
 
 	return &Client{
-		connection:     connection,
-		workitemClient: workitemClient,
-		workClient:     workClient,
-		gitClient:      gitClient,
-		buildClient:    buildClient,
-		projects:       cfg.Projects,
-		pipelines:      cfg.Pipelines,
-		currentUser:    currentUser,
+		connection:       connection,
+		workitemClient:   workitemClient,
+		workClient:       workClient,
+		gitClient:        gitClient,
+		buildClient:      buildClient,
+		projects:         cfg.Projects,
+		pipelines:        cfg.Pipelines,
+		currentUser:      currentUser,
+		currentUserEmail: currentUserEmail,
 	}, nil
 }
 
@@ -93,6 +107,10 @@ func (c *Client) BuildClient() build.Client {
 
 func (c *Client) CurrentUser() string {
 	return c.currentUser
+}
+
+func (c *Client) CurrentUserEmail() string {
+	return c.currentUserEmail
 }
 
 // GetRecentIterations returns iteration paths for sprints active in the last 90 days
@@ -344,14 +362,15 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 
 // WorkItem represents a work item for display
 type WorkItem struct {
-	ID          int
-	Title       string
-	Summary     string
-	StoryPoints int
-	Project     string
-	Type        string
-	State       string
-	AssignedTo  string
+	ID              int
+	Title           string
+	Summary         string
+	StoryPoints     int
+	Project         string
+	Type            string
+	State           string
+	AssignedTo      string
+	AssignedToEmail string
 }
 
 // GetWorkItems fetches work items for the specified projects
@@ -498,6 +517,9 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 			case map[string]interface{}:
 				if displayName, ok := v["displayName"].(string); ok {
 					wi.AssignedTo = displayName
+				}
+				if uniqueName, ok := v["uniqueName"].(string); ok {
+					wi.AssignedToEmail = uniqueName
 				}
 			case string:
 				wi.AssignedTo = v

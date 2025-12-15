@@ -61,6 +61,7 @@ type Model struct {
 	assignedToMeFilter bool
 	hideDoneFilter     bool
 	currentUser        string
+	currentUserEmail   string
 	filterFocused      int // 0 = table, 1 = checkbox 1, 2 = checkbox 2, 3 = search
 	stateTransitions   map[string]map[string]string
 	statusMsg          string
@@ -101,6 +102,7 @@ func New(client *ado.Client, projects []string, stateTransitions map[string]map[
 		assignedToMeFilter: true,
 		hideDoneFilter:     true,
 		currentUser:        client.CurrentUser(),
+		currentUserEmail:   client.CurrentUserEmail(),
 		filterFocused:      0,
 		stateTransitions:   stateTransitions,
 	}
@@ -292,13 +294,13 @@ func (m Model) buildRows() []table.Row {
 
 	// Log current user for debugging filter
 	if m.assignedToMeFilter {
-		log.Debug("Assigned to Me filter active", "currentUser", m.currentUser)
+		log.Debug("Assigned to Me filter active", "currentUserEmail", m.currentUserEmail, "currentUser", m.currentUser)
 	}
 
 	for _, item := range m.items {
-		// Apply "Assigned to Me" filter (case-insensitive comparison)
-		if m.assignedToMeFilter && m.currentUser != "" && !strings.EqualFold(item.AssignedTo, m.currentUser) {
-			log.Debug("Filtered out item - assignee mismatch", "itemID", item.ID, "assignedTo", item.AssignedTo, "currentUser", m.currentUser)
+		// Apply "Assigned to Me" filter (compare emails, case-insensitive)
+		if m.assignedToMeFilter && m.currentUserEmail != "" && !strings.EqualFold(item.AssignedToEmail, m.currentUserEmail) {
+			log.Debug("Filtered out item - email mismatch", "itemID", item.ID, "assignedToEmail", item.AssignedToEmail, "currentUserEmail", m.currentUserEmail)
 			continue
 		}
 		// Apply "Hide Done/Resolved" filter
