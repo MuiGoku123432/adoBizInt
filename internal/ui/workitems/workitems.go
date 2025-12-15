@@ -17,12 +17,13 @@ import (
 
 const (
 	columnKeyID      = "id"
-	columnKeyType    = "type"
-	columnKeyStatus  = "status"
-	columnKeyTitle   = "title"
-	columnKeySummary = "summary"
-	columnKeyPoints  = "points"
-	columnKeyActions = "actions"
+	columnKeyType     = "type"
+	columnKeyStatus   = "status"
+	columnKeyTitle    = "title"
+	columnKeySummary  = "summary"
+	columnKeyAssignee = "assignee"
+	columnKeyPoints   = "points"
+	columnKeyActions  = "actions"
 )
 
 // States considered "done" or "resolved" for filtering
@@ -78,6 +79,7 @@ func New(client *ado.Client, projects []string, stateTransitions map[string]map[
 		table.NewColumn(columnKeyStatus, "Status", 12),
 		table.NewColumn(columnKeyTitle, "Title", 25),
 		table.NewColumn(columnKeySummary, "Summary", 22),
+		table.NewColumn(columnKeyAssignee, "Assignee", 15),
 		table.NewColumn(columnKeyPoints, "Points", 6).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
 		table.NewColumn(columnKeyActions, "Actions", 10),
 	}
@@ -313,13 +315,14 @@ func (m Model) buildRows() []table.Row {
 		styledType := getTypeStyle(item.Type).Render(item.Type)
 
 		rows = append(rows, table.NewRow(table.RowData{
-			columnKeyID:      fmt.Sprintf("%d", item.ID),
-			columnKeyType:    styledType,
-			columnKeyStatus:  item.State,
-			columnKeyTitle:   truncate(item.Title, 23),
-			columnKeySummary: truncate(stripHTML(item.Summary), 20),
-			columnKeyPoints:  fmt.Sprintf("%d", item.StoryPoints),
-			columnKeyActions: actionText,
+			columnKeyID:       fmt.Sprintf("%d", item.ID),
+			columnKeyType:     styledType,
+			columnKeyStatus:   item.State,
+			columnKeyTitle:    truncate(item.Title, 23),
+			columnKeySummary:  truncate(stripHTML(item.Summary), 20),
+			columnKeyAssignee: truncate(item.AssignedTo, 13),
+			columnKeyPoints:   fmt.Sprintf("%d", item.StoryPoints),
+			columnKeyActions:  actionText,
 		}))
 	}
 	return rows
