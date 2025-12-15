@@ -198,13 +198,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 	// Delegate to detail modal when open
 	if m.showDetail && m.detailModal != nil {
-		// Pass window size to both models
+		// Update dimensions from WindowSizeMsg if present
 		if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 			m.width = wsm.Width
 			m.height = wsm.Height
-			m.detailModal.width = wsm.Width
-			m.detailModal.height = wsm.Height
 		}
+		// Always propagate current dimensions to modal before Update
+		m.detailModal.width = m.width
+		m.detailModal.height = m.height
+
 		var cmd tea.Cmd
 		newModal, cmd := m.detailModal.Update(msg)
 		m.detailModal = &newModal
