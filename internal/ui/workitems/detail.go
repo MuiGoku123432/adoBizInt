@@ -214,7 +214,11 @@ func (m DetailModel) buildContent(width int) string {
 
 // View renders the detail modal
 func (m DetailModel) View() string {
+	log := logging.Logger()
+	log.Debug("DetailModel.View called", "width", m.width, "height", m.height, "loading", m.loading, "hasItem", m.item != nil)
+
 	if m.width == 0 || m.height == 0 {
+		log.Debug("DetailModel.View returning early - zero dimensions")
 		return styles.SubtitleStyle.Render("Loading...")
 	}
 
