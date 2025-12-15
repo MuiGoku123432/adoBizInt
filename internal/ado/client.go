@@ -14,6 +14,7 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/location"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/release"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/webapi"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
@@ -28,6 +29,7 @@ type Client struct {
 	workClient       work.Client
 	gitClient        git.Client
 	buildClient      build.Client
+	releaseClient    release.Client
 	projects         []string
 	pipelines        []string
 	currentUser      string
@@ -59,6 +61,11 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
+	releaseClient, err := release.NewClient(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+
 	// Fetch current user from PAT identity
 	log := logging.Logger()
 	locationClient := location.NewClient(ctx, connection)
@@ -80,6 +87,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		workClient:       workClient,
 		gitClient:        gitClient,
 		buildClient:      buildClient,
+		releaseClient:    releaseClient,
 		projects:         cfg.Projects,
 		pipelines:        cfg.Pipelines,
 		currentUser:      currentUser,
@@ -441,6 +449,49 @@ type PipelineDefinition struct {
 	RepositoryID  string
 	DefaultBranch string
 	QueueStatus   string // "enabled", "paused", "disabled"
+}
+
+// Release represents a classic release for display
+type Release struct {
+	ID               int
+	Name             string
+	DefinitionID     int
+	DefinitionName   string
+	Project          string
+	Status           string // "draft", "active", "abandoned"
+	CreatedOn        time.Time
+	ModifiedOn       time.Time
+	Environments     []ReleaseEnvironment
+	PendingApprovals int
+}
+
+// ReleaseEnvironment represents an environment within a release
+type ReleaseEnvironment struct {
+	ID               int
+	Name             string
+	Status           string // "notStarted", "inProgress", "succeeded", "canceled", "rejected", "queued", "partiallySucceeded"
+	DeploymentStatus string // "notDeployed", "inProgress", "succeeded", "partiallySucceeded", "failed"
+	ReleaseID        int
+	ReleaseName      string
+	DefinitionID     int
+	DefinitionName   string
+	Project          string
+}
+
+// ReleaseApproval represents a pending approval
+type ReleaseApproval struct {
+	ID              int
+	ReleaseID       int
+	ReleaseName     string
+	EnvironmentID   int
+	EnvironmentName string
+	Project         string
+	Status          string // "pending", "approved", "rejected", "reassigned", "canceled", "skipped"
+	ApprovalType    string // "preDeploy", "postDeploy"
+	Approver        string
+	ApproverID      string
+	CreatedOn       time.Time
+	Comments        string
 }
 
 // GetWorkItems fetches work items for the specified projects
@@ -1350,4 +1401,231 @@ func (c *Client) QueuePipeline(ctx context.Context, project string, definitionID
 // strPtr is a helper to get a pointer to a string
 func strPtr(s string) *string {
 	return &s
+}
+
+// GetReleases fetches recent releases for configured pipelines
+func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release, error) {
+	log := logging.Logger()
+
+	targetProjects := projects
+	if len(targetProjects) == 0 {
+		targetProjects = c.projects
+	}
+
+	// Build pipeline/definition name set for filtering (case-insensitive)
+	pipelineSet := make(map[string]bool)
+	for _, p := range c.pipelines {
+		pipelineSet[strings.ToLower(p)] = true
+	}
+
+	var allReleases []Release
+
+	for _, project := range targetProjects {
+		top := 50
+		queryOrder := release.ReleaseQueryOrderValues.Descending
+		expand := release.ReleaseExpandsValues.Environments
+
+		releases, err := c.releaseClient.GetReleases(ctx, release.GetReleasesArgs{
+			Project:      &project,
+			Top:          &top,
+			QueryOrder:   &queryOrder,
+			Expand:       &expand,
+		})
+		if err != nil {
+			log.Error("Failed to get releases", "project", project, "error", err)
+			continue
+		}
+
+		if releases == nil || len(releases.Value) == 0 {
+			continue
+		}
+
+		for _, r := range releases.Value {
+			// Filter to configured pipelines if any are configured
+			if len(pipelineSet) > 0 && r.ReleaseDefinition != nil && r.ReleaseDefinition.Name != nil {
+				if !pipelineSet[strings.ToLower(*r.ReleaseDefinition.Name)] {
+					continue
+				}
+			}
+
+			rel := Release{
+				Project: project,
+			}
+
+			if r.Id != nil {
+				rel.ID = *r.Id
+			}
+			if r.Name != nil {
+				rel.Name = *r.Name
+			}
+			if r.ReleaseDefinition != nil {
+				if r.ReleaseDefinition.Id != nil {
+					rel.DefinitionID = *r.ReleaseDefinition.Id
+				}
+				if r.ReleaseDefinition.Name != nil {
+					rel.DefinitionName = *r.ReleaseDefinition.Name
+				}
+			}
+			if r.Status != nil {
+				rel.Status = string(*r.Status)
+			}
+			if r.CreatedOn != nil {
+				rel.CreatedOn = r.CreatedOn.Time
+			}
+			if r.ModifiedOn != nil {
+				rel.ModifiedOn = r.ModifiedOn.Time
+			}
+
+			// Convert environments
+			if r.Environments != nil {
+				for _, env := range *r.Environments {
+					relEnv := ReleaseEnvironment{
+						Project:        project,
+						ReleaseID:      rel.ID,
+						ReleaseName:    rel.Name,
+						DefinitionID:   rel.DefinitionID,
+						DefinitionName: rel.DefinitionName,
+					}
+
+					if env.Id != nil {
+						relEnv.ID = *env.Id
+					}
+					if env.Name != nil {
+						relEnv.Name = *env.Name
+					}
+					if env.Status != nil {
+						relEnv.Status = string(*env.Status)
+					}
+
+					rel.Environments = append(rel.Environments, relEnv)
+				}
+			}
+
+			allReleases = append(allReleases, rel)
+		}
+	}
+
+	log.Info("Releases fetched", "total_count", len(allReleases))
+	return allReleases, nil
+}
+
+// GetPendingApprovals fetches pending approvals across projects
+func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) ([]ReleaseApproval, error) {
+	log := logging.Logger()
+
+	targetProjects := projects
+	if len(targetProjects) == 0 {
+		targetProjects = c.projects
+	}
+
+	var allApprovals []ReleaseApproval
+
+	for _, project := range targetProjects {
+		statusFilter := release.ApprovalStatusValues.Pending
+
+		approvals, err := c.releaseClient.GetApprovals(ctx, release.GetApprovalsArgs{
+			Project:      &project,
+			StatusFilter: &statusFilter,
+		})
+		if err != nil {
+			log.Error("Failed to get approvals", "project", project, "error", err)
+			continue
+		}
+
+		if approvals == nil || len(approvals.Value) == 0 {
+			continue
+		}
+
+		for _, a := range approvals.Value {
+			approval := ReleaseApproval{
+				Project: project,
+			}
+
+			if a.Id != nil {
+				approval.ID = *a.Id
+			}
+			if a.Release != nil && a.Release.Id != nil {
+				approval.ReleaseID = *a.Release.Id
+			}
+			if a.Release != nil && a.Release.Name != nil {
+				approval.ReleaseName = *a.Release.Name
+			}
+			if a.ReleaseEnvironment != nil && a.ReleaseEnvironment.Id != nil {
+				approval.EnvironmentID = *a.ReleaseEnvironment.Id
+			}
+			if a.ReleaseEnvironment != nil && a.ReleaseEnvironment.Name != nil {
+				approval.EnvironmentName = *a.ReleaseEnvironment.Name
+			}
+			if a.Status != nil {
+				approval.Status = string(*a.Status)
+			}
+			if a.ApprovalType != nil {
+				approval.ApprovalType = string(*a.ApprovalType)
+			}
+			if a.Approver != nil && a.Approver.DisplayName != nil {
+				approval.Approver = *a.Approver.DisplayName
+			}
+			if a.Approver != nil && a.Approver.Id != nil {
+				approval.ApproverID = *a.Approver.Id
+			}
+			if a.CreatedOn != nil {
+				approval.CreatedOn = a.CreatedOn.Time
+			}
+
+			allApprovals = append(allApprovals, approval)
+		}
+	}
+
+	log.Info("Pending approvals fetched", "total_count", len(allApprovals))
+	return allApprovals, nil
+}
+
+// ApproveRelease approves a pending approval with optional comment
+func (c *Client) ApproveRelease(ctx context.Context, project string, approvalID int, comment string) error {
+	log := logging.Logger()
+
+	status := release.ApprovalStatusValues.Approved
+	approval := &release.ReleaseApproval{
+		Status:   &status,
+		Comments: &comment,
+	}
+
+	_, err := c.releaseClient.UpdateReleaseApproval(ctx, release.UpdateReleaseApprovalArgs{
+		Project:    &project,
+		ApprovalId: &approvalID,
+		Approval:   approval,
+	})
+
+	if err != nil {
+		log.Error("Failed to approve release", "approvalID", approvalID, "error", err)
+		return err
+	}
+
+	log.Info("Release approved", "approvalID", approvalID)
+	return nil
+}
+
+// RejectRelease rejects a pending approval with optional comment
+func (c *Client) RejectRelease(ctx context.Context, project string, approvalID int, comment string) error {
+	log := logging.Logger()
+
+	status := release.ApprovalStatusValues.Rejected
+	approval := &release.ReleaseApproval{
+		Status:   &status,
+		Comments: &comment,
+	}
+
+	_, err := c.releaseClient.UpdateReleaseApproval(ctx, release.UpdateReleaseApprovalArgs{
+		Project:    &project,
+		ApprovalId: &approvalID,
+		Approval:   approval,
+	})
+
+	if err != nil {
+		log.Error("Failed to reject release", "approvalID", approvalID, "error", err)
+		return err
+	}
+
+	log.Info("Release rejected", "approvalID", approvalID)
+	return nil
 }

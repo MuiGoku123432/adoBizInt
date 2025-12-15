@@ -12,6 +12,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ui/dashboard"
 	"sentinovo.ai/bizInt/internal/ui/pipelines"
 	"sentinovo.ai/bizInt/internal/ui/prs"
+	"sentinovo.ai/bizInt/internal/ui/releases"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/ui/workitems"
 )
@@ -23,6 +24,7 @@ const (
 	WorkItemsView
 	PRsView
 	PipelinesView
+	ReleasesView
 )
 
 type Model struct {
@@ -35,6 +37,7 @@ type Model struct {
 	workitems        workitems.Model
 	prs              prs.Model
 	pipelines        pipelines.Model
+	releases         releases.Model
 	view             View
 	width            int
 	height           int
@@ -52,6 +55,7 @@ func NewModel(client *ado.Client, orgURL string, projects []string, stateTransit
 		workitems:        workitems.New(client, projects, stateTransitions),
 		prs:              prs.New(client, projects),
 		pipelines:        pipelines.New(client, projects, pollInterval),
+		releases:         releases.New(client, projects, pollInterval),
 		view:             DashboardView,
 	}
 }
@@ -95,6 +99,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.pipelines.Init()
 			}
 			return m, nil
+		case key.Matches(msg, m.keys.Tab5):
+			if m.view != ReleasesView {
+				m.view = ReleasesView
+				// Initialize releases if switching to it
+				return m, m.releases.Init()
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -102,12 +113,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.Width = msg.Width
 		// Propagate WindowSizeMsg to ALL sub-models
-		var dashCmd, workitemsCmd, prsCmd, pipelinesCmd tea.Cmd
+		var dashCmd, workitemsCmd, prsCmd, pipelinesCmd, releasesCmd tea.Cmd
 		m.dashboard, dashCmd = m.dashboard.Update(msg)
 		m.workitems, workitemsCmd = m.workitems.Update(msg)
 		m.prs, prsCmd = m.prs.Update(msg)
 		m.pipelines, pipelinesCmd = m.pipelines.Update(msg)
-		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd, pipelinesCmd)
+		m.releases, releasesCmd = m.releases.Update(msg)
+		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd, pipelinesCmd, releasesCmd)
 	}
 
 	// Update current view (skip WindowSizeMsg since already handled above)
@@ -128,6 +140,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case PipelinesView:
 			var cmd tea.Cmd
 			m.pipelines, cmd = m.pipelines.Update(msg)
+			cmds = append(cmds, cmd)
+		case ReleasesView:
+			var cmd tea.Cmd
+			m.releases, cmd = m.releases.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -150,6 +166,8 @@ func (m Model) View() string {
 		content = m.prs.View()
 	case PipelinesView:
 		content = m.pipelines.View()
+	case ReleasesView:
+		content = m.releases.View()
 	default:
 		content = "View not implemented"
 	}
