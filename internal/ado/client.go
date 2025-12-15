@@ -606,32 +606,33 @@ func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, 
 	log := logging.Logger()
 
 	addOp := webapi.OperationValues.Add
-	replaceOp := webapi.OperationValues.Replace
 	statePath := "/fields/System.State"
 	originalEstimatePath := "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate"
 	remainingPath := "/fields/Microsoft.VSTS.Scheduling.RemainingWork"
 	completedPath := "/fields/Microsoft.VSTS.Scheduling.CompletedWork"
 
+	// Update effort fields first, then state change
+	// Using Add operation which works for both new and existing values
 	document := []webapi.JsonPatchOperation{
 		{
 			Op:    &addOp,
-			Path:  &statePath,
-			Value: newState,
-		},
-		{
-			Op:    &replaceOp,
 			Path:  &originalEstimatePath,
 			Value: originalEstimate,
 		},
 		{
-			Op:    &replaceOp,
+			Op:    &addOp,
 			Path:  &remainingPath,
 			Value: remaining,
 		},
 		{
-			Op:    &replaceOp,
+			Op:    &addOp,
 			Path:  &completedPath,
 			Value: completed,
+		},
+		{
+			Op:    &addOp,
+			Path:  &statePath,
+			Value: newState,
 		},
 	}
 
