@@ -12,6 +12,7 @@ type KeyMap struct {
 	Back      key.Binding
 	Tab1      key.Binding
 	Tab2      key.Binding
+	Tab3      key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -52,6 +53,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("2"),
 			key.WithHelp("2", "work items"),
 		),
+		Tab3: key.NewBinding(
+			key.WithKeys("3"),
+			key.WithHelp("3", "pull requests"),
+		),
 	}
 }
 
@@ -63,5 +68,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Enter, k.Back},
 		{k.Search, k.Help, k.Quit},
+		{k.Tab1, k.Tab2, k.Tab3},
 	}
 }

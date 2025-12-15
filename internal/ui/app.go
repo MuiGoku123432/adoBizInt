@@ -8,6 +8,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/keymap"
 	"sentinovo.ai/bizInt/internal/ui/dashboard"
+	"sentinovo.ai/bizInt/internal/ui/prs"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/ui/workitems"
 )
@@ -29,6 +30,7 @@ type Model struct {
 	help             help.Model
 	dashboard        dashboard.Model
 	workitems        workitems.Model
+	prs              prs.Model
 	view             View
 	width            int
 	height           int
@@ -44,6 +46,7 @@ func NewModel(client *ado.Client, orgURL string, projects []string, stateTransit
 		help:             help.New(),
 		dashboard:        dashboard.New(client, orgURL, projects),
 		workitems:        workitems.New(client, projects, stateTransitions),
+		prs:              prs.New(client, projects),
 		view:             DashboardView,
 	}
 }
@@ -73,6 +76,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.workitems.Init()
 			}
 			return m, nil
+		case key.Matches(msg, m.keys.Tab3):
+			if m.view != PRsView {
+				m.view = PRsView
+				// Initialize PRs if switching to it
+				return m, m.prs.Init()
+			}
+			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -80,10 +90,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.Width = msg.Width
 		// Propagate WindowSizeMsg to ALL sub-models
-		var dashCmd, workitemsCmd tea.Cmd
+		var dashCmd, workitemsCmd, prsCmd tea.Cmd
 		m.dashboard, dashCmd = m.dashboard.Update(msg)
 		m.workitems, workitemsCmd = m.workitems.Update(msg)
-		cmds = append(cmds, dashCmd, workitemsCmd)
+		m.prs, prsCmd = m.prs.Update(msg)
+		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd)
 	}
 
 	// Update current view (skip WindowSizeMsg since already handled above)
@@ -96,6 +107,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case WorkItemsView:
 			var cmd tea.Cmd
 			m.workitems, cmd = m.workitems.Update(msg)
+			cmds = append(cmds, cmd)
+		case PRsView:
+			var cmd tea.Cmd
+			m.prs, cmd = m.prs.Update(msg)
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -114,6 +129,8 @@ func (m Model) View() string {
 		content = m.dashboard.View()
 	case WorkItemsView:
 		content = m.workitems.View()
+	case PRsView:
+		content = m.prs.View()
 	default:
 		content = "View not implemented"
 	}
