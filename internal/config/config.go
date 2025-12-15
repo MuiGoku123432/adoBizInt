@@ -45,37 +45,32 @@ type Config struct {
 }
 
 // DefaultStateTransitions provides default state transitions for common work item types
-// Flow: planning -> to do -> active -> resolved -> closed
+// Flow: New -> Active -> Resolved -> Closed
 var DefaultStateTransitions = map[string]map[string]string{
 	"User Story": {
-		"planning": "to do",
-		"to do":    "active",
-		"active":   "resolved",
-		"resolved": "closed",
+		"New":      "Active",
+		"Active":   "Resolved",
+		"Resolved": "Closed",
 	},
 	"Task": {
-		"planning": "to do",
-		"to do":    "active",
-		"active":   "resolved",
-		"resolved": "closed",
+		"New":      "Active",
+		"Active":   "Resolved",
+		"Resolved": "Closed",
 	},
 	"Bug": {
-		"planning": "to do",
-		"to do":    "active",
-		"active":   "resolved",
-		"resolved": "closed",
+		"New":      "Active",
+		"Active":   "Resolved",
+		"Resolved": "Closed",
 	},
 	"Feature": {
-		"planning": "to do",
-		"to do":    "active",
-		"active":   "resolved",
-		"resolved": "closed",
+		"New":      "Active",
+		"Active":   "Resolved",
+		"Resolved": "Closed",
 	},
 	"Epic": {
-		"planning": "to do",
-		"to do":    "active",
-		"active":   "resolved",
-		"resolved": "closed",
+		"New":      "Active",
+		"Active":   "Resolved",
+		"Resolved": "Closed",
 	},
 }
 
