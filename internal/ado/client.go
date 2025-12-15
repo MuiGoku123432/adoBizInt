@@ -393,6 +393,25 @@ type Attachment struct {
 	Size int64
 }
 
+// PullRequest represents a pull request for display
+type PullRequest struct {
+	ID             int
+	Title          string
+	Description    string
+	Project        string
+	RepositoryID   string
+	RepositoryName string
+	SourceBranch   string
+	TargetBranch   string
+	CreatedBy      string
+	CreatedByID    string
+	CreationDate   time.Time
+	Status         string
+	IsDraft        bool
+	ReviewerCount  int
+	ApprovalStatus string
+}
+
 // GetWorkItems fetches work items for the specified projects
 func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkItem, error) {
 	log := logging.Logger()
@@ -741,4 +760,215 @@ func (c *Client) DownloadAttachment(ctx context.Context, url, destPath string) e
 
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+// GetPullRequests fetches all active pull requests across specified projects
+func (c *Client) GetPullRequests(ctx context.Context, projects []string) ([]PullRequest, error) {
+	log := logging.Logger()
+
+	targetProjects := projects
+	if len(targetProjects) == 0 {
+		targetProjects = c.projects
+	}
+
+	var allPRs []PullRequest
+
+	for _, project := range targetProjects {
+		prs, err := c.gitClient.GetPullRequestsByProject(ctx, git.GetPullRequestsByProjectArgs{
+			Project: &project,
+			SearchCriteria: &git.GitPullRequestSearchCriteria{
+				Status: &git.PullRequestStatusValues.Active,
+			},
+		})
+		if err != nil {
+			log.Error("Failed to get pull requests", "project", project, "error", err)
+			continue
+		}
+
+		if prs != nil {
+			for _, pr := range *prs {
+				allPRs = append(allPRs, c.convertPR(pr, project))
+			}
+		}
+	}
+
+	log.Info("Pull requests fetched", "total_count", len(allPRs))
+	return allPRs, nil
+}
+
+func (c *Client) convertPR(pr git.GitPullRequest, project string) PullRequest {
+	result := PullRequest{
+		Project: project,
+	}
+
+	if pr.PullRequestId != nil {
+		result.ID = *pr.PullRequestId
+	}
+	if pr.Title != nil {
+		result.Title = *pr.Title
+	}
+	if pr.Description != nil {
+		result.Description = *pr.Description
+	}
+	if pr.Repository != nil {
+		if pr.Repository.Id != nil {
+			result.RepositoryID = pr.Repository.Id.String()
+		}
+		if pr.Repository.Name != nil {
+			result.RepositoryName = *pr.Repository.Name
+		}
+	}
+	if pr.SourceRefName != nil {
+		result.SourceBranch = strings.TrimPrefix(*pr.SourceRefName, "refs/heads/")
+	}
+	if pr.TargetRefName != nil {
+		result.TargetBranch = strings.TrimPrefix(*pr.TargetRefName, "refs/heads/")
+	}
+	if pr.CreatedBy != nil && pr.CreatedBy.DisplayName != nil {
+		result.CreatedBy = *pr.CreatedBy.DisplayName
+	}
+	if pr.CreatedBy != nil && pr.CreatedBy.Id != nil {
+		result.CreatedByID = *pr.CreatedBy.Id
+	}
+	if pr.CreationDate != nil {
+		result.CreationDate = pr.CreationDate.Time
+	}
+	if pr.Status != nil {
+		result.Status = string(*pr.Status)
+	}
+	if pr.IsDraft != nil {
+		result.IsDraft = *pr.IsDraft
+	}
+	if pr.Reviewers != nil {
+		result.ReviewerCount = len(*pr.Reviewers)
+		result.ApprovalStatus = calculateApprovalStatus(*pr.Reviewers)
+	}
+
+	return result
+}
+
+func calculateApprovalStatus(reviewers []git.IdentityRefWithVote) string {
+	hasApproval := false
+	hasRejection := false
+	hasWaiting := false
+
+	for _, r := range reviewers {
+		if r.Vote != nil {
+			switch *r.Vote {
+			case 10, 5: // Approved or Approved with suggestions
+				hasApproval = true
+			case -10: // Rejected
+				hasRejection = true
+			case -5: // Waiting for author
+				hasWaiting = true
+			}
+		}
+	}
+
+	if hasRejection {
+		return "Rejected"
+	}
+	if hasWaiting {
+		return "Waiting"
+	}
+	if hasApproval {
+		return "Approved"
+	}
+	return "No votes"
+}
+
+// ApprovePullRequest approves a pull request (vote=10)
+func (c *Client) ApprovePullRequest(ctx context.Context, project, repositoryID string, prID int) error {
+	log := logging.Logger()
+
+	// Get current user's ID from the connection data
+	locationClient := location.NewClient(ctx, c.connection)
+	connData, err := locationClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
+	if err != nil {
+		return fmt.Errorf("failed to get current user: %w", err)
+	}
+
+	var userID string
+	if connData != nil && connData.AuthenticatedUser != nil && connData.AuthenticatedUser.Id != nil {
+		userID = connData.AuthenticatedUser.Id.String()
+	} else {
+		return fmt.Errorf("could not determine current user ID")
+	}
+
+	vote := 10 // Approved
+	reviewer := &git.IdentityRefWithVote{
+		Vote: &vote,
+	}
+
+	_, err = c.gitClient.CreatePullRequestReviewer(ctx, git.CreatePullRequestReviewerArgs{
+		Reviewer:      reviewer,
+		RepositoryId:  &repositoryID,
+		PullRequestId: &prID,
+		ReviewerId:    &userID,
+		Project:       &project,
+	})
+
+	if err != nil {
+		log.Error("Failed to approve pull request", "prID", prID, "error", err)
+		return err
+	}
+
+	log.Info("Pull request approved", "prID", prID)
+	return nil
+}
+
+// CompletePullRequest completes/merges a pull request with no-fast-forward strategy
+func (c *Client) CompletePullRequest(ctx context.Context, project, repositoryID string, prID int) error {
+	log := logging.Logger()
+
+	// Get the PR to obtain the last merge source commit
+	pr, err := c.gitClient.GetPullRequest(ctx, git.GetPullRequestArgs{
+		RepositoryId:  &repositoryID,
+		PullRequestId: &prID,
+		Project:       &project,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get PR details: %w", err)
+	}
+
+	// Get the last merge source commit ID
+	var lastCommit string
+	if pr.LastMergeSourceCommit != nil && pr.LastMergeSourceCommit.CommitId != nil {
+		lastCommit = *pr.LastMergeSourceCommit.CommitId
+	} else {
+		return fmt.Errorf("could not determine last merge source commit")
+	}
+
+	// Set up completion options
+	deleteSourceBranch := false // Keep source branch as per requirements
+	mergeStrategy := git.GitPullRequestMergeStrategyValues.NoFastForward
+	completedStatus := git.PullRequestStatusValues.Completed
+
+	completionOptions := &git.GitPullRequestCompletionOptions{
+		DeleteSourceBranch: &deleteSourceBranch,
+		MergeStrategy:      &mergeStrategy,
+	}
+
+	prUpdate := &git.GitPullRequest{
+		Status:            &completedStatus,
+		CompletionOptions: completionOptions,
+		LastMergeSourceCommit: &git.GitCommitRef{
+			CommitId: &lastCommit,
+		},
+	}
+
+	_, err = c.gitClient.UpdatePullRequest(ctx, git.UpdatePullRequestArgs{
+		GitPullRequestToUpdate: prUpdate,
+		RepositoryId:           &repositoryID,
+		PullRequestId:          &prID,
+		Project:                &project,
+	})
+
+	if err != nil {
+		log.Error("Failed to complete pull request", "prID", prID, "error", err)
+		return err
+	}
+
+	log.Info("Pull request completed", "prID", prID)
+	return nil
 }
