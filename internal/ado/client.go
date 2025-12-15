@@ -282,21 +282,8 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	log := logging.Logger()
 	counts := &DashboardCounts{}
 
-	// Get recent iterations for filtering
-	iterationFilter := ""
-	iterations, err := c.GetRecentIterations(ctx, project)
-	if err != nil {
-		log.Warn("Failed to get iterations for dashboard, proceeding without iteration filter", "project", project, "error", err)
-	} else if len(iterations) > 0 {
-		escapedPaths := make([]string, len(iterations))
-		for i, path := range iterations {
-			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
-		}
-		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
-	}
-
-	// Get work item count using WIQL query with filters
-	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter
+	// Get work item count using WIQL query with filters (last 90 days, exclude closed states)
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed') AND [System.ChangedDate] >= @Today - 90"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
@@ -398,25 +385,8 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkIte
 func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]WorkItem, error) {
 	log := logging.Logger()
 
-	// Get recent iterations for filtering
-	iterationFilter := ""
-	iterations, err := c.GetRecentIterations(ctx, project)
-	if err != nil {
-		log.Warn("Failed to get iterations, proceeding without iteration filter", "project", project, "error", err)
-	} else if len(iterations) > 0 {
-		// Build iteration filter: AND [System.IterationPath] IN ('path1', 'path2')
-		escapedPaths := make([]string, len(iterations))
-		for i, path := range iterations {
-			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
-		}
-		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
-		log.Info("Using sprint filter", "project", project, "sprints", iterations)
-	} else {
-		log.Info("No sprint filter applied", "project", project)
-	}
-
-	// Query for work items with relevant fields
-	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter + " ORDER BY [System.Id] DESC"
+	// Query for work items with relevant fields (last 90 days, exclude closed states)
+	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed') AND [System.ChangedDate] >= @Today - 90 ORDER BY [System.Id] DESC"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
