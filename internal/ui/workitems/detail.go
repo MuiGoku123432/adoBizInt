@@ -3,6 +3,8 @@ package workitems
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -23,17 +25,27 @@ type DetailLoadedMsg struct {
 // CloseDetailMsg signals the detail modal should close
 type CloseDetailMsg struct{}
 
+// AttachmentDownloadedMsg is sent when an attachment download completes
+type AttachmentDownloadedMsg struct {
+	Name string
+	Path string
+	Err  error
+}
+
 // DetailModel represents the work item detail popup
 type DetailModel struct {
-	client   *ado.Client
-	item     *ado.WorkItemDetail
-	itemID   int
-	loading  bool
-	err      error
-	viewport viewport.Model
-	width    int
-	height   int
-	ready    bool
+	client             *ado.Client
+	item               *ado.WorkItemDetail
+	itemID             int
+	loading            bool
+	err                error
+	viewport           viewport.Model
+	width              int
+	height             int
+	ready              bool
+	selectedAttachment int
+	downloading        bool
+	downloadStatus     string
 }
 
 // NewDetailModel creates a new detail modal for a work item
@@ -90,6 +102,15 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			m.updateViewport()
 		}
 
+	case AttachmentDownloadedMsg:
+		m.downloading = false
+		if msg.Err != nil {
+			m.downloadStatus = "Error: " + msg.Err.Error()
+		} else {
+			m.downloadStatus = "Downloaded: " + msg.Name
+		}
+		m.updateViewport()
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "q":
@@ -110,6 +131,25 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			cmds = append(cmds, cmd)
+		case "tab":
+			// Cycle through attachments
+			if m.item != nil && len(m.item.Attachments) > 0 {
+				m.selectedAttachment = (m.selectedAttachment + 1) % len(m.item.Attachments)
+				m.updateViewport()
+			}
+		case "shift+tab":
+			// Cycle backwards through attachments
+			if m.item != nil && len(m.item.Attachments) > 0 {
+				m.selectedAttachment = (m.selectedAttachment - 1 + len(m.item.Attachments)) % len(m.item.Attachments)
+				m.updateViewport()
+			}
+		case "d":
+			// Download selected attachment
+			if m.item != nil && len(m.item.Attachments) > 0 && !m.downloading {
+				m.downloading = true
+				m.downloadStatus = "Downloading..."
+				return m, m.downloadAttachment(m.selectedAttachment)
+			}
 		}
 	}
 
@@ -138,6 +178,17 @@ func (m *DetailModel) updateViewport() {
 		m.viewport.Width = contentWidth
 		m.viewport.Height = modalHeight - 6
 		m.viewport.SetContent(content)
+	}
+}
+
+func (m DetailModel) downloadAttachment(index int) tea.Cmd {
+	att := m.item.Attachments[index]
+	client := m.client
+	return func() tea.Msg {
+		home, _ := os.UserHomeDir()
+		destPath := filepath.Join(home, ".config", "adoBizInt", "attachments", att.Name)
+		err := client.DownloadAttachment(context.Background(), att.URL, destPath)
+		return AttachmentDownloadedMsg{Name: att.Name, Path: destPath, Err: err}
 	}
 }
 
@@ -203,9 +254,13 @@ func (m DetailModel) buildContent(width int) string {
 		b.WriteString("\n")
 		b.WriteString(styles.SubtitleStyle.Render(fmt.Sprintf("Attachments (%d):", len(item.Attachments))))
 		b.WriteString("\n")
-		for _, att := range item.Attachments {
+		for i, att := range item.Attachments {
 			sizeStr := formatSize(att.Size)
-			b.WriteString(fmt.Sprintf("  - %s (%s)\n", att.Name, sizeStr))
+			prefix := "  "
+			if i == m.selectedAttachment {
+				prefix = "> " // Show cursor for selected attachment
+			}
+			b.WriteString(fmt.Sprintf("%s%s (%s)\n", prefix, att.Name, sizeStr))
 		}
 	}
 
@@ -310,12 +365,28 @@ func (m DetailModel) renderFooter(width int) string {
 		scrollInfo = fmt.Sprintf(" %d%%", int(m.viewport.ScrollPercent()*100))
 	}
 
-	helpText := styles.HelpStyle.Render(fmt.Sprintf("[Esc]close  [↑↓]scroll%s", scrollInfo))
+	// Show download status if present
+	statusLine := ""
+	if m.downloadStatus != "" {
+		if strings.HasPrefix(m.downloadStatus, "Error:") {
+			statusLine = styles.ErrorStyle.Render(m.downloadStatus) + "\n"
+		} else {
+			statusLine = styles.SubtitleStyle.Render(m.downloadStatus) + "\n"
+		}
+	}
+
+	// Include attachment help if there are attachments
+	attachHelp := ""
+	if m.item != nil && len(m.item.Attachments) > 0 {
+		attachHelp = "  [Tab]select  [d]download"
+	}
+
+	helpText := styles.HelpStyle.Render(fmt.Sprintf("[Esc]close  [↑↓]scroll%s%s", scrollInfo, attachHelp))
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		"",
 		separator,
-		helpText,
+		statusLine+helpText,
 	)
 }
 

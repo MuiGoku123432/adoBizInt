@@ -2,6 +2,11 @@ package ado
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -702,4 +707,38 @@ func GetNextState(config map[string]map[string]string, workItemType, currentStat
 		}
 	}
 	return "", false
+}
+
+// DownloadAttachment downloads an attachment to the specified path
+func (c *Client) DownloadAttachment(ctx context.Context, url, destPath string) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return err
+	}
+	// connection.AuthorizationString is already "Basic base64..." format
+	req.Header.Set("Authorization", c.connection.AuthorizationString)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed: %s", resp.Status)
+	}
+
+	// Create destination directory if needed
+	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+		return err
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
