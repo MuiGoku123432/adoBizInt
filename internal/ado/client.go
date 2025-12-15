@@ -109,26 +109,34 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 	}
 
 	if iterations == nil || len(*iterations) == 0 {
-		log.Debug("No iterations found for project", "project", project)
+		log.Info("No iterations found for project", "project", project)
 		return nil, nil
 	}
 
-	// Sort iterations by start date descending to get most recent first
 	iterList := *iterations
-	sort.Slice(iterList, func(i, j int) bool {
-		// Handle nil dates - put items without dates at the end
-		if iterList[i].Attributes == nil || iterList[i].Attributes.StartDate == nil {
-			return false
-		}
-		if iterList[j].Attributes == nil || iterList[j].Attributes.StartDate == nil {
-			return true
-		}
-		return iterList[i].Attributes.StartDate.Time.After(iterList[j].Attributes.StartDate.Time)
-	})
 
-	// Find current and previous iterations
-	var recentPaths []string
-	var foundCurrent bool
+	// Log all iterations for debugging
+	for _, iter := range iterList {
+		timeFrame := "unknown"
+		startDate := "unknown"
+		if iter.Attributes != nil {
+			if iter.Attributes.TimeFrame != nil {
+				timeFrame = string(*iter.Attributes.TimeFrame)
+			}
+			if iter.Attributes.StartDate != nil {
+				startDate = iter.Attributes.StartDate.Time.Format("2006-01-02")
+			}
+		}
+		path := "unknown"
+		if iter.Path != nil {
+			path = *iter.Path
+		}
+		log.Info("Found iteration", "project", project, "path", path, "timeFrame", timeFrame, "startDate", startDate)
+	}
+
+	// Find current and past iterations based on TimeFrame attribute
+	var currentPath string
+	var pastPaths []string
 
 	for _, iter := range iterList {
 		if iter.Attributes == nil || iter.Path == nil {
@@ -137,39 +145,76 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 
 		timeFrame := ""
 		if iter.Attributes.TimeFrame != nil {
-			timeFrame = string(*iter.Attributes.TimeFrame)
+			timeFrame = strings.ToLower(string(*iter.Attributes.TimeFrame))
 		}
 
-		// Add current iteration
 		if timeFrame == "current" {
-			recentPaths = append(recentPaths, *iter.Path)
-			foundCurrent = true
-			log.Debug("Found current iteration", "path", *iter.Path)
-		}
-
-		// Add past iterations (up to 1 previous)
-		if timeFrame == "past" && len(recentPaths) < 2 {
-			recentPaths = append(recentPaths, *iter.Path)
-			log.Debug("Found past iteration", "path", *iter.Path)
-		}
-
-		// Stop once we have current + 1 previous
-		if len(recentPaths) >= 2 {
-			break
+			currentPath = *iter.Path
+			log.Info("Selected CURRENT iteration", "path", *iter.Path)
+		} else if timeFrame == "past" {
+			pastPaths = append(pastPaths, *iter.Path)
 		}
 	}
 
-	// If no current iteration found but we have past iterations, use those
-	if !foundCurrent && len(recentPaths) == 0 {
-		// Fall back to most recent iterations by date
+	// Build result: current + most recent past
+	var recentPaths []string
+	if currentPath != "" {
+		recentPaths = append(recentPaths, currentPath)
+	}
+
+	// Sort past iterations by start date descending to get most recent past first
+	if len(pastPaths) > 0 {
+		// Find the iteration objects for past paths and sort by date
+		var pastIters []work.TeamSettingsIteration
+		for _, iter := range iterList {
+			if iter.Path == nil {
+				continue
+			}
+			for _, pp := range pastPaths {
+				if *iter.Path == pp {
+					pastIters = append(pastIters, iter)
+					break
+				}
+			}
+		}
+		sort.Slice(pastIters, func(i, j int) bool {
+			if pastIters[i].Attributes == nil || pastIters[i].Attributes.StartDate == nil {
+				return false
+			}
+			if pastIters[j].Attributes == nil || pastIters[j].Attributes.StartDate == nil {
+				return true
+			}
+			return pastIters[i].Attributes.StartDate.Time.After(pastIters[j].Attributes.StartDate.Time)
+		})
+
+		// Add most recent past iteration
+		if len(pastIters) > 0 && pastIters[0].Path != nil {
+			recentPaths = append(recentPaths, *pastIters[0].Path)
+			log.Info("Selected PAST iteration", "path", *pastIters[0].Path)
+		}
+	}
+
+	// Fallback if no current found - use most recent by date
+	if len(recentPaths) == 0 {
+		log.Warn("No current iteration found, falling back to most recent by date", "project", project)
+		sort.Slice(iterList, func(i, j int) bool {
+			if iterList[i].Attributes == nil || iterList[i].Attributes.StartDate == nil {
+				return false
+			}
+			if iterList[j].Attributes == nil || iterList[j].Attributes.StartDate == nil {
+				return true
+			}
+			return iterList[i].Attributes.StartDate.Time.After(iterList[j].Attributes.StartDate.Time)
+		})
 		for i, iter := range iterList {
 			if iter.Path != nil && i < 2 {
 				recentPaths = append(recentPaths, *iter.Path)
+				log.Info("Selected FALLBACK iteration", "path", *iter.Path)
 			}
 		}
 	}
 
-	log.Debug("Recent iterations found", "project", project, "count", len(recentPaths), "paths", recentPaths)
+	log.Info("Final selected iterations", "project", project, "count", len(recentPaths), "paths", recentPaths)
 	return recentPaths, nil
 }
 
