@@ -2,8 +2,8 @@ package ado
 
 import (
 	"context"
-	"sort"
 	"strings"
+	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
@@ -95,122 +95,99 @@ func (c *Client) CurrentUser() string {
 	return c.currentUser
 }
 
-// GetRecentIterations returns iteration paths for the current and previous sprint
+// GetRecentIterations returns iteration paths for sprints active in the last 90 days
 func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]string, error) {
 	log := logging.Logger()
 
-	// Get all team iterations (without timeframe filter to get all)
-	iterations, err := c.workClient.GetTeamIterations(ctx, work.GetTeamIterationsArgs{
-		Project: &project,
+	// Get all project iterations using classification nodes API
+	depth := 10 // Get nested iterations up to 10 levels deep
+	structureGroup := workitemtracking.TreeStructureGroupValues.Iterations
+	nodes, err := c.workitemClient.GetClassificationNode(ctx, workitemtracking.GetClassificationNodeArgs{
+		Project:        &project,
+		StructureGroup: &structureGroup,
+		Depth:          &depth,
 	})
 	if err != nil {
-		log.Warn("Failed to get team iterations", "project", project, "error", err)
+		log.Warn("Failed to get project iterations", "project", project, "error", err)
 		return nil, err
 	}
 
-	if iterations == nil || len(*iterations) == 0 {
+	if nodes == nil {
 		log.Info("No iterations found for project", "project", project)
 		return nil, nil
 	}
 
-	iterList := *iterations
-
-	// Log all iterations for debugging
-	for _, iter := range iterList {
-		timeFrame := "unknown"
-		startDate := "unknown"
-		if iter.Attributes != nil {
-			if iter.Attributes.TimeFrame != nil {
-				timeFrame = string(*iter.Attributes.TimeFrame)
-			}
-			if iter.Attributes.StartDate != nil {
-				startDate = iter.Attributes.StartDate.Time.Format("2006-01-02")
-			}
-		}
-		path := "unknown"
-		if iter.Path != nil {
-			path = *iter.Path
-		}
-		log.Info("Found iteration", "project", project, "path", path, "timeFrame", timeFrame, "startDate", startDate)
-	}
-
-	// Find current and past iterations based on TimeFrame attribute
-	var currentPath string
-	var pastPaths []string
-
-	for _, iter := range iterList {
-		if iter.Attributes == nil || iter.Path == nil {
-			continue
-		}
-
-		timeFrame := ""
-		if iter.Attributes.TimeFrame != nil {
-			timeFrame = strings.ToLower(string(*iter.Attributes.TimeFrame))
-		}
-
-		if timeFrame == "current" {
-			currentPath = *iter.Path
-			log.Info("Selected CURRENT iteration", "path", *iter.Path)
-		} else if timeFrame == "past" {
-			pastPaths = append(pastPaths, *iter.Path)
-		}
-	}
-
-	// Build result: current + most recent past
+	// Collect all iteration paths with dates from the last 90 days
+	cutoffDate := time.Now().AddDate(0, 0, -90)
 	var recentPaths []string
-	if currentPath != "" {
-		recentPaths = append(recentPaths, currentPath)
-	}
 
-	// Sort past iterations by start date descending to get most recent past first
-	if len(pastPaths) > 0 {
-		// Find the iteration objects for past paths and sort by date
-		var pastIters []work.TeamSettingsIteration
-		for _, iter := range iterList {
-			if iter.Path == nil {
-				continue
+	// Recursively collect iterations
+	var collectIterations func(node *workitemtracking.WorkItemClassificationNode, parentPath string)
+	collectIterations = func(node *workitemtracking.WorkItemClassificationNode, parentPath string) {
+		if node == nil {
+			return
+		}
+
+		currentPath := parentPath
+		if node.Name != nil {
+			if parentPath != "" {
+				currentPath = parentPath + "\\" + *node.Name
+			} else {
+				currentPath = *node.Name
 			}
-			for _, pp := range pastPaths {
-				if *iter.Path == pp {
-					pastIters = append(pastIters, iter)
-					break
+		}
+
+		// Check if this iteration has dates within last 90 days
+		if node.Attributes != nil {
+			attrs := *node.Attributes
+			startDate, hasStart := attrs["startDate"]
+			finishDate, hasFinish := attrs["finishDate"]
+
+			var start, finish time.Time
+			if hasStart && startDate != nil {
+				if t, ok := startDate.(time.Time); ok {
+					start = t
+				} else if s, ok := startDate.(string); ok {
+					start, _ = time.Parse(time.RFC3339, s)
+				}
+			}
+			if hasFinish && finishDate != nil {
+				if t, ok := finishDate.(time.Time); ok {
+					finish = t
+				} else if s, ok := finishDate.(string); ok {
+					finish, _ = time.Parse(time.RFC3339, s)
+				}
+			}
+
+			// Include iteration if it overlaps with last 90 days
+			// (start date is after cutoff OR finish date is after cutoff)
+			if !start.IsZero() || !finish.IsZero() {
+				includeIteration := false
+				if !finish.IsZero() && finish.After(cutoffDate) {
+					includeIteration = true
+				} else if !start.IsZero() && start.After(cutoffDate) {
+					includeIteration = true
+				}
+
+				if includeIteration && node.Path != nil {
+					recentPaths = append(recentPaths, *node.Path)
+					log.Info("Found recent iteration", "path", *node.Path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
 				}
 			}
 		}
-		sort.Slice(pastIters, func(i, j int) bool {
-			if pastIters[i].Attributes == nil || pastIters[i].Attributes.StartDate == nil {
-				return false
-			}
-			if pastIters[j].Attributes == nil || pastIters[j].Attributes.StartDate == nil {
-				return true
-			}
-			return pastIters[i].Attributes.StartDate.Time.After(pastIters[j].Attributes.StartDate.Time)
-		})
 
-		// Add most recent past iteration
-		if len(pastIters) > 0 && pastIters[0].Path != nil {
-			recentPaths = append(recentPaths, *pastIters[0].Path)
-			log.Info("Selected PAST iteration", "path", *pastIters[0].Path)
+		// Process children
+		if node.Children != nil {
+			for _, child := range *node.Children {
+				collectIterations(&child, currentPath)
+			}
 		}
 	}
 
-	// Fallback if no current found - use most recent by date
-	if len(recentPaths) == 0 {
-		log.Warn("No current iteration found, falling back to most recent by date", "project", project)
-		sort.Slice(iterList, func(i, j int) bool {
-			if iterList[i].Attributes == nil || iterList[i].Attributes.StartDate == nil {
-				return false
-			}
-			if iterList[j].Attributes == nil || iterList[j].Attributes.StartDate == nil {
-				return true
-			}
-			return iterList[i].Attributes.StartDate.Time.After(iterList[j].Attributes.StartDate.Time)
-		})
-		for i, iter := range iterList {
-			if iter.Path != nil && i < 2 {
-				recentPaths = append(recentPaths, *iter.Path)
-				log.Info("Selected FALLBACK iteration", "path", *iter.Path)
-			}
+	// Start from the root node's children (the root is just "Iterations")
+	if nodes.Children != nil {
+		for _, child := range *nodes.Children {
+			collectIterations(&child, "")
 		}
 	}
 
@@ -282,8 +259,21 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	log := logging.Logger()
 	counts := &DashboardCounts{}
 
-	// Get work item count using WIQL query with filters (last 90 days, exclude closed states)
-	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed') AND [System.ChangedDate] >= @Today - 90"
+	// Get recent iterations (sprints active in last 90 days)
+	iterationFilter := ""
+	iterations, err := c.GetRecentIterations(ctx, project)
+	if err != nil {
+		log.Warn("Failed to get iterations for dashboard, using date filter only", "project", project, "error", err)
+	} else if len(iterations) > 0 {
+		escapedPaths := make([]string, len(iterations))
+		for i, path := range iterations {
+			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
+		}
+		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
+	}
+
+	// Get work item count using WIQL query with filters
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
@@ -385,8 +375,22 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkIte
 func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]WorkItem, error) {
 	log := logging.Logger()
 
-	// Query for work items with relevant fields (last 90 days, exclude closed states)
-	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed') AND [System.ChangedDate] >= @Today - 90 ORDER BY [System.Id] DESC"
+	// Get recent iterations (sprints active in last 90 days)
+	iterationFilter := ""
+	iterations, err := c.GetRecentIterations(ctx, project)
+	if err != nil {
+		log.Warn("Failed to get iterations, using date filter only", "project", project, "error", err)
+	} else if len(iterations) > 0 {
+		escapedPaths := make([]string, len(iterations))
+		for i, path := range iterations {
+			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
+		}
+		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
+		log.Info("Using iteration filter", "project", project, "sprints", iterations)
+	}
+
+	// Query for work items with relevant fields
+	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter + " ORDER BY [System.Id] DESC"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
