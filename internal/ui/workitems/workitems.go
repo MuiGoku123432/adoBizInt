@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
+	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -39,6 +40,15 @@ type WorkItemsMsg struct {
 	Items []ado.WorkItem
 	Err   error
 }
+
+// viewWrapper wraps a pre-rendered view string for overlay
+type viewWrapper struct {
+	content string
+}
+
+func (w viewWrapper) Init() tea.Cmd                         { return nil }
+func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd)   { return w, nil }
+func (w viewWrapper) View() string                          { return w.content }
 
 // StateUpdateMsg is sent when a work item state is updated
 type StateUpdateMsg struct {
@@ -369,12 +379,16 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
-	// If detail modal is open, show modal centered on screen
+	// If detail modal is open, use overlay to composite modal on top of table
 	if m.showDetail && m.detailModal != nil {
+		// Create overlay fresh with current state - avoids stale pointer issues
 		modalView := m.detailModal.View()
-		return lipgloss.Place(m.width, m.height,
-			lipgloss.Center, lipgloss.Center,
-			modalView)
+		tableView := m.renderTableView()
+
+		fg := viewWrapper{content: modalView}
+		bg := viewWrapper{content: tableView}
+		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
+		return o.View()
 	}
 
 	return m.renderTableView()
