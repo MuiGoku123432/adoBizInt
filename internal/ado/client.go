@@ -235,18 +235,41 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	log := logging.Logger()
 	counts := &DashboardCounts{}
 
-	// Get work item count using WIQL query
-	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "'"
+	// Get recent iterations for filtering
+	iterationFilter := ""
+	iterations, err := c.GetRecentIterations(ctx, project)
+	if err != nil {
+		log.Warn("Failed to get iterations for dashboard, proceeding without iteration filter", "project", project, "error", err)
+	} else if len(iterations) > 0 {
+		escapedPaths := make([]string, len(iterations))
+		for i, path := range iterations {
+			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
+		}
+		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
+	}
+
+	// Build user filter: current user's items OR unassigned items
+	userFilter := ""
+	if c.currentUser != "" {
+		escapedUser := strings.ReplaceAll(c.currentUser, "'", "''")
+		userFilter = " AND ([System.AssignedTo] = '" + escapedUser + "' OR [System.AssignedTo] = '')"
+	}
+
+	// Get work item count using WIQL query with filters
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed')" + iterationFilter + userFilter
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
 	}
+
+	log.Info("Executing dashboard WIQL query", "project", project, "query", wiql)
 
 	workItems, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
 		log.Error("Failed to query work items", "project", project, "error", err)
 	} else if workItems != nil && workItems.WorkItems != nil {
 		counts.WorkItems = len(*workItems.WorkItems)
+		log.Info("Dashboard work item count", "project", project, "count", counts.WorkItems)
 	}
 
 	// Get PR count
@@ -353,7 +376,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		Project: &project,
 	}
 
-	log.Debug("Executing WIQL query", "project", project, "query", wiql)
+	log.Info("Executing WIQL query", "project", project, "query", wiql)
 
 	result, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
