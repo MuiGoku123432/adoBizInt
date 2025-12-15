@@ -13,7 +13,6 @@ import (
 	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
-	"sentinovo.ai/bizInt/internal/logging"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 )
 
@@ -357,19 +356,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) buildRows() []table.Row {
-	log := logging.Logger()
 	var rows []table.Row
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
-
-	// Log current user for debugging filter
-	if m.assignedToMeFilter {
-		log.Debug("Assigned to Me filter active", "currentUserEmail", m.currentUserEmail, "currentUser", m.currentUser)
-	}
 
 	for _, item := range m.items {
 		// Apply "Assigned to Me" filter (compare emails, case-insensitive)
 		if m.assignedToMeFilter && m.currentUserEmail != "" && !strings.EqualFold(item.AssignedToEmail, m.currentUserEmail) {
-			log.Debug("Filtered out item - email mismatch", "itemID", item.ID, "assignedToEmail", item.AssignedToEmail, "currentUserEmail", m.currentUserEmail)
 			continue
 		}
 		// Apply "Hide Done/Resolved" filter

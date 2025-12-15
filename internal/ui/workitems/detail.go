@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/logging"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 )
 
@@ -46,14 +47,24 @@ func NewDetailModel(client *ado.Client, itemID int) DetailModel {
 
 // Init initializes the detail modal and fetches work item details
 func (m DetailModel) Init() tea.Cmd {
+	log := logging.Logger()
+	log.Debug("DetailModel.Init called", "itemID", m.itemID)
 	return m.fetchDetail()
 }
 
 func (m DetailModel) fetchDetail() tea.Cmd {
 	id := m.itemID
 	client := m.client
+	log := logging.Logger()
+	log.Debug("fetchDetail called", "itemID", id)
 	return func() tea.Msg {
+		log.Debug("fetchDetail goroutine starting", "itemID", id)
 		detail, err := client.GetWorkItemDetail(context.Background(), id)
+		if err != nil {
+			log.Debug("fetchDetail error", "itemID", id, "error", err)
+		} else {
+			log.Debug("fetchDetail success", "itemID", id, "hasDetail", detail != nil)
+		}
 		return DetailLoadedMsg{Item: detail, Err: err}
 	}
 }
@@ -69,6 +80,8 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		m.updateViewport()
 
 	case DetailLoadedMsg:
+		log := logging.Logger()
+		log.Debug("DetailLoadedMsg received", "hasItem", msg.Item != nil, "hasErr", msg.Err != nil)
 		m.loading = false
 		if msg.Err != nil {
 			m.err = msg.Err
