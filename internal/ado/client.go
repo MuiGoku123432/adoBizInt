@@ -117,8 +117,8 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 		return nil, nil
 	}
 
-	// Collect all iteration paths with dates from the last 90 days
-	cutoffDate := time.Now().AddDate(0, 0, -90)
+	// Collect all iteration paths with dates from the last 30 days
+	cutoffDate := time.Now().AddDate(0, 0, -30)
 	var recentPaths []string
 
 	// Recursively collect iterations
