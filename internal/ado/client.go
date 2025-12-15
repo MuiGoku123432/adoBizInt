@@ -170,19 +170,31 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 				}
 
 				if includeIteration && node.Path != nil {
+					// Log raw path from API for debugging
+					rawPath := *node.Path
+					log.Info("DEBUG: Raw iteration path from API", "rawPath", rawPath)
+
 					// Clean up the iteration path for WIQL
 					// API returns paths like \Project\Iteration\Sprint or \Process\Iteration\Sprint
 					// WIQL expects ProjectName\Sprint (no "Iteration\" in the middle)
-					path := strings.TrimPrefix(*node.Path, "\\")
+					path := strings.TrimPrefix(rawPath, "\\")
+					log.Info("DEBUG: After TrimPrefix backslash", "path", path)
+
 					path = strings.TrimPrefix(path, "Process\\Iteration\\")
+					log.Info("DEBUG: After TrimPrefix Process\\Iteration\\", "path", path)
+
 					// Remove "\Iteration\" from the middle of the path (e.g., "Project\Iteration\Sprint" -> "Project\Sprint")
 					path = strings.Replace(path, "\\Iteration\\", "\\", 1)
+					log.Info("DEBUG: After Replace \\Iteration\\", "path", path)
+
 					// If path doesn't start with project name, prepend it
 					if !strings.HasPrefix(path, project+"\\") && !strings.HasPrefix(path, project+"/") {
+						log.Info("DEBUG: Prepending project name", "project", project, "pathBefore", path)
 						path = project + "\\" + path
 					}
+
+					log.Info("DEBUG: Final iteration path", "project", project, "finalPath", path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
 					recentPaths = append(recentPaths, path)
-					log.Info("Found recent iteration", "path", path, "start", start.Format("2006-01-02"), "finish", finish.Format("2006-01-02"))
 				}
 			}
 		}
