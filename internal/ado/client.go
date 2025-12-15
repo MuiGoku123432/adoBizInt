@@ -2,12 +2,15 @@ package ado
 
 import (
 	"context"
+	"sort"
+	"strings"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/location"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
 
 	"sentinovo.ai/bizInt/internal/config"
@@ -17,6 +20,7 @@ import (
 type Client struct {
 	connection     *azuredevops.Connection
 	workitemClient workitemtracking.Client
+	workClient     work.Client
 	gitClient      git.Client
 	buildClient    build.Client
 	projects       []string
@@ -43,6 +47,11 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		return nil, err
 	}
 
+	workClient, err := work.NewClient(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+
 	// Fetch current user from PAT identity
 	locationClient := location.NewClient(ctx, connection)
 	currentUser := ""
@@ -56,6 +65,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	return &Client{
 		connection:     connection,
 		workitemClient: workitemClient,
+		workClient:     workClient,
 		gitClient:      gitClient,
 		buildClient:    buildClient,
 		projects:       cfg.Projects,
@@ -81,6 +91,84 @@ func (c *Client) BuildClient() build.Client {
 
 func (c *Client) CurrentUser() string {
 	return c.currentUser
+}
+
+// GetRecentIterations returns iteration paths for the current and previous sprint
+func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]string, error) {
+	log := logging.Logger()
+
+	// Get all team iterations (without timeframe filter to get all)
+	iterations, err := c.workClient.GetTeamIterations(ctx, work.GetTeamIterationsArgs{
+		Project: &project,
+	})
+	if err != nil {
+		log.Warn("Failed to get team iterations", "project", project, "error", err)
+		return nil, err
+	}
+
+	if iterations == nil || len(*iterations) == 0 {
+		log.Debug("No iterations found for project", "project", project)
+		return nil, nil
+	}
+
+	// Sort iterations by start date descending to get most recent first
+	iterList := *iterations
+	sort.Slice(iterList, func(i, j int) bool {
+		// Handle nil dates - put items without dates at the end
+		if iterList[i].Attributes == nil || iterList[i].Attributes.StartDate == nil {
+			return false
+		}
+		if iterList[j].Attributes == nil || iterList[j].Attributes.StartDate == nil {
+			return true
+		}
+		return iterList[i].Attributes.StartDate.Time.After(iterList[j].Attributes.StartDate.Time)
+	})
+
+	// Find current and previous iterations
+	var recentPaths []string
+	var foundCurrent bool
+
+	for _, iter := range iterList {
+		if iter.Attributes == nil || iter.Path == nil {
+			continue
+		}
+
+		timeFrame := ""
+		if iter.Attributes.TimeFrame != nil {
+			timeFrame = string(*iter.Attributes.TimeFrame)
+		}
+
+		// Add current iteration
+		if timeFrame == "current" {
+			recentPaths = append(recentPaths, *iter.Path)
+			foundCurrent = true
+			log.Debug("Found current iteration", "path", *iter.Path)
+		}
+
+		// Add past iterations (up to 1 previous)
+		if timeFrame == "past" && len(recentPaths) < 2 {
+			recentPaths = append(recentPaths, *iter.Path)
+			log.Debug("Found past iteration", "path", *iter.Path)
+		}
+
+		// Stop once we have current + 1 previous
+		if len(recentPaths) >= 2 {
+			break
+		}
+	}
+
+	// If no current iteration found but we have past iterations, use those
+	if !foundCurrent && len(recentPaths) == 0 {
+		// Fall back to most recent iterations by date
+		for i, iter := range iterList {
+			if iter.Path != nil && i < 2 {
+				recentPaths = append(recentPaths, *iter.Path)
+			}
+		}
+	}
+
+	log.Debug("Recent iterations found", "project", project, "count", len(recentPaths), "paths", recentPaths)
+	return recentPaths, nil
 }
 
 // DashboardCounts holds summary counts for the dashboard
@@ -233,8 +321,23 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkIte
 func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]WorkItem, error) {
 	log := logging.Logger()
 
+	// Get recent iterations for filtering
+	iterationFilter := ""
+	iterations, err := c.GetRecentIterations(ctx, project)
+	if err != nil {
+		log.Warn("Failed to get iterations, proceeding without iteration filter", "project", project, "error", err)
+	} else if len(iterations) > 0 {
+		// Build iteration filter: AND [System.IterationPath] IN ('path1', 'path2')
+		escapedPaths := make([]string, len(iterations))
+		for i, path := range iterations {
+			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
+		}
+		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
+		log.Debug("Using iteration filter", "project", project, "iterations", iterations)
+	}
+
 	// Query for work items with relevant fields
-	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed') ORDER BY [System.Id] DESC"
+	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Resolved', 'Removed')" + iterationFilter + " ORDER BY [System.Id] DESC"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
