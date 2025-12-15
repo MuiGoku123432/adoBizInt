@@ -55,9 +55,8 @@ var DefaultStateTransitions = map[string]map[string]string{
 		"Resolved": "Closed",
 	},
 	"Task": {
-		"New":      "Active",
-		"Active":   "Resolved",
-		"Resolved": "Closed",
+		"New":    "Active",
+		"Active": "Closed",
 	},
 	"Bug": {
 		"New":      "Active",
