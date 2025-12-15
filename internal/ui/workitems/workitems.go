@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
-	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -41,32 +40,6 @@ type WorkItemsMsg struct {
 	Err   error
 }
 
-// modelWrapper wraps a Model to satisfy tea.Model interface for overlay
-type modelWrapper struct {
-	m *Model
-}
-
-func (w modelWrapper) Init() tea.Cmd { return nil }
-func (w modelWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return w, nil // Overlay doesn't call Update, this is just to satisfy interface
-}
-func (w modelWrapper) View() string {
-	return w.m.renderTableView()
-}
-
-// detailWrapper wraps a DetailModel to satisfy tea.Model interface for overlay
-type detailWrapper struct {
-	m *DetailModel
-}
-
-func (w detailWrapper) Init() tea.Cmd { return nil }
-func (w detailWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	return w, nil // Overlay doesn't call Update, this is just to satisfy interface
-}
-func (w detailWrapper) View() string {
-	return w.m.View()
-}
-
 // StateUpdateMsg is sent when a work item state is updated
 type StateUpdateMsg struct {
 	ItemID   int
@@ -95,7 +68,6 @@ type Model struct {
 	// Detail modal
 	detailModal *DetailModel
 	showDetail  bool
-	overlay     *overlay.Model
 }
 
 func New(client *ado.Client, projects []string, stateTransitions map[string]map[string]string) Model {
@@ -211,7 +183,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	if _, ok := msg.(CloseDetailMsg); ok {
 		m.showDetail = false
 		m.detailModal = nil
-		m.overlay = nil
 		return m, nil
 	}
 
@@ -227,8 +198,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		newModal, cmd := m.detailModal.Update(msg)
 		m.detailModal = &newModal
-		// Recreate overlay with updated models (use wrappers to satisfy tea.Model interface)
-		m.overlay = overlay.New(detailWrapper{m.detailModal}, modelWrapper{&m}, overlay.Center, overlay.Center, 0, 0)
 		return m, cmd
 	}
 
@@ -400,9 +369,12 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
-	// If detail modal is open, use overlay to composite
-	if m.showDetail && m.detailModal != nil && m.overlay != nil {
-		return m.overlay.View()
+	// If detail modal is open, show modal centered on screen
+	if m.showDetail && m.detailModal != nil {
+		modalView := m.detailModal.View()
+		return lipgloss.Place(m.width, m.height,
+			lipgloss.Center, lipgloss.Center,
+			modalView)
 	}
 
 	return m.renderTableView()
@@ -551,9 +523,6 @@ func (m *Model) openDetailModal() tea.Cmd {
 	detail.height = m.height
 	m.detailModal = &detail
 	m.showDetail = true
-
-	// Create overlay with modal centered on top of table view (use wrappers to satisfy tea.Model interface)
-	m.overlay = overlay.New(detailWrapper{m.detailModal}, modelWrapper{m}, overlay.Center, overlay.Center, 0, 0)
 
 	return m.detailModal.Init()
 }
