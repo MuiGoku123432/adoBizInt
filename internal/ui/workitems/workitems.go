@@ -1,0 +1,461 @@
+package workitems
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/evertras/bubble-table/table"
+
+	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/styles"
+)
+
+const (
+	columnKeyID      = "id"
+	columnKeyType    = "type"
+	columnKeyStatus  = "status"
+	columnKeyTitle   = "title"
+	columnKeySummary = "summary"
+	columnKeyPoints  = "points"
+	columnKeyActions = "actions"
+)
+
+// States considered "done" or "resolved" for filtering
+var doneStates = map[string]bool{
+	"Done":     true,
+	"Closed":   true,
+	"Resolved": true,
+	"Removed":  true,
+}
+
+// WorkItemsMsg is sent when work items are fetched
+type WorkItemsMsg struct {
+	Items []ado.WorkItem
+	Err   error
+}
+
+// StateUpdateMsg is sent when a work item state is updated
+type StateUpdateMsg struct {
+	ItemID   int
+	NewState string
+	Err      error
+}
+
+type Model struct {
+	client             *ado.Client
+	projects           []string
+	table              table.Model
+	searchInput        textinput.Model
+	items              []ado.WorkItem
+	loading            bool
+	err                error
+	width              int
+	height             int
+	assignedToMeFilter bool
+	hideDoneFilter     bool
+	currentUser        string
+	filterFocused      int // 0 = table, 1 = checkbox 1, 2 = checkbox 2, 3 = search
+	stateTransitions   map[string]map[string]string
+	statusMsg          string
+	statusErr          bool
+}
+
+func New(client *ado.Client, projects []string, stateTransitions map[string]map[string]string) Model {
+	// Create search input
+	search := textinput.New()
+	search.Placeholder = "Search work items..."
+	search.Width = 30
+
+	// Create table with columns
+	columns := []table.Column{
+		table.NewColumn(columnKeyID, "ID", 6).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
+		table.NewColumn(columnKeyType, "Type", 12),
+		table.NewColumn(columnKeyStatus, "Status", 12),
+		table.NewColumn(columnKeyTitle, "Title", 25),
+		table.NewColumn(columnKeySummary, "Summary", 22),
+		table.NewColumn(columnKeyPoints, "Points", 6).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
+		table.NewColumn(columnKeyActions, "Actions", 10),
+	}
+
+	t := table.New(columns).
+		WithBaseStyle(lipgloss.NewStyle().Align(lipgloss.Left)).
+		WithTargetWidth(80).
+		BorderRounded().
+		Focused(true).
+		WithPageSize(15)
+
+	return Model{
+		client:             client,
+		projects:           projects,
+		table:              t,
+		searchInput:        search,
+		loading:            true,
+		assignedToMeFilter: true,
+		hideDoneFilter:     true,
+		currentUser:        client.CurrentUser(),
+		filterFocused:      0,
+		stateTransitions:   stateTransitions,
+	}
+}
+
+func (m Model) Init() tea.Cmd {
+	return m.fetchWorkItems()
+}
+
+func (m Model) fetchWorkItems() tea.Cmd {
+	projects := m.projects
+	return func() tea.Msg {
+		items, err := m.client.GetWorkItems(context.Background(), projects)
+		return WorkItemsMsg{Items: items, Err: err}
+	}
+}
+
+func (m Model) updateSelectedItemState() tea.Cmd {
+	// Get the highlighted row from the table
+	highlightedRow := m.table.HighlightedRow()
+	if highlightedRow.Data == nil {
+		return func() tea.Msg {
+			return StateUpdateMsg{Err: fmt.Errorf("no item selected")}
+		}
+	}
+
+	// Get the ID from the row data
+	idStr, ok := highlightedRow.Data[columnKeyID].(string)
+	if !ok {
+		return func() tea.Msg {
+			return StateUpdateMsg{Err: fmt.Errorf("invalid item ID")}
+		}
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return func() tea.Msg {
+			return StateUpdateMsg{Err: fmt.Errorf("invalid item ID: %s", idStr)}
+		}
+	}
+
+	// Find the work item in our items list
+	var item *ado.WorkItem
+	for i := range m.items {
+		if m.items[i].ID == id {
+			item = &m.items[i]
+			break
+		}
+	}
+	if item == nil {
+		return func() tea.Msg {
+			return StateUpdateMsg{Err: fmt.Errorf("work item #%d not found", id)}
+		}
+	}
+
+	// Get the next state from config
+	nextState, hasNext := ado.GetNextState(m.stateTransitions, item.Type, item.State)
+	if !hasNext {
+		return func() tea.Msg {
+			return StateUpdateMsg{Err: fmt.Errorf("no next state defined for %s in %s", item.Type, item.State)}
+		}
+	}
+
+	// Create async command to update the state
+	client := m.client
+	return func() tea.Msg {
+		err := client.UpdateWorkItemState(context.Background(), id, nextState)
+		return StateUpdateMsg{ItemID: id, NewState: nextState, Err: err}
+	}
+}
+
+func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		// Update table width
+		m.table = m.table.WithTargetWidth(msg.Width - 4)
+
+	case WorkItemsMsg:
+		m.loading = false
+		if msg.Err != nil {
+			m.err = msg.Err
+		} else {
+			m.items = msg.Items
+			m.table = m.table.WithRows(m.buildRows())
+		}
+
+	case StateUpdateMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error: " + msg.Err.Error()
+			m.statusErr = true
+		} else {
+			m.statusMsg = fmt.Sprintf("Updated #%d to %s", msg.ItemID, msg.NewState)
+			m.statusErr = false
+			// Refresh work items to get updated state
+			return m, m.fetchWorkItems()
+		}
+
+	case tea.KeyMsg:
+		// Handle search input when focused
+		if m.filterFocused == 3 {
+			switch msg.String() {
+			case "esc":
+				m.searchInput.SetValue("")
+				m.searchInput.Blur()
+				m.filterFocused = 0
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			case "enter":
+				m.searchInput.Blur()
+				m.filterFocused = 0
+				return m, nil
+			case "tab":
+				m.searchInput.Blur()
+				m.filterFocused = 0
+				return m, nil
+			case "shift+tab":
+				m.searchInput.Blur()
+				m.filterFocused = 2
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				prevValue := m.searchInput.Value()
+				m.searchInput, cmd = m.searchInput.Update(msg)
+				if m.searchInput.Value() != prevValue {
+					m.table = m.table.WithRows(m.buildRows())
+				}
+				return m, cmd
+			}
+		}
+
+		switch msg.String() {
+		case "tab":
+			m.filterFocused = (m.filterFocused + 1) % 4
+			if m.filterFocused == 3 {
+				m.searchInput.Focus()
+			}
+			return m, nil
+		case "shift+tab":
+			m.filterFocused = (m.filterFocused + 3) % 4
+			if m.filterFocused == 3 {
+				m.searchInput.Focus()
+			}
+			return m, nil
+		case "/":
+			m.filterFocused = 3
+			m.searchInput.Focus()
+			return m, nil
+		case "esc":
+			if m.searchInput.Value() != "" {
+				m.searchInput.SetValue("")
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			}
+		case " ", "enter":
+			if m.filterFocused == 1 {
+				m.assignedToMeFilter = !m.assignedToMeFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			} else if m.filterFocused == 2 {
+				m.hideDoneFilter = !m.hideDoneFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			}
+		case "n":
+			// Move to next state when table is focused
+			if m.filterFocused == 0 {
+				return m, m.updateSelectedItemState()
+			}
+		}
+		// Only pass key events to table if table is focused
+		if m.filterFocused == 0 {
+			var cmd tea.Cmd
+			m.table, cmd = m.table.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	return m, tea.Batch(cmds...)
+}
+
+func (m Model) buildRows() []table.Row {
+	var rows []table.Row
+	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
+
+	for _, item := range m.items {
+		// Apply "Assigned to Me" filter
+		if m.assignedToMeFilter && m.currentUser != "" && item.AssignedTo != m.currentUser {
+			continue
+		}
+		// Apply "Hide Done/Resolved" filter
+		if m.hideDoneFilter && doneStates[item.State] {
+			continue
+		}
+		// Apply search filter (ID or Title)
+		if searchQuery != "" {
+			idStr := fmt.Sprintf("%d", item.ID)
+			titleLower := strings.ToLower(item.Title)
+			if !strings.Contains(idStr, searchQuery) && !strings.Contains(titleLower, searchQuery) {
+				continue
+			}
+		}
+		// Determine if "Next" action is available
+		actionText := ""
+		if _, hasNext := ado.GetNextState(m.stateTransitions, item.Type, item.State); hasNext {
+			actionText = "[n] Next"
+		}
+
+		// Style the type with color
+		styledType := getTypeStyle(item.Type).Render(item.Type)
+
+		rows = append(rows, table.NewRow(table.RowData{
+			columnKeyID:      fmt.Sprintf("%d", item.ID),
+			columnKeyType:    styledType,
+			columnKeyStatus:  item.State,
+			columnKeyTitle:   truncate(item.Title, 23),
+			columnKeySummary: truncate(stripHTML(item.Summary), 20),
+			columnKeyPoints:  fmt.Sprintf("%d", item.StoryPoints),
+			columnKeyActions: actionText,
+		}))
+	}
+	return rows
+}
+
+func (m Model) View() string {
+	var b strings.Builder
+
+	// Title
+	title := styles.TitleStyle.Render("Work Items")
+	b.WriteString(title)
+	b.WriteString("\n")
+
+	// Filter checkboxes row
+	b.WriteString(m.renderFilters())
+	b.WriteString("\n\n")
+
+	// Show error if any
+	if m.err != nil {
+		b.WriteString(styles.ErrorStyle.Render("Error: " + m.err.Error()))
+		b.WriteString("\n\n")
+	}
+
+	// Show loading or table
+	if m.loading {
+		b.WriteString(styles.SubtitleStyle.Render("Loading work items..."))
+	} else if len(m.items) == 0 {
+		b.WriteString(styles.SubtitleStyle.Render("No work items found"))
+	} else {
+		// Show filtered count
+		filteredCount := len(m.buildRows())
+		totalCount := len(m.items)
+		countInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Showing %d of %d items", filteredCount, totalCount))
+		b.WriteString(countInfo)
+		b.WriteString("\n")
+		b.WriteString(m.table.View())
+	}
+
+	b.WriteString("\n")
+
+	// Show status message if any
+	if m.statusMsg != "" {
+		if m.statusErr {
+			b.WriteString(styles.ErrorStyle.Render(m.statusMsg))
+		} else {
+			b.WriteString(styles.SubtitleStyle.Render(m.statusMsg))
+		}
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+
+	// Help bar
+	helpText := styles.HelpStyle.Render("[Tab] cycle  [Space] toggle  [/] search  [n] next state  [1] Dashboard  [2] Work Items")
+	b.WriteString(helpText)
+
+	return b.String()
+}
+
+func (m Model) renderFilters() string {
+	check := func(on bool) string {
+		if on {
+			return "[x]"
+		}
+		return "[ ]"
+	}
+
+	assignedLabel := fmt.Sprintf("%s Assigned to Me", check(m.assignedToMeFilter))
+	doneLabel := fmt.Sprintf("%s Hide Done/Resolved", check(m.hideDoneFilter))
+
+	if m.filterFocused == 1 {
+		assignedLabel = styles.SelectedStyle.Render(assignedLabel)
+	}
+	if m.filterFocused == 2 {
+		doneLabel = styles.SelectedStyle.Render(doneLabel)
+	}
+
+	// Build search box
+	searchLabel := fmt.Sprintf("Search: %s", m.searchInput.View())
+	if m.filterFocused == 3 {
+		searchLabel = styles.SelectedStyle.Render(searchLabel)
+	}
+
+	return fmt.Sprintf("Filters: %s   %s   %s", assignedLabel, doneLabel, searchLabel)
+}
+
+// truncate truncates a string to maxLen and adds "..." if truncated
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	if maxLen <= 3 {
+		return s[:maxLen]
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// stripHTML removes HTML tags from a string (basic implementation)
+func stripHTML(s string) string {
+	var result strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+		} else if r == '>' {
+			inTag = false
+		} else if !inTag {
+			result.WriteRune(r)
+		}
+	}
+	// Clean up whitespace
+	text := result.String()
+	text = strings.ReplaceAll(text, "\n", " ")
+	text = strings.ReplaceAll(text, "\r", " ")
+	text = strings.ReplaceAll(text, "\t", " ")
+	// Collapse multiple spaces
+	for strings.Contains(text, "  ") {
+		text = strings.ReplaceAll(text, "  ", " ")
+	}
+	return strings.TrimSpace(text)
+}
+
+// getTypeStyle returns the appropriate style for a work item type
+func getTypeStyle(itemType string) lipgloss.Style {
+	switch itemType {
+	case "User Story":
+		return styles.UserStoryStyle
+	case "Task":
+		return styles.TaskStyle
+	case "Bug":
+		return styles.BugStyle
+	case "Feature":
+		return styles.FeatureStyle
+	case "Epic":
+		return styles.EpicStyle
+	default:
+		return lipgloss.NewStyle()
+	}
+}
