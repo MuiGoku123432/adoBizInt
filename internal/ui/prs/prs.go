@@ -51,6 +51,7 @@ type Model struct {
 	client        *ado.Client
 	orgURL        string
 	projects      []string
+	repositories  []string
 	table         table.Model
 	searchInput   textinput.Model
 	items         []ado.PullRequest
@@ -64,7 +65,7 @@ type Model struct {
 	actionPending bool
 }
 
-func New(client *ado.Client, orgURL string, projects []string) Model {
+func New(client *ado.Client, orgURL string, projects []string, repositories []string) Model {
 	// Create search input
 	search := textinput.New()
 	search.Placeholder = "Search PRs..."
@@ -93,6 +94,7 @@ func New(client *ado.Client, orgURL string, projects []string) Model {
 		client:        client,
 		orgURL:        orgURL,
 		projects:      projects,
+		repositories:  repositories,
 		table:         t,
 		searchInput:   search,
 		loading:       true,
@@ -361,9 +363,20 @@ func (m Model) buildRows() []table.Row {
 		validProjects[strings.ToLower(p)] = true
 	}
 
+	// Create a set of valid repositories for quick lookup
+	validRepos := make(map[string]bool)
+	for _, r := range m.repositories {
+		validRepos[strings.ToLower(r)] = true
+	}
+
 	for _, item := range m.items {
 		// Filter by configured projects
 		if len(validProjects) > 0 && !validProjects[strings.ToLower(item.Project)] {
+			continue
+		}
+
+		// Filter by configured repositories (if any are defined)
+		if len(validRepos) > 0 && !validRepos[strings.ToLower(item.RepositoryName)] {
 			continue
 		}
 

@@ -39,8 +39,9 @@ type Config struct {
 	PAT              string                       `yaml:"pat"`
 	OrgURL           string                       `yaml:"org_url"`
 	Projects         StringSlice                  `yaml:"projects"`
-	Project          string                       `yaml:"project"`   // Backwards compat: single project
-	Pipelines        StringSlice                  `yaml:"pipelines"` // Optional: specific pipeline names to monitor
+	Project          string                       `yaml:"project"`      // Backwards compat: single project
+	Pipelines        StringSlice                  `yaml:"pipelines"`    // Optional: specific pipeline names to monitor
+	Repositories     StringSlice                  `yaml:"repositories"` // Optional: specific repository names to filter PRs
 	PollInterval     time.Duration                `yaml:"poll_interval"`
 	StateTransitions map[string]map[string]string `yaml:"state_transitions"`
 	UserEmail        string                       `yaml:"user_email"` // User's email for "Assigned to Me" filter

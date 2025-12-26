@@ -45,7 +45,7 @@ type Model struct {
 	err              error
 }
 
-func NewModel(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string, pollInterval time.Duration) Model {
+func NewModel(client *ado.Client, orgURL string, projects []string, repositories []string, stateTransitions map[string]map[string]string, pollInterval time.Duration) Model {
 	return Model{
 		client:           client,
 		orgURL:           orgURL,
@@ -55,7 +55,7 @@ func NewModel(client *ado.Client, orgURL string, projects []string, stateTransit
 		help:             help.New(),
 		dashboard:        dashboard.New(client, orgURL, projects),
 		workitems:        workitems.New(client, orgURL, projects, stateTransitions),
-		prs:              prs.New(client, orgURL, projects),
+		prs:              prs.New(client, orgURL, projects, repositories),
 		pipelines:        pipelines.New(client, orgURL, projects, pollInterval),
 		releases:         releases.New(client, orgURL, projects, pollInterval),
 		view:             DashboardView,
