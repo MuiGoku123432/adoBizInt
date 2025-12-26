@@ -13,6 +13,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
+	"sentinovo.ai/bizInt/internal/utils"
 )
 
 const (
@@ -39,8 +40,16 @@ type PRActionMsg struct {
 	Err    error
 }
 
+// LinkActionMsg is sent when a link action (copy/open) completes
+type LinkActionMsg struct {
+	Action string // "copy" or "open"
+	URL    string
+	Err    error
+}
+
 type Model struct {
 	client        *ado.Client
+	orgURL        string
 	projects      []string
 	table         table.Model
 	searchInput   textinput.Model
@@ -55,7 +64,7 @@ type Model struct {
 	actionPending bool
 }
 
-func New(client *ado.Client, projects []string) Model {
+func New(client *ado.Client, orgURL string, projects []string) Model {
 	// Create search input
 	search := textinput.New()
 	search.Placeholder = "Search PRs..."
@@ -82,6 +91,7 @@ func New(client *ado.Client, projects []string) Model {
 
 	return Model{
 		client:        client,
+		orgURL:        orgURL,
 		projects:      projects,
 		table:         t,
 		searchInput:   search,
@@ -133,6 +143,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, m.fetchPRs()
 		}
 
+	case LinkActionMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error: " + msg.Err.Error()
+			m.statusErr = true
+		} else if msg.Action == "copy" {
+			m.statusMsg = "Copied link to clipboard"
+			m.statusErr = false
+		} else if msg.Action == "open" {
+			m.statusMsg = "Opened in browser"
+			m.statusErr = false
+		}
+
 	case tea.KeyMsg:
 		// Handle search input when focused
 		if m.filterFocused == 1 {
@@ -178,6 +200,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.loading = true
 			m.statusMsg = ""
 			return m, m.fetchPRs()
+		case "y":
+			// Copy link to clipboard when table is focused
+			if m.filterFocused == 0 {
+				return m, m.copySelectedPRLink()
+			}
+		case "o":
+			// Open in browser when table is focused
+			if m.filterFocused == 0 {
+				return m, m.openSelectedPRInBrowser()
+			}
 		}
 
 		// Pass key events to table if focused
@@ -313,7 +345,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[/] search  [a] approve  [c] complete  [r] refresh  [1] Dashboard  [2] Work Items  [3] PRs")
+	helpText := styles.HelpStyle.Render("[/] search  [a] approve  [c] complete  [r] refresh  [y] copy link  [o] open")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -323,7 +355,18 @@ func (m Model) buildRows() []table.Row {
 	var rows []table.Row
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
+	// Create a set of valid projects for quick lookup
+	validProjects := make(map[string]bool)
+	for _, p := range m.projects {
+		validProjects[strings.ToLower(p)] = true
+	}
+
 	for _, item := range m.items {
+		// Filter by configured projects
+		if len(validProjects) > 0 && !validProjects[strings.ToLower(item.Project)] {
+			continue
+		}
+
 		// Apply search filter
 		if searchQuery != "" {
 			idStr := fmt.Sprintf("%d", item.ID)
@@ -381,5 +424,42 @@ func getApprovalStyle(status string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(styles.Warning)
 	default:
 		return lipgloss.NewStyle().Foreground(styles.Muted)
+	}
+}
+
+// IsTextInputFocused returns true when the search input is focused
+func (m Model) IsTextInputFocused() bool {
+	return m.filterFocused == 1
+}
+
+// copySelectedPRLink copies the URL of the selected PR to clipboard
+func (m *Model) copySelectedPRLink() tea.Cmd {
+	pr := m.getSelectedPR()
+	if pr == nil {
+		return func() tea.Msg {
+			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no PR selected")}
+		}
+	}
+
+	url := utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID)
+	return func() tea.Msg {
+		err := utils.CopyToClipboard(url)
+		return LinkActionMsg{Action: "copy", URL: url, Err: err}
+	}
+}
+
+// openSelectedPRInBrowser opens the selected PR in the default browser
+func (m *Model) openSelectedPRInBrowser() tea.Cmd {
+	pr := m.getSelectedPR()
+	if pr == nil {
+		return func() tea.Msg {
+			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no PR selected")}
+		}
+	}
+
+	url := utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID)
+	return func() tea.Msg {
+		err := utils.OpenInBrowser(url)
+		return LinkActionMsg{Action: "open", URL: url, Err: err}
 	}
 }

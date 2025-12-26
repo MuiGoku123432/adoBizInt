@@ -14,6 +14,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
+	"sentinovo.ai/bizInt/internal/utils"
 )
 
 const (
@@ -57,8 +58,16 @@ type StateUpdateMsg struct {
 	Err      error
 }
 
+// LinkActionMsg is sent when a link action (copy/open) completes
+type LinkActionMsg struct {
+	Action string // "copy" or "open"
+	URL    string
+	Err    error
+}
+
 type Model struct {
 	client             *ado.Client
+	orgURL             string
 	projects           []string
 	table              table.Model
 	searchInput        textinput.Model
@@ -83,7 +92,7 @@ type Model struct {
 	showEffort  bool
 }
 
-func New(client *ado.Client, projects []string, stateTransitions map[string]map[string]string) Model {
+func New(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string) Model {
 	// Create search input
 	search := textinput.New()
 	search.Placeholder = "Search work items..."
@@ -110,6 +119,7 @@ func New(client *ado.Client, projects []string, stateTransitions map[string]map[
 
 	return Model{
 		client:             client,
+		orgURL:             orgURL,
 		projects:           projects,
 		table:              t,
 		searchInput:        search,
@@ -283,6 +293,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.table = m.table.WithRows(m.buildRows())
 		}
 
+	case LinkActionMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error: " + msg.Err.Error()
+			m.statusErr = true
+		} else if msg.Action == "copy" {
+			m.statusMsg = "Copied link to clipboard"
+			m.statusErr = false
+		} else if msg.Action == "open" {
+			m.statusMsg = "Opened in browser"
+			m.statusErr = false
+		}
+
 	case StateUpdateMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
@@ -377,6 +399,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Move to next state when table is focused
 			if m.filterFocused == 0 {
 				return m, m.updateSelectedItemState()
+			}
+		case "y":
+			// Copy link to clipboard when table is focused
+			if m.filterFocused == 0 {
+				return m, m.copySelectedItemLink()
+			}
+		case "o":
+			// Open in browser when table is focused
+			if m.filterFocused == 0 {
+				return m, m.openSelectedItemInBrowser()
 			}
 		}
 		// Only pass key events to table if table is focused
@@ -510,7 +542,7 @@ func (m Model) renderTableView() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[Tab] cycle  [Space] toggle  [/] search  [Enter] details  [n] next state  [1] Dashboard  [2] Work Items")
+	helpText := styles.HelpStyle.Render("[Tab] cycle  [/] search  [Enter] details  [n] next  [y] copy link  [o] open")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -623,5 +655,72 @@ func getTypeStyle(itemType string) lipgloss.Style {
 		return styles.EpicStyle
 	default:
 		return lipgloss.NewStyle()
+	}
+}
+
+// IsTextInputFocused returns true when search input or effort modal is focused
+func (m Model) IsTextInputFocused() bool {
+	// Check if effort modal is open (it has text inputs)
+	if m.showEffort && m.effortModal != nil {
+		return true
+	}
+	// Check if search input is focused (filterFocused == 3)
+	return m.filterFocused == 3
+}
+
+// getSelectedWorkItem returns the currently selected work item or nil
+func (m *Model) getSelectedWorkItem() *ado.WorkItem {
+	highlightedRow := m.table.HighlightedRow()
+	if highlightedRow.Data == nil {
+		return nil
+	}
+
+	idStr, ok := highlightedRow.Data[columnKeyID].(string)
+	if !ok {
+		return nil
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return nil
+	}
+
+	for i := range m.items {
+		if m.items[i].ID == id {
+			return &m.items[i]
+		}
+	}
+	return nil
+}
+
+// copySelectedItemLink copies the URL of the selected work item to clipboard
+func (m *Model) copySelectedItemLink() tea.Cmd {
+	item := m.getSelectedWorkItem()
+	if item == nil {
+		return func() tea.Msg {
+			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no item selected")}
+		}
+	}
+
+	url := utils.BuildWorkItemURL(m.orgURL, item.Project, item.ID)
+	return func() tea.Msg {
+		err := utils.CopyToClipboard(url)
+		return LinkActionMsg{Action: "copy", URL: url, Err: err}
+	}
+}
+
+// openSelectedItemInBrowser opens the selected work item in the default browser
+func (m *Model) openSelectedItemInBrowser() tea.Cmd {
+	item := m.getSelectedWorkItem()
+	if item == nil {
+		return func() tea.Msg {
+			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no item selected")}
+		}
+	}
+
+	url := utils.BuildWorkItemURL(m.orgURL, item.Project, item.ID)
+	return func() tea.Msg {
+		err := utils.OpenInBrowser(url)
+		return LinkActionMsg{Action: "open", URL: url, Err: err}
 	}
 }

@@ -29,6 +29,7 @@ const (
 
 type Model struct {
 	client           *ado.Client
+	orgURL           string
 	projects         []string
 	stateTransitions map[string]map[string]string
 	keys             keymap.KeyMap
@@ -47,15 +48,16 @@ type Model struct {
 func NewModel(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string, pollInterval time.Duration) Model {
 	return Model{
 		client:           client,
+		orgURL:           orgURL,
 		projects:         projects,
 		stateTransitions: stateTransitions,
 		keys:             keymap.DefaultKeyMap(),
 		help:             help.New(),
 		dashboard:        dashboard.New(client, orgURL, projects),
-		workitems:        workitems.New(client, projects, stateTransitions),
-		prs:              prs.New(client, projects),
-		pipelines:        pipelines.New(client, projects, pollInterval),
-		releases:         releases.New(client, projects, pollInterval),
+		workitems:        workitems.New(client, orgURL, projects, stateTransitions),
+		prs:              prs.New(client, orgURL, projects),
+		pipelines:        pipelines.New(client, orgURL, projects, pollInterval),
+		releases:         releases.New(client, orgURL, projects, pollInterval),
 		view:             DashboardView,
 	}
 }
@@ -75,37 +77,43 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case key.Matches(msg, m.keys.Help):
 			m.help.ShowAll = !m.help.ShowAll
-		case key.Matches(msg, m.keys.Tab1):
-			m.view = DashboardView
-			return m, nil
-		case key.Matches(msg, m.keys.Tab2):
-			if m.view != WorkItemsView {
-				m.view = WorkItemsView
-				// Initialize work items if switching to it
-				return m, m.workitems.Init()
+		}
+
+		// Only handle tab navigation when no text input is focused
+		if !m.isCurrentViewTextInputFocused() {
+			switch {
+			case key.Matches(msg, m.keys.Tab1):
+				m.view = DashboardView
+				return m, nil
+			case key.Matches(msg, m.keys.Tab2):
+				if m.view != WorkItemsView {
+					m.view = WorkItemsView
+					// Initialize work items if switching to it
+					return m, m.workitems.Init()
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Tab3):
+				if m.view != PRsView {
+					m.view = PRsView
+					// Initialize PRs if switching to it
+					return m, m.prs.Init()
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Tab4):
+				if m.view != PipelinesView {
+					m.view = PipelinesView
+					// Initialize pipelines if switching to it
+					return m, m.pipelines.Init()
+				}
+				return m, nil
+			case key.Matches(msg, m.keys.Tab5):
+				if m.view != ReleasesView {
+					m.view = ReleasesView
+					// Initialize releases if switching to it
+					return m, m.releases.Init()
+				}
+				return m, nil
 			}
-			return m, nil
-		case key.Matches(msg, m.keys.Tab3):
-			if m.view != PRsView {
-				m.view = PRsView
-				// Initialize PRs if switching to it
-				return m, m.prs.Init()
-			}
-			return m, nil
-		case key.Matches(msg, m.keys.Tab4):
-			if m.view != PipelinesView {
-				m.view = PipelinesView
-				// Initialize pipelines if switching to it
-				return m, m.pipelines.Init()
-			}
-			return m, nil
-		case key.Matches(msg, m.keys.Tab5):
-			if m.view != ReleasesView {
-				m.view = ReleasesView
-				// Initialize releases if switching to it
-				return m, m.releases.Init()
-			}
-			return m, nil
 		}
 
 	case tea.WindowSizeMsg:
@@ -174,4 +182,22 @@ func (m Model) View() string {
 
 	helpView := m.help.View(m.keys)
 	return content + "\n" + helpView
+}
+
+// isCurrentViewTextInputFocused checks if the current view has a text input focused
+func (m Model) isCurrentViewTextInputFocused() bool {
+	switch m.view {
+	case DashboardView:
+		return m.dashboard.IsTextInputFocused()
+	case WorkItemsView:
+		return m.workitems.IsTextInputFocused()
+	case PRsView:
+		return m.prs.IsTextInputFocused()
+	case PipelinesView:
+		return m.pipelines.IsTextInputFocused()
+	case ReleasesView:
+		return m.releases.IsTextInputFocused()
+	default:
+		return false
+	}
 }

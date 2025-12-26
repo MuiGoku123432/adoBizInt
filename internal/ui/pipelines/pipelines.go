@@ -14,6 +14,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
+	"sentinovo.ai/bizInt/internal/utils"
 )
 
 // Table column keys
@@ -50,8 +51,16 @@ type TriggerResultMsg struct {
 // TickMsg is used for auto-refresh polling
 type TickMsg struct{}
 
+// LinkActionMsg is sent when a link action (copy/open) completes
+type LinkActionMsg struct {
+	Action string // "copy" or "open"
+	URL    string
+	Err    error
+}
+
 type Model struct {
 	client       *ado.Client
+	orgURL       string
 	projects     []string
 	pollInterval time.Duration
 
@@ -80,7 +89,7 @@ type Model struct {
 	autoRefresh bool
 }
 
-func New(client *ado.Client, projects []string, pollInterval time.Duration) Model {
+func New(client *ado.Client, orgURL string, projects []string, pollInterval time.Duration) Model {
 	// Create search input
 	search := textinput.New()
 	search.Placeholder = "Search pipelines..."
@@ -107,6 +116,7 @@ func New(client *ado.Client, projects []string, pollInterval time.Duration) Mode
 
 	return Model{
 		client:       client,
+		orgURL:       orgURL,
 		projects:     projects,
 		pollInterval: pollInterval,
 		table:        t,
@@ -244,6 +254,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, m.fetchPipelineRuns()
 		}
 
+	case LinkActionMsg:
+		if msg.Err != nil {
+			m.statusMsg = "Error: " + msg.Err.Error()
+			m.statusErr = true
+		} else if msg.Action == "copy" {
+			m.statusMsg = "Copied link to clipboard"
+			m.statusErr = false
+		} else if msg.Action == "open" {
+			m.statusMsg = "Opened in browser"
+			m.statusErr = false
+		}
+
 	case tea.KeyMsg:
 		// Handle search input when focused
 		if m.filterFocused == 1 {
@@ -301,6 +323,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			m.statusErr = false
 			return m, nil
+		case "y":
+			// Copy link to clipboard when table is focused
+			if m.filterFocused == 0 {
+				return m, m.copySelectedPipelineLink()
+			}
+		case "o":
+			// Open in browser when table is focused
+			if m.filterFocused == 0 {
+				return m, m.openSelectedPipelineInBrowser()
+			}
 		}
 
 		// Pass key events to table if focused
@@ -386,7 +418,7 @@ func (m Model) renderTableView() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[/] search  [r] refresh  [t] trigger  [a] toggle auto  [1-4] views")
+	helpText := styles.HelpStyle.Render("[/] search  [r] refresh  [t] trigger  [a] auto  [y] copy link  [o] open")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -506,3 +538,65 @@ type viewWrapper struct {
 func (w viewWrapper) Init() tea.Cmd                       { return nil }
 func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd) { return w, nil }
 func (w viewWrapper) View() string                        { return w.content }
+
+// IsTextInputFocused returns true when search input or trigger modal is focused
+func (m Model) IsTextInputFocused() bool {
+	// Check if trigger modal is open (it has text inputs)
+	if m.showTrigger && m.triggerModal != nil {
+		return true
+	}
+	// Check if search input is focused
+	return m.filterFocused == 1
+}
+
+// getSelectedPipelineRun returns the currently selected pipeline run or nil
+func (m *Model) getSelectedPipelineRun() *ado.PipelineRun {
+	highlightedRow := m.table.HighlightedRow()
+	if highlightedRow.Data == nil {
+		return nil
+	}
+
+	buildNumStr, ok := highlightedRow.Data[columnKeyBuildNumber].(string)
+	if !ok {
+		return nil
+	}
+
+	for i := range m.runs {
+		if m.runs[i].BuildNumber == buildNumStr {
+			return &m.runs[i]
+		}
+	}
+	return nil
+}
+
+// copySelectedPipelineLink copies the URL of the selected pipeline run to clipboard
+func (m *Model) copySelectedPipelineLink() tea.Cmd {
+	run := m.getSelectedPipelineRun()
+	if run == nil {
+		return func() tea.Msg {
+			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no pipeline run selected")}
+		}
+	}
+
+	url := utils.BuildPipelineURL(m.orgURL, run.Project, run.ID)
+	return func() tea.Msg {
+		err := utils.CopyToClipboard(url)
+		return LinkActionMsg{Action: "copy", URL: url, Err: err}
+	}
+}
+
+// openSelectedPipelineInBrowser opens the selected pipeline run in the default browser
+func (m *Model) openSelectedPipelineInBrowser() tea.Cmd {
+	run := m.getSelectedPipelineRun()
+	if run == nil {
+		return func() tea.Msg {
+			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no pipeline run selected")}
+		}
+	}
+
+	url := utils.BuildPipelineURL(m.orgURL, run.Project, run.ID)
+	return func() tea.Msg {
+		err := utils.OpenInBrowser(url)
+		return LinkActionMsg{Action: "open", URL: url, Err: err}
+	}
+}

@@ -320,3 +320,8 @@ func (m Model) renderCard(title string, count int) string {
 		countStr,
 	)
 }
+
+// IsTextInputFocused returns false as dashboard has no text inputs
+func (m Model) IsTextInputFocused() bool {
+	return false
+}
