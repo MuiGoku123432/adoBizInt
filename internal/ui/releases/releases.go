@@ -233,11 +233,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		} else {
 			m.releases = msg.Releases
 			m.table = m.table.WithRows(m.buildRows())
+			// Warn if no releases found (could indicate config issue)
+			if len(m.releases) == 0 {
+				m.statusMsg = "No releases found. Check configured pipeline names in config.yaml"
+				m.statusErr = true
+			}
 		}
 
 	case ApprovalsMsg:
 		if msg.Err != nil {
-			// Log but don't show error - approvals are secondary
+			// Surface error so users know approvals won't work
+			m.statusMsg = "Warning: Could not load pending approvals"
+			m.statusErr = true
 		} else {
 			m.approvals = msg.Approvals
 			// Update pending approval counts in releases
@@ -306,16 +313,29 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.statusErr = false
 			return m, tea.Batch(m.fetchReleases(), m.fetchApprovals())
 		case "a":
-			// Approve selected release (open modal if has pending approvals)
-			if len(m.approvals) > 0 {
-				// For now, just open modal with first pending approval
-				// A more sophisticated version would use the selected table row
-				modal := NewApprovalModal(m.approvals[0])
+			// Approve selected release (open modal if has pending approvals for this release)
+			selectedRelease := m.getSelectedRelease()
+			if selectedRelease == nil {
+				m.statusMsg = "No release selected"
+				m.statusErr = true
+				return m, nil
+			}
+
+			// Find approvals for this specific release
+			var releaseApprovals []ado.ReleaseApproval
+			for _, a := range m.approvals {
+				if a.ReleaseID == selectedRelease.ID {
+					releaseApprovals = append(releaseApprovals, a)
+				}
+			}
+
+			if len(releaseApprovals) > 0 {
+				modal := NewApprovalModal(releaseApprovals[0])
 				m.approvalModal = &modal
 				m.showApproval = true
 				return m, nil
 			} else {
-				m.statusMsg = "No pending approvals"
+				m.statusMsg = "No pending approvals for " + truncate(selectedRelease.Name, 20)
 				m.statusErr = false
 			}
 		case "t":
@@ -338,6 +358,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.filterFocused == 0 {
 				return m, m.openSelectedReleaseInBrowser()
 			}
+		case "d":
+			// Debug: show configured release definitions
+			configured := m.client.ReleaseDefinitions()
+			if len(configured) == 0 {
+				m.statusMsg = "Debug: No release definitions configured"
+			} else {
+				m.statusMsg = fmt.Sprintf("Debug: Configured releases: %v | Found: %d", configured, len(m.releases))
+			}
+			m.statusErr = false
+			return m, nil
 		}
 
 		// Pass key events to table if focused
@@ -510,7 +540,7 @@ func formatEnvironments(envs []ado.ReleaseEnvironment) string {
 	for _, env := range envs {
 		// Truncate env name to first 3 chars
 		name := truncate(env.Name, 3)
-		indicator := getEnvStatusIndicator(env.Status)
+		indicator := getEnvStatusIndicator(env.Status, env.DeploymentStatus)
 		parts = append(parts, indicator+name)
 	}
 
@@ -523,15 +553,23 @@ func formatEnvironments(envs []ado.ReleaseEnvironment) string {
 	return strings.Join(parts, " ")
 }
 
-func getEnvStatusIndicator(status string) string {
-	switch status {
+// getEnvStatusIndicator returns a colored indicator based on environment status
+// Uses DeploymentStatus when available and meaningful for more accurate display
+func getEnvStatusIndicator(status, deploymentStatus string) string {
+	// Prefer deploymentStatus when it provides more detail
+	effectiveStatus := status
+	if deploymentStatus != "" && deploymentStatus != "notDeployed" && deploymentStatus != "undefined" {
+		effectiveStatus = deploymentStatus
+	}
+
+	switch effectiveStatus {
 	case "succeeded":
 		return lipgloss.NewStyle().Foreground(styles.Success).Render("*")
 	case "inProgress", "queued":
 		return lipgloss.NewStyle().Foreground(styles.Warning).Render("*")
 	case "failed", "rejected", "canceled":
 		return lipgloss.NewStyle().Foreground(styles.Error).Render("*")
-	case "notStarted":
+	case "notStarted", "notDeployed":
 		return lipgloss.NewStyle().Foreground(styles.Muted).Render("*")
 	case "partiallySucceeded":
 		return lipgloss.NewStyle().Foreground(styles.Warning).Render("*")

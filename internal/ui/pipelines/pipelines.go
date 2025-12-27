@@ -233,11 +233,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		} else {
 			m.runs = msg.Runs
 			m.table = m.table.WithRows(m.buildRows())
+			// Warn if no pipeline runs found (could indicate config issue)
+			if len(m.runs) == 0 {
+				m.statusMsg = "No pipeline runs found. Check configured pipeline names in config.yaml"
+				m.statusErr = true
+			}
 		}
 
 	case DefinitionsMsg:
 		if msg.Err != nil {
-			// Log but don't show error - definitions are only needed for triggering
+			// Surface error so users know triggering won't work
+			m.statusMsg = "Warning: Could not load pipeline definitions - trigger may not work"
+			m.statusErr = true
 		} else {
 			m.definitions = msg.Definitions
 		}
@@ -333,6 +340,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.filterFocused == 0 {
 				return m, m.openSelectedPipelineInBrowser()
 			}
+		case "d":
+			// Debug: show configured pipelines
+			configured := m.client.Pipelines()
+			if len(configured) == 0 {
+				m.statusMsg = "Debug: No pipelines configured"
+			} else {
+				m.statusMsg = fmt.Sprintf("Debug: Configured pipelines: %v | Runs found: %d", configured, len(m.runs))
+			}
+			m.statusErr = false
+			return m, nil
 		}
 
 		// Pass key events to table if focused

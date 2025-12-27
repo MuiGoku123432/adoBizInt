@@ -60,6 +60,20 @@ func (m TriggerModal) Init() tea.Cmd {
 }
 
 func (m TriggerModal) Update(msg tea.Msg) (TriggerModal, tea.Cmd) {
+	// Early validation - ensure definitions exist
+	if len(m.definitions) == 0 {
+		m.err = fmt.Errorf("no pipeline definitions available")
+		return m, nil
+	}
+
+	// Ensure selectedDef is in bounds
+	if m.selectedDef >= len(m.definitions) {
+		m.selectedDef = len(m.definitions) - 1
+	}
+	if m.selectedDef < 0 {
+		m.selectedDef = 0
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -72,12 +86,14 @@ func (m TriggerModal) Update(msg tea.Msg) (TriggerModal, tea.Cmd) {
 		} else {
 			m.branches = msg.Branches
 			m.selectedBranch = 0
-			// Find default branch index
-			for i, b := range m.branches {
+			// Find default branch index (with bounds check)
+			if m.selectedDef < len(m.definitions) {
 				def := m.definitions[m.selectedDef]
-				if b == def.DefaultBranch || b == "main" || b == "master" {
-					m.selectedBranch = i
-					break
+				for i, b := range m.branches {
+					if b == def.DefaultBranch || b == "main" || b == "master" {
+						m.selectedBranch = i
+						break
+					}
 				}
 			}
 		}
@@ -135,10 +151,24 @@ func (m TriggerModal) Update(msg tea.Msg) (TriggerModal, tea.Cmd) {
 }
 
 func (m TriggerModal) fetchBranches() tea.Cmd {
+	// Bounds check before accessing definitions
+	if m.selectedDef < 0 || m.selectedDef >= len(m.definitions) {
+		return func() tea.Msg {
+			return BranchesMsg{Err: fmt.Errorf("invalid pipeline selection")}
+		}
+	}
+
 	def := m.definitions[m.selectedDef]
 	client := m.client
 	project := def.Project
 	repoID := def.RepositoryID
+
+	// Validate repository ID exists
+	if repoID == "" {
+		return func() tea.Msg {
+			return BranchesMsg{Err: fmt.Errorf("pipeline '%s' has no associated repository", def.Name)}
+		}
+	}
 
 	return func() tea.Msg {
 		branches, err := client.GetBranchesForPipeline(

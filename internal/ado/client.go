@@ -24,16 +24,17 @@ import (
 )
 
 type Client struct {
-	connection       *azuredevops.Connection
-	workitemClient   workitemtracking.Client
-	workClient       work.Client
-	gitClient        git.Client
-	buildClient      build.Client
-	releaseClient    release.Client
-	projects         []string
-	pipelines        []string
-	currentUser      string
-	currentUserEmail string
+	connection         *azuredevops.Connection
+	workitemClient     workitemtracking.Client
+	workClient         work.Client
+	gitClient          git.Client
+	buildClient        build.Client
+	releaseClient      release.Client
+	projects           []string
+	pipelines          []string
+	releaseDefinitions []string // Separate release definition names (falls back to pipelines if empty)
+	currentUser        string
+	currentUserEmail   string
 }
 
 func NewClient(cfg *config.Config) (*Client, error) {
@@ -81,22 +82,37 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	}
 	log.Info("Current user identity", "displayName", currentUser, "email", currentUserEmail)
 
+	// Use separate release definitions if configured, otherwise fall back to pipelines
+	releaseDefinitions := cfg.ReleaseDefinitions
+	if len(releaseDefinitions) == 0 {
+		releaseDefinitions = cfg.Pipelines
+	}
+
 	return &Client{
-		connection:       connection,
-		workitemClient:   workitemClient,
-		workClient:       workClient,
-		gitClient:        gitClient,
-		buildClient:      buildClient,
-		releaseClient:    releaseClient,
-		projects:         cfg.Projects,
-		pipelines:        cfg.Pipelines,
-		currentUser:      currentUser,
-		currentUserEmail: currentUserEmail,
+		connection:         connection,
+		workitemClient:     workitemClient,
+		workClient:         workClient,
+		gitClient:          gitClient,
+		buildClient:        buildClient,
+		releaseClient:      releaseClient,
+		projects:           cfg.Projects,
+		pipelines:          cfg.Pipelines,
+		releaseDefinitions: releaseDefinitions,
+		currentUser:        currentUser,
+		currentUserEmail:   currentUserEmail,
 	}, nil
 }
 
 func (c *Client) Projects() []string {
 	return c.projects
+}
+
+func (c *Client) Pipelines() []string {
+	return c.pipelines
+}
+
+func (c *Client) ReleaseDefinitions() []string {
+	return c.releaseDefinitions
 }
 
 func (c *Client) WorkItemClient() workitemtracking.Client {
@@ -1106,6 +1122,49 @@ func (c *Client) CompletePullRequest(ctx context.Context, project, repositoryID 
 	return nil
 }
 
+// normalizePipelineName normalizes a pipeline name for comparison
+// Trims whitespace and converts to lowercase
+func normalizePipelineName(name string) string {
+	return strings.TrimSpace(strings.ToLower(name))
+}
+
+// pipelineNameMatches checks if a pipeline name matches any configured patterns
+// Supports:
+//   - Exact match (normalized): "MyPipeline" matches "mypipeline", " MyPipeline "
+//   - Prefix match with *: "MyPipeline*" matches "MyPipeline-Dev", "MyPipeline-Prod"
+//   - Contains match with **: "**Pipeline**" matches anything containing "pipeline"
+func pipelineNameMatches(name string, configuredPipelines []string) bool {
+	normalizedName := normalizePipelineName(name)
+
+	for _, configured := range configuredPipelines {
+		pattern := normalizePipelineName(configured)
+
+		// Contains match: **term** matches anything containing "term"
+		if strings.HasPrefix(pattern, "**") && strings.HasSuffix(pattern, "**") && len(pattern) > 4 {
+			substr := pattern[2 : len(pattern)-2]
+			if strings.Contains(normalizedName, substr) {
+				return true
+			}
+			continue
+		}
+
+		// Prefix match: "term*" matches anything starting with "term"
+		if strings.HasSuffix(pattern, "*") && !strings.HasSuffix(pattern, "**") {
+			prefix := strings.TrimSuffix(pattern, "*")
+			if strings.HasPrefix(normalizedName, prefix) {
+				return true
+			}
+			continue
+		}
+
+		// Exact match (normalized)
+		if normalizedName == pattern {
+			return true
+		}
+	}
+	return false
+}
+
 // GetPipelineRuns fetches recent pipeline runs for configured pipelines
 // Returns last 25 runs filtered to only configured pipeline names
 func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]PipelineRun, error) {
@@ -1120,12 +1179,6 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 	targetProjects := projects
 	if len(targetProjects) == 0 {
 		targetProjects = c.projects
-	}
-
-	// Build pipeline name set for filtering (case-insensitive)
-	pipelineSet := make(map[string]bool)
-	for _, p := range c.pipelines {
-		pipelineSet[strings.ToLower(p)] = true
 	}
 
 	var allRuns []PipelineRun
@@ -1149,8 +1202,12 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 			continue
 		}
 
+		log.Debug("Fetched builds from ADO", "project", project, "count", len(builds.Value))
+
 		// Track count per pipeline to limit to 25 per pipeline
 		pipelineCounts := make(map[string]int)
+		// Track unique pipeline names seen for debugging
+		seenPipelines := make(map[string]bool)
 
 		for _, b := range builds.Value {
 			if b.Definition == nil || b.Definition.Name == nil {
@@ -1158,10 +1215,15 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 			}
 
 			defName := *b.Definition.Name
-			defNameLower := strings.ToLower(defName)
+			defNameLower := normalizePipelineName(defName)
 
-			// Skip if not in configured pipelines
-			if !pipelineSet[defNameLower] {
+			// Track all unique pipeline names seen
+			if !seenPipelines[defName] {
+				seenPipelines[defName] = true
+			}
+
+			// Skip if not matching any configured pipeline pattern
+			if !pipelineNameMatches(defName, c.pipelines) {
 				continue
 			}
 
@@ -1226,6 +1288,15 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 
 			allRuns = append(allRuns, run)
 		}
+
+		// Log all unique pipeline names seen in this project for debugging
+		if len(seenPipelines) > 0 {
+			var names []string
+			for name := range seenPipelines {
+				names = append(names, name)
+			}
+			log.Debug("Available pipelines in ADO", "project", project, "pipelines", names)
+		}
 	}
 
 	log.Info("Pipeline runs fetched", "total_count", len(allRuns), "configured_pipelines", c.pipelines)
@@ -1245,12 +1316,6 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 	targetProjects := projects
 	if len(targetProjects) == 0 {
 		targetProjects = c.projects
-	}
-
-	// Build pipeline name set for filtering (case-insensitive)
-	pipelineSet := make(map[string]bool)
-	for _, p := range c.pipelines {
-		pipelineSet[strings.ToLower(p)] = true
 	}
 
 	var allDefs []PipelineDefinition
@@ -1273,8 +1338,8 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 				continue
 			}
 
-			defNameLower := strings.ToLower(*d.Name)
-			if !pipelineSet[defNameLower] {
+			// Skip if not matching any configured pipeline pattern
+			if !pipelineNameMatches(*d.Name, c.pipelines) {
 				continue
 			}
 
@@ -1412,12 +1477,6 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release,
 		targetProjects = c.projects
 	}
 
-	// Build pipeline/definition name set for filtering (case-insensitive)
-	pipelineSet := make(map[string]bool)
-	for _, p := range c.pipelines {
-		pipelineSet[strings.ToLower(p)] = true
-	}
-
 	var allReleases []Release
 
 	for _, project := range targetProjects {
@@ -1440,10 +1499,20 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release,
 			continue
 		}
 
+		log.Debug("Fetched releases from ADO", "project", project, "count", len(releases.Value))
+
+		// Track unique release definition names seen for debugging
+		seenDefinitions := make(map[string]bool)
+
 		for _, r := range releases.Value {
-			// Filter to configured pipelines if any are configured
-			if len(pipelineSet) > 0 && r.ReleaseDefinition != nil && r.ReleaseDefinition.Name != nil {
-				if !pipelineSet[strings.ToLower(*r.ReleaseDefinition.Name)] {
+			// Track all unique release definition names seen
+			if r.ReleaseDefinition != nil && r.ReleaseDefinition.Name != nil {
+				seenDefinitions[*r.ReleaseDefinition.Name] = true
+			}
+
+			// Filter to configured release definitions (or pipelines as fallback)
+			if len(c.releaseDefinitions) > 0 && r.ReleaseDefinition != nil && r.ReleaseDefinition.Name != nil {
+				if !pipelineNameMatches(*r.ReleaseDefinition.Name, c.releaseDefinitions) {
 					continue
 				}
 			}
@@ -1497,15 +1566,36 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release,
 						relEnv.Status = string(*env.Status)
 					}
 
+					// Extract DeploymentStatus from the latest deployment attempt
+					if env.DeploySteps != nil && len(*env.DeploySteps) > 0 {
+						attempts := *env.DeploySteps
+						latestAttempt := attempts[len(attempts)-1]
+						if latestAttempt.Status != nil {
+							relEnv.DeploymentStatus = string(*latestAttempt.Status)
+						}
+					} else {
+						// Default to notDeployed if no deploy steps exist
+						relEnv.DeploymentStatus = "notDeployed"
+					}
+
 					rel.Environments = append(rel.Environments, relEnv)
 				}
 			}
 
 			allReleases = append(allReleases, rel)
 		}
+
+		// Log all unique release definition names seen in this project for debugging
+		if len(seenDefinitions) > 0 {
+			var names []string
+			for name := range seenDefinitions {
+				names = append(names, name)
+			}
+			log.Debug("Available release definitions in ADO", "project", project, "definitions", names)
+		}
 	}
 
-	log.Info("Releases fetched", "total_count", len(allReleases))
+	log.Info("Releases fetched", "total_count", len(allReleases), "configured_definitions", c.releaseDefinitions)
 	return allReleases, nil
 }
 
