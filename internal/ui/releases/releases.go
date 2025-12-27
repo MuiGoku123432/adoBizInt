@@ -491,10 +491,18 @@ func (m Model) buildRows() []table.Row {
 		// Format status with color
 		statusDisplay := getReleaseStatusStyle(rel.Status).Render(rel.Status)
 
+		// Format release name (show "-" for definitions with no releases)
+		releaseDisplay := truncate(rel.Name, 16)
+		if rel.Name == "" {
+			releaseDisplay = styles.MutedStyle.Render("-")
+		}
+
 		// Format created time
 		createdDisplay := ""
 		if !rel.CreatedOn.IsZero() {
 			createdDisplay = rel.CreatedOn.Format("01/02 15:04")
+		} else {
+			createdDisplay = styles.MutedStyle.Render("-")
 		}
 
 		// Format environments with status indicators
@@ -507,7 +515,7 @@ func (m Model) buildRows() []table.Row {
 		}
 
 		rows = append(rows, table.NewRow(table.RowData{
-			columnKeyRelease:      truncate(rel.Name, 16),
+			columnKeyRelease:      releaseDisplay,
 			columnKeyDefinition:   truncate(rel.DefinitionName, 18),
 			columnKeyStatus:       statusDisplay,
 			columnKeyCreated:      createdDisplay,
@@ -526,6 +534,8 @@ func getReleaseStatusStyle(status string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(styles.Warning)
 	case "abandoned":
 		return lipgloss.NewStyle().Foreground(styles.Muted)
+	case "noReleases":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Dim gray
 	default:
 		return lipgloss.NewStyle().Foreground(styles.Muted)
 	}
