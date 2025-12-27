@@ -363,14 +363,10 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		if err != nil {
 			log.Error("Failed to get builds", "project", project, "error", err)
 		} else if builds != nil && builds.Value != nil {
-			// Filter to only configured pipelines
-			pipelineSet := make(map[string]bool)
-			for _, p := range c.pipelines {
-				pipelineSet[p] = true
-			}
+			// Filter to only configured pipelines using normalized matching
 			for _, b := range builds.Value {
 				if b.Definition != nil && b.Definition.Name != nil {
-					if pipelineSet[*b.Definition.Name] {
+					if pipelineNameMatches(*b.Definition.Name, c.pipelines) {
 						counts.Pipelines++
 					}
 				}
