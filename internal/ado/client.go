@@ -1161,8 +1161,8 @@ func pipelineNameMatches(name string, configuredPipelines []string) bool {
 	return false
 }
 
-// GetPipelineRuns fetches recent pipeline runs for configured pipelines
-// Returns last 25 runs filtered to only configured pipeline names
+// GetPipelineRuns fetches ALL matching pipeline definitions and their latest runs
+// Returns one entry per pipeline definition, showing latest run status if available
 func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]PipelineRun, error) {
 	log := logging.Logger()
 
@@ -1180,118 +1180,121 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 	var allRuns []PipelineRun
 
 	for _, project := range targetProjects {
-		// Fetch more builds to ensure we get 25 per configured pipeline after filtering
-		top := 100
-		queryOrder := build.BuildQueryOrderValues.StartTimeDescending
-
-		builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
-			Project:    &project,
-			Top:        &top,
-			QueryOrder: &queryOrder,
+		// Step 1: Fetch ALL pipeline definitions for this project
+		definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
+			Project: &project,
 		})
 		if err != nil {
-			log.Error("Failed to get builds", "project", project, "error", err)
+			log.Error("Failed to get pipeline definitions", "project", project, "error", err)
 			continue
 		}
 
-		if builds == nil || builds.Value == nil {
+		if definitions == nil || definitions.Value == nil {
 			continue
 		}
 
-		log.Debug("Fetched builds from ADO", "project", project, "count", len(builds.Value))
-
-		// Track count per pipeline to limit to 25 per pipeline
-		pipelineCounts := make(map[string]int)
-		// Track unique pipeline names seen for debugging
-		seenPipelines := make(map[string]bool)
-
-		for _, b := range builds.Value {
-			if b.Definition == nil || b.Definition.Name == nil {
+		// Filter definitions to only those matching configured patterns
+		var matchingDefs []build.BuildDefinitionReference
+		var allDefNames []string
+		for _, d := range definitions.Value {
+			if d.Name == nil {
 				continue
 			}
-
-			defName := *b.Definition.Name
-			defNameLower := normalizePipelineName(defName)
-
-			// Track all unique pipeline names seen
-			if !seenPipelines[defName] {
-				seenPipelines[defName] = true
+			allDefNames = append(allDefNames, *d.Name)
+			if pipelineNameMatches(*d.Name, c.pipelines) {
+				matchingDefs = append(matchingDefs, d)
 			}
+		}
 
-			// Skip if not matching any configured pipeline pattern
-			if !pipelineNameMatches(defName, c.pipelines) {
-				continue
-			}
+		log.Debug("ALL pipeline definitions in ADO", "project", project, "count", len(allDefNames), "definitions", allDefNames)
+		log.Info("Pipeline count", "project", project, "configured_pipelines", c.pipelines, "matching", len(matchingDefs), "total", len(definitions.Value))
 
-			// Skip if we already have 25 runs for this pipeline
-			if pipelineCounts[defNameLower] >= 25 {
-				continue
-			}
-			pipelineCounts[defNameLower]++
+		// Step 2: For each matching definition, fetch its latest build
+		for _, def := range matchingDefs {
+			defID := *def.Id
+			defName := *def.Name
 
+			// Create base run entry for this pipeline
 			run := PipelineRun{
 				Project:      project,
 				PipelineName: defName,
+				PipelineID:   defID,
+				Status:       "neverRun", // Default status if no builds found
 			}
 
-			if b.Id != nil {
-				run.ID = *b.Id
-			}
-			if b.BuildNumber != nil {
-				run.BuildNumber = *b.BuildNumber
-			}
-			if b.Definition.Id != nil {
-				run.PipelineID = *b.Definition.Id
-			}
-			if b.Status != nil {
-				run.Status = string(*b.Status)
-			}
-			if b.Result != nil {
-				run.Result = string(*b.Result)
-			}
-			if b.SourceBranch != nil {
-				run.SourceBranch = strings.TrimPrefix(*b.SourceBranch, "refs/heads/")
-			}
-			if b.SourceVersion != nil {
-				run.SourceVersion = *b.SourceVersion
-			}
-			if b.RequestedBy != nil && b.RequestedBy.DisplayName != nil {
-				run.RequestedBy = *b.RequestedBy.DisplayName
-			}
-			if b.RequestedFor != nil && b.RequestedFor.DisplayName != nil {
-				run.RequestedFor = *b.RequestedFor.DisplayName
-			}
-			if b.StartTime != nil {
-				run.StartTime = b.StartTime.Time
-			}
-			if b.FinishTime != nil {
-				run.FinishTime = b.FinishTime.Time
-			}
-			if b.QueueTime != nil {
-				run.QueueTime = b.QueueTime.Time
-			}
-			if b.Repository != nil && b.Repository.Id != nil {
-				run.RepositoryID = *b.Repository.Id
+			// Get repository ID from definition if available
+			if def.Project != nil && def.Project.Id != nil {
+				// We'll get repo info from the build if available
 			}
 
-			// Calculate duration if we have both start and finish times
-			if !run.StartTime.IsZero() && !run.FinishTime.IsZero() {
-				run.Duration = run.FinishTime.Sub(run.StartTime)
-			} else if !run.StartTime.IsZero() && run.Status == "inProgress" {
-				// For in-progress builds, show duration so far
-				run.Duration = time.Since(run.StartTime)
+			// Fetch the latest build for this specific definition
+			top := 1
+			queryOrder := build.BuildQueryOrderValues.StartTimeDescending
+			defIDs := []int{defID}
+
+			builds, err := c.buildClient.GetBuilds(ctx, build.GetBuildsArgs{
+				Project:     &project,
+				Definitions: &defIDs,
+				Top:         &top,
+				QueryOrder:  &queryOrder,
+			})
+			if err != nil {
+				log.Debug("Failed to get builds for definition", "project", project, "definition", defName, "error", err)
+				// Still add the definition with neverRun status
+				allRuns = append(allRuns, run)
+				continue
+			}
+
+			// If we found a build, populate the run details
+			if builds != nil && builds.Value != nil && len(builds.Value) > 0 {
+				b := builds.Value[0]
+
+				if b.Id != nil {
+					run.ID = *b.Id
+				}
+				if b.BuildNumber != nil {
+					run.BuildNumber = *b.BuildNumber
+				}
+				if b.Status != nil {
+					run.Status = string(*b.Status)
+				}
+				if b.Result != nil {
+					run.Result = string(*b.Result)
+				}
+				if b.SourceBranch != nil {
+					run.SourceBranch = strings.TrimPrefix(*b.SourceBranch, "refs/heads/")
+				}
+				if b.SourceVersion != nil {
+					run.SourceVersion = *b.SourceVersion
+				}
+				if b.RequestedBy != nil && b.RequestedBy.DisplayName != nil {
+					run.RequestedBy = *b.RequestedBy.DisplayName
+				}
+				if b.RequestedFor != nil && b.RequestedFor.DisplayName != nil {
+					run.RequestedFor = *b.RequestedFor.DisplayName
+				}
+				if b.StartTime != nil {
+					run.StartTime = b.StartTime.Time
+				}
+				if b.FinishTime != nil {
+					run.FinishTime = b.FinishTime.Time
+				}
+				if b.QueueTime != nil {
+					run.QueueTime = b.QueueTime.Time
+				}
+				if b.Repository != nil && b.Repository.Id != nil {
+					run.RepositoryID = *b.Repository.Id
+				}
+
+				// Calculate duration
+				if !run.StartTime.IsZero() && !run.FinishTime.IsZero() {
+					run.Duration = run.FinishTime.Sub(run.StartTime)
+				} else if !run.StartTime.IsZero() && run.Status == "inProgress" {
+					run.Duration = time.Since(run.StartTime)
+				}
 			}
 
 			allRuns = append(allRuns, run)
-		}
-
-		// Log all unique pipeline names seen in this project for debugging
-		if len(seenPipelines) > 0 {
-			var names []string
-			for name := range seenPipelines {
-				names = append(names, name)
-			}
-			log.Debug("Available pipelines in ADO", "project", project, "pipelines", names)
 		}
 	}
 
@@ -1485,6 +1488,22 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release,
 	var allReleases []Release
 
 	for _, project := range targetProjects {
+		// First, log ALL release definitions in the project (not just those with recent releases)
+		releaseDefs, err := c.releaseClient.GetReleaseDefinitions(ctx, release.GetReleaseDefinitionsArgs{
+			Project: &project,
+		})
+		if err != nil {
+			log.Error("Failed to get release definitions", "project", project, "error", err)
+		} else if releaseDefs != nil && len(releaseDefs.Value) > 0 {
+			var allDefNames []string
+			for _, rd := range releaseDefs.Value {
+				if rd.Name != nil {
+					allDefNames = append(allDefNames, *rd.Name)
+				}
+			}
+			log.Debug("ALL release definitions in ADO", "project", project, "count", len(allDefNames), "definitions", allDefNames)
+		}
+
 		top := 50
 		queryOrder := release.ReleaseQueryOrderValues.Descending
 		expand := release.ReleaseExpandsValues.Environments

@@ -471,6 +471,24 @@ func (m Model) buildRows() []table.Row {
 			resultDisplay = styles.MutedStyle.Render("-")
 		}
 
+		// Format build number (show "-" for pipelines that never ran)
+		buildNumDisplay := run.BuildNumber
+		if buildNumDisplay == "" {
+			buildNumDisplay = styles.MutedStyle.Render("-")
+		}
+
+		// Format branch (show "-" for pipelines that never ran)
+		branchDisplay := truncate(run.SourceBranch, 16)
+		if run.SourceBranch == "" {
+			branchDisplay = styles.MutedStyle.Render("-")
+		}
+
+		// Format requested by (show "-" for pipelines that never ran)
+		requestedByDisplay := truncate(run.RequestedBy, 13)
+		if run.RequestedBy == "" {
+			requestedByDisplay = styles.MutedStyle.Render("-")
+		}
+
 		// Format start time
 		startTimeDisplay := ""
 		if !run.StartTime.IsZero() {
@@ -482,11 +500,11 @@ func (m Model) buildRows() []table.Row {
 
 		rows = append(rows, table.NewRow(table.RowData{
 			columnKeyPipeline:    truncate(run.PipelineName, 18),
-			columnKeyBuildNumber: run.BuildNumber,
+			columnKeyBuildNumber: buildNumDisplay,
 			columnKeyStatus:      statusDisplay,
 			columnKeyResult:      resultDisplay,
-			columnKeyBranch:      truncate(run.SourceBranch, 16),
-			columnKeyRequestedBy: truncate(run.RequestedBy, 13),
+			columnKeyBranch:      branchDisplay,
+			columnKeyRequestedBy: requestedByDisplay,
 			columnKeyStartTime:   startTimeDisplay,
 			columnKeyDuration:    durationDisplay,
 		}))
@@ -504,6 +522,8 @@ func getStatusStyle(status string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(styles.Warning)
 	case "notStarted":
 		return lipgloss.NewStyle().Foreground(styles.Muted)
+	case "neverRun":
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Dim gray
 	default:
 		return lipgloss.NewStyle().Foreground(styles.Muted)
 	}
