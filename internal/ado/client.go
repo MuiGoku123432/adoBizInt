@@ -1329,6 +1329,15 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 			continue
 		}
 
+		// Log ALL available pipeline definitions (not just matched ones)
+		var allDefNames []string
+		for _, d := range definitions.Value {
+			if d.Name != nil {
+				allDefNames = append(allDefNames, *d.Name)
+			}
+		}
+		log.Debug("ALL pipeline definitions in ADO", "project", project, "count", len(allDefNames), "definitions", allDefNames)
+
 		for _, d := range definitions.Value {
 			if d.Name == nil {
 				continue
