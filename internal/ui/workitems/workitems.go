@@ -3,6 +3,7 @@ package workitems
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -13,12 +14,14 @@ import (
 	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
 )
 
 const (
-	columnKeyID      = "id"
+	columnKeyPriority = "priority"
+	columnKeyID       = "id"
 	columnKeyType     = "type"
 	columnKeyStatus   = "status"
 	columnKeyTitle    = "title"
@@ -47,9 +50,9 @@ type viewWrapper struct {
 	content string
 }
 
-func (w viewWrapper) Init() tea.Cmd                         { return nil }
-func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd)   { return w, nil }
-func (w viewWrapper) View() string                          { return w.content }
+func (w viewWrapper) Init() tea.Cmd                       { return nil }
+func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd) { return w, nil }
+func (w viewWrapper) View() string                        { return w.content }
 
 // StateUpdateMsg is sent when a work item state is updated
 type StateUpdateMsg struct {
@@ -78,12 +81,15 @@ type Model struct {
 	height             int
 	assignedToMeFilter bool
 	hideDoneFilter     bool
+	hideTasksFilter    bool
 	currentUser        string
 	currentUserEmail   string
 	filterFocused      int // 0 = table, 1 = checkbox 1, 2 = checkbox 2, 3 = search
 	stateTransitions   map[string]map[string]string
 	statusMsg          string
 	statusErr          bool
+	// Priority ordering for work items
+	priorities *config.Priorities
 	// Detail modal
 	detailModal *DetailModel
 	showDetail  bool
@@ -92,7 +98,7 @@ type Model struct {
 	showEffort  bool
 }
 
-func New(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string) Model {
+func New(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string, priorities *config.Priorities) Model {
 	// Create search input
 	search := textinput.New()
 	search.Placeholder = "Search work items..."
@@ -100,6 +106,7 @@ func New(client *ado.Client, orgURL string, projects []string, stateTransitions 
 
 	// Create table with columns
 	columns := []table.Column{
+		table.NewColumn(columnKeyPriority, "#", 3).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
 		table.NewColumn(columnKeyID, "ID", 6).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
 		table.NewColumn(columnKeyType, "Type", 12),
 		table.NewColumn(columnKeyStatus, "Status", 12),
@@ -130,6 +137,7 @@ func New(client *ado.Client, orgURL string, projects []string, stateTransitions 
 		currentUserEmail:   client.CurrentUserEmail(),
 		filterFocused:      0,
 		stateTransitions:   stateTransitions,
+		priorities:         priorities,
 	}
 }
 
@@ -290,6 +298,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.err = msg.Err
 		} else {
 			m.items = msg.Items
+			// Clean up priorities for items that no longer exist
+			if m.priorities != nil {
+				validIDs := make(map[int]bool)
+				for _, item := range m.items {
+					validIDs[item.ID] = true
+				}
+				m.priorities.Clean(validIDs)
+				m.priorities.Save() // Only saves if changed
+			}
 			m.table = m.table.WithRows(m.buildRows())
 		}
 
@@ -312,13 +329,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		} else {
 			m.statusMsg = fmt.Sprintf("Updated #%d to %s", msg.ItemID, msg.NewState)
 			m.statusErr = false
+			// Auto-remove from priorities if transitioning to a "done" state
+			if doneStates[msg.NewState] && m.priorities != nil {
+				m.priorities.Remove(msg.ItemID)
+				m.priorities.Save()
+			}
 			// Refresh work items to get updated state
 			return m, m.fetchWorkItems()
 		}
 
 	case tea.KeyMsg:
 		// Handle search input when focused
-		if m.filterFocused == 3 {
+		if m.filterFocused == 4 {
 			switch msg.String() {
 			case "esc":
 				m.searchInput.SetValue("")
@@ -336,7 +358,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			case "shift+tab":
 				m.searchInput.Blur()
-				m.filterFocused = 2
+				m.filterFocused = 3
 				return m, nil
 			default:
 				var cmd tea.Cmd
@@ -351,19 +373,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		switch msg.String() {
 		case "tab":
-			m.filterFocused = (m.filterFocused + 1) % 4
-			if m.filterFocused == 3 {
+			m.filterFocused = (m.filterFocused + 1) % 5
+			if m.filterFocused == 4 {
 				m.searchInput.Focus()
 			}
 			return m, nil
 		case "shift+tab":
-			m.filterFocused = (m.filterFocused + 3) % 4
-			if m.filterFocused == 3 {
+			m.filterFocused = (m.filterFocused + 4) % 5
+			if m.filterFocused == 4 {
 				m.searchInput.Focus()
 			}
 			return m, nil
 		case "/":
-			m.filterFocused = 3
+			m.filterFocused = 4
 			m.searchInput.Focus()
 			return m, nil
 		case "esc":
@@ -381,6 +403,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.hideDoneFilter = !m.hideDoneFilter
 				m.table = m.table.WithRows(m.buildRows())
 				return m, nil
+			} else if m.filterFocused == 3 {
+				m.hideTasksFilter = !m.hideTasksFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
 			}
 		case "enter":
 			if m.filterFocused == 1 {
@@ -389,6 +415,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			} else if m.filterFocused == 2 {
 				m.hideDoneFilter = !m.hideDoneFilter
+				m.table = m.table.WithRows(m.buildRows())
+				return m, nil
+			} else if m.filterFocused == 3 {
+				m.hideTasksFilter = !m.hideTasksFilter
 				m.table = m.table.WithRows(m.buildRows())
 				return m, nil
 			} else if m.filterFocused == 0 {
@@ -410,6 +440,54 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.filterFocused == 0 {
 				return m, m.openSelectedItemInBrowser()
 			}
+		case "p":
+			// Prioritize selected item (add to top of priority list)
+			if m.filterFocused == 0 && m.priorities != nil {
+				item := m.getSelectedWorkItem()
+				if item != nil && (item.Type == "User Story" || item.Type == "Bug") {
+					if !m.priorities.Contains(item.ID) {
+						m.priorities.AddToTop(item.ID)
+						m.priorities.Save()
+						m.table = m.table.WithRows(m.buildRows())
+						m.statusMsg = fmt.Sprintf("Prioritized #%d", item.ID)
+						m.statusErr = false
+					}
+				}
+				return m, nil
+			}
+		case "u":
+			// Unprioritize selected item (remove from priority list)
+			if m.filterFocused == 0 && m.priorities != nil {
+				item := m.getSelectedWorkItem()
+				if item != nil && m.priorities.Contains(item.ID) {
+					m.priorities.Remove(item.ID)
+					m.priorities.Save()
+					m.table = m.table.WithRows(m.buildRows())
+					m.statusMsg = fmt.Sprintf("Unprioritized #%d", item.ID)
+					m.statusErr = false
+				}
+				return m, nil
+			}
+		case "shift+up", "K":
+			// Move prioritized item up
+			if m.filterFocused == 0 && m.priorities != nil {
+				item := m.getSelectedWorkItem()
+				if item != nil && m.priorities.MoveUp(item.ID) {
+					m.priorities.Save()
+					m.table = m.table.WithRows(m.buildRows())
+				}
+				return m, nil
+			}
+		case "shift+down", "J":
+			// Move prioritized item down
+			if m.filterFocused == 0 && m.priorities != nil {
+				item := m.getSelectedWorkItem()
+				if item != nil && m.priorities.MoveDown(item.ID) {
+					m.priorities.Save()
+					m.table = m.table.WithRows(m.buildRows())
+				}
+				return m, nil
+			}
 		}
 		// Only pass key events to table if table is focused
 		if m.filterFocused == 0 {
@@ -426,6 +504,8 @@ func (m Model) buildRows() []table.Row {
 	var rows []table.Row
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
+	// First, filter items
+	var filteredItems []ado.WorkItem
 	for _, item := range m.items {
 		// Apply "Assigned to Me" filter (compare emails, case-insensitive)
 		if m.assignedToMeFilter && m.currentUserEmail != "" && !strings.EqualFold(item.AssignedToEmail, m.currentUserEmail) {
@@ -433,6 +513,10 @@ func (m Model) buildRows() []table.Row {
 		}
 		// Apply "Hide Done/Resolved" filter
 		if m.hideDoneFilter && doneStates[item.State] {
+			continue
+		}
+		// Apply "Hide Tasks" filter
+		if m.hideTasksFilter && item.Type == "Task" {
 			continue
 		}
 		// Apply search filter (ID or Title)
@@ -443,6 +527,35 @@ func (m Model) buildRows() []table.Row {
 				continue
 			}
 		}
+		filteredItems = append(filteredItems, item)
+	}
+
+	// Sort by priority when "Assigned to Me" filter is active
+	if m.assignedToMeFilter && m.priorities != nil {
+		// Separate into prioritized and unprioritized
+		var prioritized []ado.WorkItem
+		var unprioritized []ado.WorkItem
+		for _, item := range filteredItems {
+			if m.priorities.Contains(item.ID) {
+				prioritized = append(prioritized, item)
+			} else {
+				unprioritized = append(unprioritized, item)
+			}
+		}
+
+		// Sort prioritized items by their position in the priority list
+		sort.Slice(prioritized, func(i, j int) bool {
+			posI := m.priorities.GetPosition(prioritized[i].ID)
+			posJ := m.priorities.GetPosition(prioritized[j].ID)
+			return posI < posJ
+		})
+
+		// Combine: prioritized first, then unprioritized (in original order)
+		filteredItems = append(prioritized, unprioritized...)
+	}
+
+	// Build table rows
+	for _, item := range filteredItems {
 		// Determine if "Next" action is available
 		actionText := ""
 		if _, hasNext := ado.GetNextState(m.stateTransitions, item.Type, item.State); hasNext {
@@ -452,7 +565,17 @@ func (m Model) buildRows() []table.Row {
 		// Style the type with color
 		styledType := getTypeStyle(item.Type).Render(item.Type)
 
+		// Determine priority display
+		priorityText := ""
+		if m.assignedToMeFilter && m.priorities != nil {
+			pos := m.priorities.GetPosition(item.ID)
+			if pos >= 0 {
+				priorityText = fmt.Sprintf("%d", pos+1) // 1-indexed for display
+			}
+		}
+
 		rows = append(rows, table.NewRow(table.RowData{
+			columnKeyPriority: priorityText,
 			columnKeyID:       fmt.Sprintf("%d", item.ID),
 			columnKeyType:     styledType,
 			columnKeyStatus:   item.State,
@@ -542,7 +665,7 @@ func (m Model) renderTableView() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[Tab] cycle  [/] search  [Enter] details  [n] next  [y] copy link  [o] open")
+	helpText := styles.HelpStyle.Render("[Tab] cycle  [/] search  [Enter] details  [n] next  [p] prioritize  [u] unprioritize  [Shift+J/K] reorder")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -558,6 +681,7 @@ func (m Model) renderFilters() string {
 
 	assignedLabel := fmt.Sprintf("%s Assigned to Me", check(m.assignedToMeFilter))
 	doneLabel := fmt.Sprintf("%s Hide Done/Resolved", check(m.hideDoneFilter))
+	tasksLabel := fmt.Sprintf("%s Hide Tasks", check(m.hideTasksFilter))
 
 	if m.filterFocused == 1 {
 		assignedLabel = styles.SelectedStyle.Render(assignedLabel)
@@ -565,14 +689,17 @@ func (m Model) renderFilters() string {
 	if m.filterFocused == 2 {
 		doneLabel = styles.SelectedStyle.Render(doneLabel)
 	}
+	if m.filterFocused == 3 {
+		tasksLabel = styles.SelectedStyle.Render(tasksLabel)
+	}
 
 	// Build search box
 	searchLabel := fmt.Sprintf("Search: %s", m.searchInput.View())
-	if m.filterFocused == 3 {
+	if m.filterFocused == 4 {
 		searchLabel = styles.SelectedStyle.Render(searchLabel)
 	}
 
-	return fmt.Sprintf("Filters: %s   %s   %s", assignedLabel, doneLabel, searchLabel)
+	return fmt.Sprintf("Filters: %s   %s   %s   %s", assignedLabel, doneLabel, tasksLabel, searchLabel)
 }
 
 // truncate truncates a string to maxLen and adds "..." if truncated
@@ -664,8 +791,8 @@ func (m Model) IsTextInputFocused() bool {
 	if m.showEffort && m.effortModal != nil {
 		return true
 	}
-	// Check if search input is focused (filterFocused == 3)
-	return m.filterFocused == 3
+	// Check if search input is focused (filterFocused == 4)
+	return m.filterFocused == 4
 }
 
 // getSelectedWorkItem returns the currently selected work item or nil

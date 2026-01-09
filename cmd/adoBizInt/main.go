@@ -50,7 +50,13 @@ func main() {
 	}
 	log.Info("ADO client created successfully")
 
-	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.Repositories, cfg.StateTransitions, cfg.PollInterval)
+	// Load priorities for work item ordering
+	priorities, err := config.LoadPriorities()
+	if err != nil {
+		log.Warn("Failed to load priorities, using empty list", "error", err)
+	}
+
+	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.Repositories, cfg.StateTransitions, cfg.PollInterval, priorities)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	log.Info("Starting TUI")

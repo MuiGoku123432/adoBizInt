@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/keymap"
 	"sentinovo.ai/bizInt/internal/ui/dashboard"
 	"sentinovo.ai/bizInt/internal/ui/pipelines"
@@ -45,7 +46,7 @@ type Model struct {
 	err              error
 }
 
-func NewModel(client *ado.Client, orgURL string, projects []string, repositories []string, stateTransitions map[string]map[string]string, pollInterval time.Duration) Model {
+func NewModel(client *ado.Client, orgURL string, projects []string, repositories []string, stateTransitions map[string]map[string]string, pollInterval time.Duration, priorities *config.Priorities) Model {
 	return Model{
 		client:           client,
 		orgURL:           orgURL,
@@ -54,7 +55,7 @@ func NewModel(client *ado.Client, orgURL string, projects []string, repositories
 		keys:             keymap.DefaultKeyMap(),
 		help:             help.New(),
 		dashboard:        dashboard.New(client, orgURL, projects),
-		workitems:        workitems.New(client, orgURL, projects, stateTransitions),
+		workitems:        workitems.New(client, orgURL, projects, stateTransitions, priorities),
 		prs:              prs.New(client, orgURL, projects, repositories),
 		pipelines:        pipelines.New(client, orgURL, projects, pollInterval),
 		releases:         releases.New(client, orgURL, projects, pollInterval),
