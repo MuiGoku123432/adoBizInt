@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -861,6 +862,104 @@ func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail
 
 	log.Debug("Got work item detail", "id", id, "title", detail.Title, "attachments", len(detail.Attachments))
 	return detail, nil
+}
+
+// GetChildWorkItems fetches all child work items for a given parent work item ID
+func (c *Client) GetChildWorkItems(ctx context.Context, parentID int) ([]WorkItem, error) {
+	log := logging.Logger()
+
+	// Fetch the parent work item with relations expanded
+	expand := workitemtracking.WorkItemExpandValues.Relations
+	item, err := c.workitemClient.GetWorkItem(ctx, workitemtracking.GetWorkItemArgs{
+		Id:     &parentID,
+		Expand: &expand,
+	})
+	if err != nil {
+		log.Error("Failed to get work item for children", "id", parentID, "error", err)
+		return nil, err
+	}
+
+	if item == nil || item.Relations == nil {
+		log.Debug("No relations found for work item", "id", parentID)
+		return []WorkItem{}, nil
+	}
+
+	// Extract child IDs from relations
+	// "System.LinkTypes.Hierarchy-Forward" means parent -> child relationship
+	var childIDs []int
+	for _, rel := range *item.Relations {
+		if rel.Rel != nil && *rel.Rel == "System.LinkTypes.Hierarchy-Forward" {
+			// Extract ID from URL (format: https://dev.azure.com/{org}/{project}/_apis/wit/workItems/{id})
+			if rel.Url != nil {
+				url := *rel.Url
+				// Find last segment after /workItems/
+				if lastSlash := strings.LastIndex(url, "/"); lastSlash >= 0 {
+					idStr := url[lastSlash+1:]
+					if id, err := strconv.Atoi(idStr); err == nil {
+						childIDs = append(childIDs, id)
+					}
+				}
+			}
+		}
+	}
+
+	if len(childIDs) == 0 {
+		log.Debug("No child work items found", "parentID", parentID)
+		return []WorkItem{}, nil
+	}
+
+	log.Debug("Found child work item IDs", "parentID", parentID, "childIDs", childIDs)
+
+	// Batch fetch child work items
+	fields := []string{
+		"System.Id",
+		"System.Title",
+		"System.WorkItemType",
+		"System.State",
+		"System.AssignedTo",
+	}
+	children, err := c.workitemClient.GetWorkItems(ctx, workitemtracking.GetWorkItemsArgs{
+		Ids:    &childIDs,
+		Fields: &fields,
+	})
+	if err != nil {
+		log.Error("Failed to fetch child work items", "parentID", parentID, "error", err)
+		return nil, err
+	}
+
+	var result []WorkItem
+	if children != nil {
+		for _, child := range *children {
+			wi := WorkItem{}
+			if child.Id != nil {
+				wi.ID = *child.Id
+			}
+			if child.Fields != nil {
+				fields := *child.Fields
+				if title, ok := fields["System.Title"].(string); ok {
+					wi.Title = title
+				}
+				if wiType, ok := fields["System.WorkItemType"].(string); ok {
+					wi.Type = wiType
+				}
+				if state, ok := fields["System.State"].(string); ok {
+					wi.State = state
+				}
+				// Extract assignee
+				if assignedTo, ok := fields["System.AssignedTo"]; ok && assignedTo != nil {
+					if v, ok := assignedTo.(map[string]interface{}); ok {
+						if displayName, ok := v["displayName"].(string); ok {
+							wi.AssignedTo = displayName
+						}
+					}
+				}
+			}
+			result = append(result, wi)
+		}
+	}
+
+	log.Info("Fetched child work items", "parentID", parentID, "count", len(result))
+	return result, nil
 }
 
 // GetNextState returns the next state for a work item type/current state based on config

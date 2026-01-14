@@ -209,6 +209,23 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 		return m.effortModal.Init()
 	}
 
+	// For User Stories going from Active to Resolved, fetch children first to find dev task
+	if item.Type == "User Story" && item.State == "Active" && nextState == "Resolved" {
+		client := m.client
+		itemID := id
+		itemTitle := item.Title
+		return func() tea.Msg {
+			children, err := client.GetChildWorkItems(context.Background(), itemID)
+			return ChildTasksLoadedMsg{
+				ParentID:    itemID,
+				ParentTitle: itemTitle,
+				NewState:    nextState,
+				Children:    children,
+				Err:         err,
+			}
+		}
+	}
+
 	// Create async command to update the state
 	client := m.client
 	return func() tea.Msg {
@@ -234,12 +251,71 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle child tasks loaded for User Story completion
+	if childMsg, ok := msg.(ChildTasksLoadedMsg); ok {
+		if childMsg.Err != nil {
+			m.statusMsg = "Error fetching child tasks: " + childMsg.Err.Error()
+			m.statusErr = true
+			return m, nil
+		}
+
+		// Find the development task
+		devTask, found := findDevelopmentTask(childMsg.Children)
+
+		var targetTaskID int
+		var targetTaskTitle string
+		if found {
+			targetTaskID = devTask.ID
+			targetTaskTitle = devTask.Title
+		}
+
+		// Create effort modal for User Story
+		effortModal := NewEffortModalForUserStory(
+			childMsg.ParentID,
+			childMsg.ParentTitle,
+			childMsg.NewState,
+			targetTaskID,
+			targetTaskTitle,
+		)
+		effortModal.width = m.width
+		effortModal.height = m.height
+		m.effortModal = &effortModal
+		m.showEffort = true
+		return m, m.effortModal.Init()
+	}
+
 	// Handle effort modal submit
 	if effortMsg, ok := msg.(EffortSubmitMsg); ok {
 		m.showEffort = false
 		m.effortModal = nil
-		// Call API to update state with effort
+
 		client := m.client
+
+		if effortMsg.IsUserStory {
+			// User Story flow: update dev task effort (if found), then update story state
+			return m, func() tea.Msg {
+				// Update the dev task's effort if we have one
+				if !effortMsg.SkipTaskUpdate && effortMsg.TargetTaskID > 0 {
+					err := client.UpdateWorkItemStateWithEffort(
+						context.Background(),
+						effortMsg.TargetTaskID,
+						"Closed", // Close the dev task
+						effortMsg.OriginalEstimate,
+						effortMsg.Remaining,
+						effortMsg.Completed,
+					)
+					if err != nil {
+						return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: fmt.Errorf("failed to update dev task: %w", err)}
+					}
+				}
+
+				// Now update the User Story state
+				err := client.UpdateWorkItemState(context.Background(), effortMsg.ItemID, effortMsg.NewState)
+				return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: err}
+			}
+		}
+
+		// Original Task flow
 		return m, func() tea.Msg {
 			err := client.UpdateWorkItemStateWithEffort(
 				context.Background(),
@@ -850,4 +926,45 @@ func (m *Model) openSelectedItemInBrowser() tea.Cmd {
 		err := utils.OpenInBrowser(url)
 		return LinkActionMsg{Action: "open", URL: url, Err: err}
 	}
+}
+
+// findDevelopmentTask searches child tasks for one with "Development" or "Dev" in the title
+// Returns the task and true if found, or nil and false if not found
+func findDevelopmentTask(children []ado.WorkItem) (*ado.WorkItem, bool) {
+	// Priority 1: Exact "Development" match (case-insensitive)
+	for i := range children {
+		if children[i].Type == "Task" {
+			titleLower := strings.ToLower(children[i].Title)
+			if titleLower == "development" {
+				return &children[i], true
+			}
+		}
+	}
+
+	// Priority 2: Contains "Development" (case-insensitive)
+	for i := range children {
+		if children[i].Type == "Task" {
+			titleLower := strings.ToLower(children[i].Title)
+			if strings.Contains(titleLower, "development") {
+				return &children[i], true
+			}
+		}
+	}
+
+	// Priority 3: Contains "Dev" as word (case-insensitive)
+	// Match "Dev Task", "Dev", but not "Developer"
+	for i := range children {
+		if children[i].Type == "Task" {
+			titleLower := strings.ToLower(children[i].Title)
+			// Check for "dev" as standalone word or at word boundaries
+			if titleLower == "dev" ||
+				strings.HasPrefix(titleLower, "dev ") ||
+				strings.HasSuffix(titleLower, " dev") ||
+				strings.Contains(titleLower, " dev ") {
+				return &children[i], true
+			}
+		}
+	}
+
+	return nil, false
 }

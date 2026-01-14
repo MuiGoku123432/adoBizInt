@@ -9,22 +9,35 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 )
 
 // EffortSubmitMsg is sent when user submits the effort form
 type EffortSubmitMsg struct {
 	ItemID           int
+	TargetTaskID     int // Child task ID for User Stories (0 if none found)
 	NewState         string
 	OriginalEstimate float64
 	Remaining        float64
 	Completed        float64
+	IsUserStory      bool // True if this is a User Story completion flow
+	SkipTaskUpdate   bool // True if no dev task found and user chose to proceed anyway
 }
 
 // CloseEffortMsg signals the effort modal should close without saving
 type CloseEffortMsg struct{}
 
-// EffortModal represents the effort input popup for Tasks
+// ChildTasksLoadedMsg is sent when child tasks are fetched for a User Story
+type ChildTasksLoadedMsg struct {
+	ParentID    int
+	ParentTitle string
+	NewState    string
+	Children    []ado.WorkItem
+	Err         error
+}
+
+// EffortModal represents the effort input popup for Tasks and User Stories
 type EffortModal struct {
 	itemID           int
 	itemTitle        string
@@ -36,6 +49,11 @@ type EffortModal struct {
 	width            int
 	height           int
 	err              string
+	// User Story support fields
+	isUserStory     bool
+	targetTaskID    int    // The dev task ID to update (0 if no dev task found)
+	targetTaskTitle string // The dev task title for display
+	warningMsg      string // Warning shown when no dev task found
 }
 
 // NewEffortModal creates a new effort input modal
@@ -68,6 +86,19 @@ func NewEffortModal(itemID int, itemTitle, newState string) EffortModal {
 		completed:        completed,
 		focusIndex:       0,
 	}
+}
+
+// NewEffortModalForUserStory creates an effort modal for User Story completion
+// targetTaskID is 0 if no development task was found
+func NewEffortModalForUserStory(userStoryID int, userStoryTitle, newState string, targetTaskID int, targetTaskTitle string) EffortModal {
+	m := NewEffortModal(userStoryID, userStoryTitle, newState)
+	m.isUserStory = true
+	m.targetTaskID = targetTaskID
+	m.targetTaskTitle = targetTaskTitle
+	if targetTaskID == 0 {
+		m.warningMsg = "No development task found. Hours will not be recorded."
+	}
+	return m
 }
 
 // Init initializes the effort modal
@@ -108,13 +139,22 @@ func (m EffortModal) Update(msg tea.Msg) (EffortModal, tea.Cmd) {
 				return m, nil
 			}
 
+			// Validate non-zero completed hours (required for both Task and User Story)
+			if completed <= 0 {
+				m.err = "Completed hours must be greater than zero"
+				return m, nil
+			}
+
 			return m, func() tea.Msg {
 				return EffortSubmitMsg{
 					ItemID:           m.itemID,
+					TargetTaskID:     m.targetTaskID,
 					NewState:         m.newState,
 					OriginalEstimate: origEst,
 					Remaining:        remaining,
 					Completed:        completed,
+					IsUserStory:      m.isUserStory,
+					SkipTaskUpdate:   m.targetTaskID == 0,
 				}
 			}
 		}
@@ -163,9 +203,12 @@ func (m EffortModal) View() string {
 		return styles.SubtitleStyle.Render("Loading...")
 	}
 
-	// Modal dimensions
+	// Modal dimensions - adjust height for User Story with extra info
 	modalWidth := 50
 	modalHeight := 16
+	if m.isUserStory {
+		modalHeight = 18
+	}
 
 	// Modal border style
 	borderStyle := lipgloss.NewStyle().
@@ -177,21 +220,45 @@ func (m EffortModal) View() string {
 
 	var b strings.Builder
 
-	// Title
+	// Title - different for User Story vs Task
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color("12")).
 		Width(modalWidth - 6).
 		Align(lipgloss.Center)
-	b.WriteString(titleStyle.Render("Enter Effort (Hours)"))
+
+	if m.isUserStory {
+		b.WriteString(titleStyle.Render("Enter Development Hours"))
+	} else {
+		b.WriteString(titleStyle.Render("Enter Effort (Hours)"))
+	}
 	b.WriteString("\n\n")
 
-	// Task info
-	taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Task #%d: %s", m.itemID, truncate(m.itemTitle, 30)))
-	b.WriteString(taskInfo)
-	b.WriteString("\n")
+	// Item info - show both User Story and target Task for User Story flow
+	if m.isUserStory {
+		storyInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Story #%d: %s", m.itemID, truncate(m.itemTitle, 30)))
+		b.WriteString(storyInfo)
+		b.WriteString("\n")
+		if m.targetTaskID > 0 {
+			taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Dev Task #%d: %s", m.targetTaskID, truncate(m.targetTaskTitle, 26)))
+			b.WriteString(taskInfo)
+			b.WriteString("\n")
+		}
+	} else {
+		taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Task #%d: %s", m.itemID, truncate(m.itemTitle, 30)))
+		b.WriteString(taskInfo)
+		b.WriteString("\n")
+	}
 	b.WriteString(styles.SubtitleStyle.Render(fmt.Sprintf("Transitioning to: %s", m.newState)))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+
+	// Warning message if no dev task found
+	if m.warningMsg != "" {
+		warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("208")) // Orange warning color
+		b.WriteString(warningStyle.Render(m.warningMsg))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
 
 	// Input fields
 	labelStyle := lipgloss.NewStyle().Width(20)
