@@ -1,0 +1,126 @@
+# Roadmap: adoBizInt
+
+## Overview
+
+Five phases turn a TUI-only Azure DevOps client into a tool an AI agent can
+drive. The ordering is dictated by a single constraint: an agent cannot see a
+screen, so it can only trust what the exit code and JSON tell it. That makes
+correctness a prerequisite for surface area, not a follow-up to it.
+
+Phases 1 and 2 make the existing service layer honest and testable. Phase 3
+delivers the read CLI, which is the first point of real agent value. Phase 4
+adds writes behind dry-run and confirmation. Phase 5 closes the remaining
+security findings and adds CI.
+
+This sequence follows the remediation ordering in `.planning/codebase/CONCERNS.md`.
+The audit is explicit that shipping an unverified `--dry-run` flag is worse than
+shipping no flag at all, which is why the test seam comes first.
+
+## Phases
+
+- [ ] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable
+- [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline
+- [ ] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters
+- [ ] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record
+- [ ] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL escaping, CI
+
+## Phase Details
+
+### Phase 1: Test seam for internal/ado
+**Goal**: `internal/ado` write paths can be tested without touching Azure DevOps
+**Depends on**: Nothing (first phase)
+**Requirements**: SEAM-01, SEAM-02, SEAM-03, SEAM-04
+**Success Criteria** (what must be TRUE):
+  1. Each of the seven write methods has a test asserting the exact ADO call it issues, with no network access
+  2. `go test ./internal/ado/...` passes and reports non-zero coverage where it currently reports 0.0%
+  3. The TUI builds and runs with no behavior change
+  4. Interfaces declare only the methods `internal/ado` actually calls, not the full SDK surface
+**Plans**: TBD
+
+Plans:
+- [ ] 01-01: Extract narrow interfaces for the ADO sub-clients in use
+- [ ] 01-02: Add an injectable constructor alongside the existing `NewClient`
+- [ ] 01-03: Cover the seven write methods with fakes
+
+### Phase 2: Honest reads
+**Goal**: A caller can distinguish an empty result from a failed one
+**Depends on**: Phase 1
+**Requirements**: TRUST-01, TRUST-02, TRUST-03, TRUST-04, OUT-02
+**Success Criteria** (what must be TRUE):
+  1. Every aggregate read reports which projects failed and why, rather than dropping errors with `continue`
+  2. An expired PAT produces a distinct fatal error, never an empty list
+  3. A partial result is explicitly flagged incomplete
+  4. Every ADO call carries a deadline and `connection.Timeout` is set
+  5. Exported `ado` structs carry `json:` tags with stable lower-cased names
+  6. The TUI renders failures rather than silently showing an empty table
+**Plans**: TBD
+
+Plans:
+- [ ] 02-01: Change aggregate read returns to carry failures and a completeness flag
+- [ ] 02-02: Treat 401 and 403 as fatal; set timeouts on connection and contexts
+- [ ] 02-03: Add json tags to exported structs
+- [ ] 02-04: Update TUI call sites to surface partial and failed reads
+
+### Phase 3: Read CLI
+**Goal**: An AI agent can query every existing read operation and parse the result
+**Depends on**: Phase 2
+**Requirements**: CLI-01, CLI-02, CLI-04, CLI-05, CLI-06, OUT-01, OUT-03, OUT-04, OUT-05
+**Success Criteria** (what must be TRUE):
+  1. `adoBizInt` with no arguments launches the TUI exactly as before
+  2. Read subcommands exist for work items, PRs, pipelines, releases, branches and dashboard
+  3. `--json` emits parseable JSON on stdout with nothing else written to stdout
+  4. Exit codes distinguish success, partial, auth failure and outcome-unknown
+  5. `--timeout` bounds the invocation and interrupts are handled
+  6. Agent-relevant filters work as flags, promoted out of the view packages
+  7. A panic emits structured JSON rather than dying silently
+**Plans**: TBD
+
+Plans:
+- [ ] 03-01: Add subcommand dispatch before TUI construction in main
+- [ ] 03-02: Promote filtering out of the view packages so CLI and TUI share it
+- [ ] 03-03: Read subcommands with JSON output
+- [ ] 03-04: Exit code contract, panic handler, timeout and signal handling
+
+### Phase 4: Guarded writes
+**Goal**: An agent can mutate Azure DevOps without a mistake being silent or irreversible-by-surprise
+**Depends on**: Phase 3
+**Requirements**: CLI-03, SAFE-01, SAFE-02, SAFE-03, SAFE-04
+**Success Criteria** (what must be TRUE):
+  1. Every write verb performs a dry run unless an explicit confirmation flag is passed
+  2. A dry run reports exactly what would change and makes no ADO call that mutates state
+  3. Every executed write appends an audit record identifying what changed
+  4. Omitting an effort field leaves it unchanged rather than zeroing it
+  5. A write that times out reports outcome-unknown, distinct from both success and failure
+  6. All of the above are covered by tests using the Phase 1 seam
+**Plans**: TBD
+
+Plans:
+- [ ] 04-01: Dry-run and confirmation contract shared by all write verbs
+- [ ] 04-02: Write subcommands for the seven mutations
+- [ ] 04-03: Audit record and outcome-unknown handling
+- [ ] 04-04: Nullable effort fields
+
+### Phase 5: Hardening
+**Goal**: The security findings that a CLI makes reachable are closed
+**Depends on**: Phase 4
+**Requirements**: HARD-01, HARD-02, HARD-03, HARD-04, HARD-05
+**Success Criteria** (what must be TRUE):
+  1. Attachment download takes an identifier, not a URL, and the PAT cannot reach an arbitrary host
+  2. Attachment writes cannot escape the intended directory
+  3. The nil-dereference sites in CONCERNS.md MED4 are guarded
+  4. WIQL project interpolation is escaped and validated against configured projects
+  5. CI runs build, vet, race tests and gofmt on every push and fails on regression
+**Plans**: TBD
+
+Plans:
+- [ ] 05-01: Attachment identifier, host allow-list, timeouts, size cap
+- [ ] 05-02: Path containment and nil guards
+- [ ] 05-03: WIQL escaping and project validation
+- [ ] 05-04: CI workflow and linter config
+
+## Deferred
+
+Tracked in REQUIREMENTS.md v2, deliberately outside this roadmap:
+scrum master features via the dormant `work.Client`, work item creation and
+comments, a native MCP server, the Azure DevOps SDK upgrade, and rate limit
+backoff.
