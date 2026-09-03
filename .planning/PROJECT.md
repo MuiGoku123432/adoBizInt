@@ -89,12 +89,15 @@ Three findings shape the plan:
 | Scrum posture: the agent informs, the TUI acts | Two of the three driving pains (stale board data, manual ceremony prep) are CLI read verbs on the v1 foundation. Only navigation speed needs new TUI work | -- Pending |
 | Capacity is display-only, never a rule input | Days off are not maintained, so ADO capacity is systematically overstated. Reasoning from it would produce confident wrong answers -- the C1 failure mode one layer up | -- Pending |
 | Nag rules hardcoded, thresholds configurable | A general rules engine is speculative generality. The rule set is the feature, not the extensibility | -- Pending |
+| Agent writes bounded by capability tier, not by confirmation flag | Dry-run and `--confirm` prevent accidents, not intent. An agent passing `--confirm` is using the flag as designed. Authorization needs a boundary | -- Pending |
+| Hours summed across all child tasks, with missing Development task flagged | Summing only the Development task would silently undercount and bias slippage toward optimism. Flagging makes the gap visible instead | -- Pending |
+| Sprint report starts at five fields | No structured report exists today, so the format is being defined rather than matched. Fields earn their way in through use | -- Pending |
 
 ## Design Sessions
 
 | Date | Topic | Output |
 |------|-------|--------|
-| 2026-09-03 | Scrum master milestone scope, features and TUI shape | REQUIREMENTS.md v2: TEAM, NAG, CEREMONY, SPRINT, GROOM, STORY |
+| 2026-09-03 | Scrum master milestone scope, features and TUI shape | REQUIREMENTS.md v2: TEAM, DATA, NAG, CEREMONY, SPRINT, GROOM, AGENT, STORY |
 
 ---
-*Last updated: 2026-09-03 after brownfield onboarding*
+*Last updated: 2026-09-03 after scrum design session*
