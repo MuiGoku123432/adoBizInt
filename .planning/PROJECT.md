@@ -86,6 +86,15 @@ Three findings shape the plan:
 | Fix read error propagation before shipping any read verb | A read verb that renders auth failure as an empty list actively misleads an agent. Correctness precedes surface area | -- Pending |
 | Extract interfaces in `internal/ado` despite the no-abstraction rule | Explicitly required to test seven production-mutating write paths. This is the one abstraction the task demands | -- Pending |
 | TUI remains the default with no subcommand | Non-breaking for daily use | -- Pending |
+| Scrum posture: the agent informs, the TUI acts | Two of the three driving pains (stale board data, manual ceremony prep) are CLI read verbs on the v1 foundation. Only navigation speed needs new TUI work | -- Pending |
+| Capacity is display-only, never a rule input | Days off are not maintained, so ADO capacity is systematically overstated. Reasoning from it would produce confident wrong answers -- the C1 failure mode one layer up | -- Pending |
+| Nag rules hardcoded, thresholds configurable | A general rules engine is speculative generality. The rule set is the feature, not the extensibility | -- Pending |
+
+## Design Sessions
+
+| Date | Topic | Output |
+|------|-------|--------|
+| 2026-09-03 | Scrum master milestone scope, features and TUI shape | REQUIREMENTS.md v2: TEAM, NAG, CEREMONY, SPRINT, GROOM, STORY |
 
 ---
 *Last updated: 2026-09-03 after brownfield onboarding*

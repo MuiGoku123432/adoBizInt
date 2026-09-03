@@ -54,6 +54,8 @@ Full log in PROJECT.md Key Decisions.
 - Onboarding: Ship the CLI over existing features before adding scrum master features
 - Onboarding: Fix read error propagation before shipping any read verb
 - Onboarding: Extract interfaces in `internal/ado` despite the no-abstraction standard -- required to test seven production-mutating writes
+- Design session: Scrum posture is "agent informs, TUI acts" -- most scrum value lands as CLI read verbs on the v1 foundation
+- Design session: Capacity is display-only and never a rule input, because days off are unmaintained and capacity is therefore overstated
 
 ### Pending Todos
 
@@ -68,6 +70,10 @@ Carried from `.planning/codebase/CONCERNS.md`. All are addressed by the roadmap.
 - **C3 (critical)**: `DownloadAttachment` sends the PAT to a caller-supplied URL with no allow-list or timeout (`internal/ado/workitems.go:520`). Phase 5.
 - **H1 (high)**: `internal/ado` is 0.0% covered with zero interface seam. Phase 1.
 - **H2 (high)**: 22 `context.Background()` sites, no timeouts, `connection.Timeout` never set. Phase 2.
+
+Affecting the v2 scrum milestone, not v1:
+
+- **Days off unmaintained in ADO.** ADO capacity is `capacityPerDay x workingDays - daysOff`, so every capacity figure is overstated. Constrains v2 design: capacity is display-only, and no nag rule may read it. Revisit if teams start maintaining days off.
 
 ### Environment Notes
 
