@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"net/url"
 	"os/exec"
 	"runtime"
 
@@ -16,6 +17,17 @@ func BuildWorkItemURL(orgURL, project string, id int) string {
 // BuildPRURL constructs the Azure DevOps URL for a pull request
 func BuildPRURL(orgURL, project, repoName string, id int) string {
 	return fmt.Sprintf("%s/%s/_git/%s/pullrequest/%d", orgURL, project, repoName, id)
+}
+
+// BuildBranchURL constructs the Azure DevOps URL for a repository branch
+func BuildBranchURL(orgURL, project, repoName, branch string) string {
+	return fmt.Sprintf("%s/%s/_git/%s?version=GB%s", orgURL, project, repoName, url.QueryEscape(branch))
+}
+
+// BuildPRCreateURL constructs the Azure DevOps URL for opening a new pull request from a branch
+func BuildPRCreateURL(orgURL, project, repoName, sourceBranch, targetBranch string) string {
+	return fmt.Sprintf("%s/%s/_git/%s/pullrequestcreate?sourceRef=%s&targetRef=%s",
+		orgURL, project, repoName, url.QueryEscape(sourceBranch), url.QueryEscape(targetBranch))
 }
 
 // BuildPipelineURL constructs the Azure DevOps URL for a pipeline run
