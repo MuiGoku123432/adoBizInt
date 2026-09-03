@@ -11,10 +11,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
-	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/config"
+	"sentinovo.ai/bizInt/internal/ui/link"
+	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
 )
@@ -45,27 +46,11 @@ type WorkItemsMsg struct {
 	Err   error
 }
 
-// viewWrapper wraps a pre-rendered view string for overlay
-type viewWrapper struct {
-	content string
-}
-
-func (w viewWrapper) Init() tea.Cmd                       { return nil }
-func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd) { return w, nil }
-func (w viewWrapper) View() string                        { return w.content }
-
 // StateUpdateMsg is sent when a work item state is updated
 type StateUpdateMsg struct {
 	ItemID   int
 	NewState string
 	Err      error
-}
-
-// LinkActionMsg is sent when a link action (copy/open) completes
-type LinkActionMsg struct {
-	Action string // "copy" or "open"
-	URL    string
-	Err    error
 }
 
 type Model struct {
@@ -386,7 +371,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.table = m.table.WithRows(m.buildRows())
 		}
 
-	case LinkActionMsg:
+	case link.ActionMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
 			m.statusErr = true
@@ -655,9 +640,9 @@ func (m Model) buildRows() []table.Row {
 			columnKeyID:       fmt.Sprintf("%d", item.ID),
 			columnKeyType:     styledType,
 			columnKeyStatus:   item.State,
-			columnKeyTitle:    truncate(item.Title, 23),
-			columnKeySummary:  truncate(stripHTML(item.Summary), 20),
-			columnKeyAssignee: truncate(item.AssignedTo, 13),
+			columnKeyTitle:    utils.Truncate(item.Title, 23),
+			columnKeySummary:  utils.Truncate(stripHTML(item.Summary), 20),
+			columnKeyAssignee: utils.Truncate(item.AssignedTo, 13),
 			columnKeyPoints:   fmt.Sprintf("%d", item.StoryPoints),
 			columnKeyActions:  actionText,
 		}))
@@ -666,27 +651,15 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
-	// If effort modal is open, use overlay to composite modal on top of table
+	// If effort modal is open, composite it over the table
 	if m.showEffort && m.effortModal != nil {
-		modalView := m.effortModal.View()
-		tableView := m.renderTableView()
-
-		fg := viewWrapper{content: modalView}
-		bg := viewWrapper{content: tableView}
-		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
-		return o.View()
+		return modal.Center(m.effortModal.View(), m.renderTableView())
 	}
 
-	// If detail modal is open, use overlay to composite modal on top of table
+	// If detail modal is open, composite it over the table. Rendered fresh from
+	// current state each time - avoids stale pointer issues.
 	if m.showDetail && m.detailModal != nil {
-		// Create overlay fresh with current state - avoids stale pointer issues
-		modalView := m.detailModal.View()
-		tableView := m.renderTableView()
-
-		fg := viewWrapper{content: modalView}
-		bg := viewWrapper{content: tableView}
-		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
-		return o.View()
+		return modal.Center(m.detailModal.View(), m.renderTableView())
 	}
 
 	return m.renderTableView()
@@ -776,17 +749,6 @@ func (m Model) renderFilters() string {
 	}
 
 	return fmt.Sprintf("Filters: %s   %s   %s   %s", assignedLabel, doneLabel, tasksLabel, searchLabel)
-}
-
-// truncate truncates a string to maxLen and adds "..." if truncated
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
 }
 
 // stripHTML removes HTML tags from a string (basic implementation)
@@ -900,32 +862,18 @@ func (m *Model) getSelectedWorkItem() *ado.WorkItem {
 func (m *Model) copySelectedItemLink() tea.Cmd {
 	item := m.getSelectedWorkItem()
 	if item == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no item selected")}
-		}
+		return link.Fail("copy", fmt.Errorf("no item selected"))
 	}
-
-	url := utils.BuildWorkItemURL(m.orgURL, item.Project, item.ID)
-	return func() tea.Msg {
-		err := utils.CopyToClipboard(url)
-		return LinkActionMsg{Action: "copy", URL: url, Err: err}
-	}
+	return link.Copy(utils.BuildWorkItemURL(m.orgURL, item.Project, item.ID))
 }
 
 // openSelectedItemInBrowser opens the selected work item in the default browser
 func (m *Model) openSelectedItemInBrowser() tea.Cmd {
 	item := m.getSelectedWorkItem()
 	if item == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no item selected")}
-		}
+		return link.Fail("open", fmt.Errorf("no item selected"))
 	}
-
-	url := utils.BuildWorkItemURL(m.orgURL, item.Project, item.ID)
-	return func() tea.Msg {
-		err := utils.OpenInBrowser(url)
-		return LinkActionMsg{Action: "open", URL: url, Err: err}
-	}
+	return link.Open("open", utils.BuildWorkItemURL(m.orgURL, item.Project, item.ID))
 }
 
 // findDevelopmentTask searches child tasks for one with "Development" or "Dev" in the title

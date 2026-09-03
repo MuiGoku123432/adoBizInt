@@ -3,18 +3,19 @@ package keymap
 import "github.com/charmbracelet/bubbles/key"
 
 type KeyMap struct {
-	Quit      key.Binding
-	Help      key.Binding
-	Search    key.Binding
-	Up        key.Binding
-	Down      key.Binding
-	Enter     key.Binding
-	Back      key.Binding
-	Tab1      key.Binding
-	Tab2      key.Binding
-	Tab3      key.Binding
-	Tab4      key.Binding
-	Tab5      key.Binding
+	Quit   key.Binding
+	Help   key.Binding
+	Search key.Binding
+	Up     key.Binding
+	Down   key.Binding
+	Enter  key.Binding
+	Back   key.Binding
+	Tab1   key.Binding
+	Tab2   key.Binding
+	Tab3   key.Binding
+	Tab4   key.Binding
+	Tab5   key.Binding
+	Tab6   key.Binding
 }
 
 func DefaultKeyMap() KeyMap {
@@ -67,6 +68,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("5"),
 			key.WithHelp("5", "releases"),
 		),
+		Tab6: key.NewBinding(
+			key.WithKeys("6"),
+			key.WithHelp("6", "branches"),
+		),
 	}
 }
 
@@ -78,6 +83,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Enter, k.Back},
 		{k.Search, k.Help, k.Quit},
-		{k.Tab1, k.Tab2, k.Tab3, k.Tab4, k.Tab5},
+		{k.Tab1, k.Tab2, k.Tab3, k.Tab4, k.Tab5, k.Tab6},
 	}
 }

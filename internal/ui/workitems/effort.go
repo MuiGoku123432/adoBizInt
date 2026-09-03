@@ -11,6 +11,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/ui/styles"
+	"sentinovo.ai/bizInt/internal/utils"
 )
 
 // EffortSubmitMsg is sent when user submits the effort form
@@ -236,16 +237,16 @@ func (m EffortModal) View() string {
 
 	// Item info - show both User Story and target Task for User Story flow
 	if m.isUserStory {
-		storyInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Story #%d: %s", m.itemID, truncate(m.itemTitle, 30)))
+		storyInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Story #%d: %s", m.itemID, utils.Truncate(m.itemTitle, 30)))
 		b.WriteString(storyInfo)
 		b.WriteString("\n")
 		if m.targetTaskID > 0 {
-			taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Dev Task #%d: %s", m.targetTaskID, truncate(m.targetTaskTitle, 26)))
+			taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Dev Task #%d: %s", m.targetTaskID, utils.Truncate(m.targetTaskTitle, 26)))
 			b.WriteString(taskInfo)
 			b.WriteString("\n")
 		}
 	} else {
-		taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Task #%d: %s", m.itemID, truncate(m.itemTitle, 30)))
+		taskInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Task #%d: %s", m.itemID, utils.Truncate(m.itemTitle, 30)))
 		b.WriteString(taskInfo)
 		b.WriteString("\n")
 	}

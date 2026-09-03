@@ -14,6 +14,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/logging"
 	"sentinovo.ai/bizInt/internal/ui/styles"
+	"sentinovo.ai/bizInt/internal/utils"
 )
 
 // DetailLoadedMsg is sent when work item details are fetched
@@ -338,7 +339,7 @@ func (m DetailModel) renderHeader(width int) string {
 	infoLine := fmt.Sprintf("%s  |  State: %s  |  Assignee: %s",
 		typeStyle.Render(item.Type),
 		item.State,
-		truncate(item.AssignedTo, 20))
+		utils.Truncate(item.AssignedTo, 20))
 	if item.StoryPoints > 0 {
 		infoLine += fmt.Sprintf("  |  Points: %d", item.StoryPoints)
 	}

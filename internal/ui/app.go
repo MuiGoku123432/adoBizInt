@@ -10,6 +10,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/keymap"
+	"sentinovo.ai/bizInt/internal/ui/branches"
 	"sentinovo.ai/bizInt/internal/ui/dashboard"
 	"sentinovo.ai/bizInt/internal/ui/pipelines"
 	"sentinovo.ai/bizInt/internal/ui/prs"
@@ -26,6 +27,7 @@ const (
 	PRsView
 	PipelinesView
 	ReleasesView
+	BranchesView
 )
 
 type Model struct {
@@ -40,6 +42,7 @@ type Model struct {
 	prs              prs.Model
 	pipelines        pipelines.Model
 	releases         releases.Model
+	branches         branches.Model
 	view             View
 	width            int
 	height           int
@@ -56,9 +59,10 @@ func NewModel(client *ado.Client, orgURL string, projects []string, repositories
 		help:             help.New(),
 		dashboard:        dashboard.New(client, orgURL, projects),
 		workitems:        workitems.New(client, orgURL, projects, stateTransitions, priorities),
-		prs:              prs.New(client, orgURL, projects, repositories),
+		prs:              prs.New(client, orgURL, projects, repositories, pollInterval),
 		pipelines:        pipelines.New(client, orgURL, projects, pollInterval),
 		releases:         releases.New(client, orgURL, projects, pollInterval),
+		branches:         branches.New(client, orgURL, projects, repositories),
 		view:             DashboardView,
 	}
 }
@@ -114,6 +118,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, m.releases.Init()
 				}
 				return m, nil
+			case key.Matches(msg, m.keys.Tab6):
+				if m.view != BranchesView {
+					m.view = BranchesView
+					// Initialize branches if switching to it
+					return m, m.branches.Init()
+				}
+				return m, nil
 			}
 		}
 
@@ -122,13 +133,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.help.Width = msg.Width
 		// Propagate WindowSizeMsg to ALL sub-models
-		var dashCmd, workitemsCmd, prsCmd, pipelinesCmd, releasesCmd tea.Cmd
+		var dashCmd, workitemsCmd, prsCmd, pipelinesCmd, releasesCmd, branchesCmd tea.Cmd
 		m.dashboard, dashCmd = m.dashboard.Update(msg)
 		m.workitems, workitemsCmd = m.workitems.Update(msg)
 		m.prs, prsCmd = m.prs.Update(msg)
 		m.pipelines, pipelinesCmd = m.pipelines.Update(msg)
 		m.releases, releasesCmd = m.releases.Update(msg)
-		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd, pipelinesCmd, releasesCmd)
+		m.branches, branchesCmd = m.branches.Update(msg)
+		cmds = append(cmds, dashCmd, workitemsCmd, prsCmd, pipelinesCmd, releasesCmd, branchesCmd)
 	}
 
 	// Update current view (skip WindowSizeMsg since already handled above)
@@ -154,6 +166,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.releases, cmd = m.releases.Update(msg)
 			cmds = append(cmds, cmd)
+		case BranchesView:
+			var cmd tea.Cmd
+			m.branches, cmd = m.branches.Update(msg)
+			cmds = append(cmds, cmd)
 		}
 	}
 
@@ -177,6 +193,8 @@ func (m Model) View() string {
 		content = m.pipelines.View()
 	case ReleasesView:
 		content = m.releases.View()
+	case BranchesView:
+		content = m.branches.View()
 	default:
 		content = "View not implemented"
 	}
@@ -198,6 +216,8 @@ func (m Model) isCurrentViewTextInputFocused() bool {
 		return m.pipelines.IsTextInputFocused()
 	case ReleasesView:
 		return m.releases.IsTextInputFocused()
+	case BranchesView:
+		return m.branches.IsTextInputFocused()
 	default:
 		return false
 	}

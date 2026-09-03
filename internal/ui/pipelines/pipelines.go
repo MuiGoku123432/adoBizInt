@@ -10,9 +10,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
-	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/link"
+	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
 )
@@ -50,13 +51,6 @@ type TriggerResultMsg struct {
 
 // TickMsg is used for auto-refresh polling
 type TickMsg struct{}
-
-// LinkActionMsg is sent when a link action (copy/open) completes
-type LinkActionMsg struct {
-	Action string // "copy" or "open"
-	URL    string
-	Err    error
-}
 
 type Model struct {
 	client       *ado.Client
@@ -261,7 +255,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, m.fetchPipelineRuns()
 		}
 
-	case LinkActionMsg:
+	case link.ActionMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
 			m.statusErr = true
@@ -364,15 +358,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) View() string {
-	// If trigger modal is open, use overlay
+	// If trigger modal is open, composite it over the table
 	if m.showTrigger && m.triggerModal != nil {
-		modalView := m.triggerModal.View()
-		tableView := m.renderTableView()
-
-		fg := viewWrapper{content: modalView}
-		bg := viewWrapper{content: tableView}
-		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
-		return o.View()
+		return modal.Center(m.triggerModal.View(), m.renderTableView())
 	}
 
 	return m.renderTableView()
@@ -478,13 +466,13 @@ func (m Model) buildRows() []table.Row {
 		}
 
 		// Format branch (show "-" for pipelines that never ran)
-		branchDisplay := truncate(run.SourceBranch, 16)
+		branchDisplay := utils.Truncate(run.SourceBranch, 16)
 		if run.SourceBranch == "" {
 			branchDisplay = styles.MutedStyle.Render("-")
 		}
 
 		// Format requested by (show "-" for pipelines that never ran)
-		requestedByDisplay := truncate(run.RequestedBy, 13)
+		requestedByDisplay := utils.Truncate(run.RequestedBy, 13)
 		if run.RequestedBy == "" {
 			requestedByDisplay = styles.MutedStyle.Render("-")
 		}
@@ -499,7 +487,7 @@ func (m Model) buildRows() []table.Row {
 		durationDisplay := formatDuration(run.Duration)
 
 		rows = append(rows, table.NewRow(table.RowData{
-			columnKeyPipeline:    truncate(run.PipelineName, 18),
+			columnKeyPipeline:    utils.Truncate(run.PipelineName, 18),
 			columnKeyBuildNumber: buildNumDisplay,
 			columnKeyStatus:      statusDisplay,
 			columnKeyResult:      resultDisplay,
@@ -557,25 +545,6 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
-// viewWrapper for overlay
-type viewWrapper struct {
-	content string
-}
-
-func (w viewWrapper) Init() tea.Cmd                       { return nil }
-func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd) { return w, nil }
-func (w viewWrapper) View() string                        { return w.content }
-
 // IsTextInputFocused returns true when search input or trigger modal is focused
 func (m Model) IsTextInputFocused() bool {
 	// Check if trigger modal is open (it has text inputs)
@@ -610,30 +579,16 @@ func (m *Model) getSelectedPipelineRun() *ado.PipelineRun {
 func (m *Model) copySelectedPipelineLink() tea.Cmd {
 	run := m.getSelectedPipelineRun()
 	if run == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no pipeline run selected")}
-		}
+		return link.Fail("copy", fmt.Errorf("no pipeline run selected"))
 	}
-
-	url := utils.BuildPipelineURL(m.orgURL, run.Project, run.ID)
-	return func() tea.Msg {
-		err := utils.CopyToClipboard(url)
-		return LinkActionMsg{Action: "copy", URL: url, Err: err}
-	}
+	return link.Copy(utils.BuildPipelineURL(m.orgURL, run.Project, run.ID))
 }
 
 // openSelectedPipelineInBrowser opens the selected pipeline run in the default browser
 func (m *Model) openSelectedPipelineInBrowser() tea.Cmd {
 	run := m.getSelectedPipelineRun()
 	if run == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no pipeline run selected")}
-		}
+		return link.Fail("open", fmt.Errorf("no pipeline run selected"))
 	}
-
-	url := utils.BuildPipelineURL(m.orgURL, run.Project, run.ID)
-	return func() tea.Msg {
-		err := utils.OpenInBrowser(url)
-		return LinkActionMsg{Action: "open", URL: url, Err: err}
-	}
+	return link.Open("open", utils.BuildPipelineURL(m.orgURL, run.Project, run.ID))
 }

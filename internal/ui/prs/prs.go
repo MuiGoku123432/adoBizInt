@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,6 +13,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
 )
@@ -19,12 +21,12 @@ import (
 const (
 	columnKeyID      = "id"
 	columnKeyTitle   = "title"
+	columnKeyProject = "project"
 	columnKeyRepo    = "repo"
 	columnKeySource  = "source"
 	columnKeyTarget  = "target"
 	columnKeyAuthor  = "author"
 	columnKeyStatus  = "status"
-	columnKeyActions = "actions"
 )
 
 // PRsMsg is sent when pull requests are fetched
@@ -33,6 +35,9 @@ type PRsMsg struct {
 	Err   error
 }
 
+// TickMsg is used for auto-refresh polling
+type TickMsg struct{}
+
 // PRActionMsg is sent when a PR action (approve/complete) completes
 type PRActionMsg struct {
 	PRID   int
@@ -40,21 +45,17 @@ type PRActionMsg struct {
 	Err    error
 }
 
-// LinkActionMsg is sent when a link action (copy/open) completes
-type LinkActionMsg struct {
-	Action string // "copy" or "open"
-	URL    string
-	Err    error
-}
-
 type Model struct {
-	client        *ado.Client
-	orgURL        string
-	projects      []string
-	repositories  []string
-	table         table.Model
-	searchInput   textinput.Model
-	items         []ado.PullRequest
+	client       *ado.Client
+	orgURL       string
+	projects     []string
+	repositories []string
+	pollInterval time.Duration
+
+	table       table.Model
+	searchInput textinput.Model
+	items       []ado.PullRequest
+
 	loading       bool
 	err           error
 	width         int
@@ -63,9 +64,14 @@ type Model struct {
 	statusMsg     string
 	statusErr     bool
 	actionPending bool
+
+	// confirmComplete is set while awaiting confirmation of a merge
+	confirmComplete bool
+
+	autoRefresh bool
 }
 
-func New(client *ado.Client, orgURL string, projects []string, repositories []string) Model {
+func New(client *ado.Client, orgURL string, projects []string, repositories []string, pollInterval time.Duration) Model {
 	// Create search input
 	search := textinput.New()
 	search.Placeholder = "Search PRs..."
@@ -74,13 +80,13 @@ func New(client *ado.Client, orgURL string, projects []string, repositories []st
 	// Create table with columns
 	columns := []table.Column{
 		table.NewColumn(columnKeyID, "ID", 6).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
-		table.NewColumn(columnKeyTitle, "Title", 30),
+		table.NewColumn(columnKeyTitle, "Title", 34),
+		table.NewColumn(columnKeyProject, "Project", 12),
 		table.NewColumn(columnKeyRepo, "Repository", 15),
 		table.NewColumn(columnKeySource, "Source", 15),
 		table.NewColumn(columnKeyTarget, "Target", 12),
 		table.NewColumn(columnKeyAuthor, "Author", 15),
 		table.NewColumn(columnKeyStatus, "Approval", 10),
-		table.NewColumn(columnKeyActions, "Actions", 20),
 	}
 
 	t := table.New(columns).
@@ -95,15 +101,26 @@ func New(client *ado.Client, orgURL string, projects []string, repositories []st
 		orgURL:        orgURL,
 		projects:      projects,
 		repositories:  repositories,
+		pollInterval:  pollInterval,
 		table:         t,
 		searchInput:   search,
 		loading:       true,
 		filterFocused: 0,
+		autoRefresh:   true,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.fetchPRs()
+	return tea.Batch(m.fetchPRs(), m.tickCmd())
+}
+
+func (m Model) tickCmd() tea.Cmd {
+	if m.pollInterval <= 0 {
+		m.pollInterval = 30 * time.Second
+	}
+	return tea.Tick(m.pollInterval, func(t time.Time) tea.Msg {
+		return TickMsg{}
+	})
 }
 
 func (m Model) fetchPRs() tea.Cmd {
@@ -124,11 +141,22 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.height = msg.Height
 		m.table = m.table.WithTargetWidth(msg.Width - 4)
 
+	case TickMsg:
+		// Auto-refresh if enabled. Skipped while a merge confirmation is pending,
+		// so the rows cannot shift between the prompt and the confirming keypress.
+		if m.autoRefresh && !m.loading && !m.actionPending && !m.confirmComplete {
+			m.loading = true
+			cmds = append(cmds, m.fetchPRs(), m.tickCmd())
+		} else {
+			cmds = append(cmds, m.tickCmd())
+		}
+
 	case PRsMsg:
 		m.loading = false
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
+			m.err = nil
 			m.items = msg.Items
 			m.table = m.table.WithRows(m.buildRows())
 		}
@@ -145,7 +173,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, m.fetchPRs()
 		}
 
-	case LinkActionMsg:
+	case link.ActionMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
 			m.statusErr = true
@@ -182,6 +210,19 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
+		// A pending merge confirmation swallows the next keypress, so it must be
+		// checked before the regular bindings (notably "y", which copies a link).
+		if m.confirmComplete {
+			m.confirmComplete = false
+			if msg.String() == "y" {
+				cmd := m.completeSelectedPR()
+				return m, cmd
+			}
+			m.statusMsg = "Merge cancelled"
+			m.statusErr = false
+			return m, nil
+		}
+
 		switch msg.String() {
 		case "/":
 			m.filterFocused = 1
@@ -190,13 +231,34 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		case "a":
 			// Approve selected PR
 			if m.filterFocused == 0 && !m.actionPending {
-				return m, m.approveSelectedPR()
+				cmd := m.approveSelectedPR()
+				return m, cmd
 			}
 		case "c":
-			// Complete/merge selected PR
+			// Completing a PR merges it, so ask for confirmation first
 			if m.filterFocused == 0 && !m.actionPending {
-				return m, m.completeSelectedPR()
+				pr := m.getSelectedPR()
+				if pr == nil {
+					m.statusMsg = "No PR selected"
+					m.statusErr = true
+					return m, nil
+				}
+				m.confirmComplete = true
+				m.statusMsg = fmt.Sprintf("Merge PR #%d %s? [y] confirm  [any other key] cancel",
+					pr.ID, utils.Truncate(pr.Title, 40))
+				m.statusErr = false
+				return m, nil
 			}
+		case "t":
+			// Toggle auto-refresh
+			m.autoRefresh = !m.autoRefresh
+			if m.autoRefresh {
+				m.statusMsg = "Auto-refresh enabled"
+			} else {
+				m.statusMsg = "Auto-refresh disabled"
+			}
+			m.statusErr = false
+			return m, nil
 		case "r":
 			// Refresh PR list
 			m.loading = true
@@ -298,9 +360,12 @@ func (m Model) getSelectedPR() *ado.PullRequest {
 func (m Model) View() string {
 	var b strings.Builder
 
-	// Title
-	title := styles.TitleStyle.Render("Pull Requests")
-	b.WriteString(title)
+	// Title with auto-refresh indicator
+	title := "Pull Requests"
+	if m.autoRefresh {
+		title += " (auto)"
+	}
+	b.WriteString(styles.TitleStyle.Render(title))
 	b.WriteString("\n")
 
 	// Search bar
@@ -317,8 +382,9 @@ func (m Model) View() string {
 		b.WriteString("\n\n")
 	}
 
-	// Show loading or table
-	if m.loading {
+	// Show loading or table. Once rows exist a refresh keeps them on screen and
+	// only annotates the count line, rather than blanking the table.
+	if m.loading && len(m.items) == 0 {
 		b.WriteString(styles.SubtitleStyle.Render("Loading pull requests..."))
 	} else if len(m.items) == 0 {
 		b.WriteString(styles.SubtitleStyle.Render("No open pull requests found"))
@@ -328,6 +394,9 @@ func (m Model) View() string {
 		totalCount := len(m.items)
 		countInfo := styles.SubtitleStyle.Render(fmt.Sprintf("Showing %d of %d PRs", filteredCount, totalCount))
 		b.WriteString(countInfo)
+		if m.loading {
+			b.WriteString(styles.SubtitleStyle.Render(" (refreshing...)"))
+		}
 		b.WriteString("\n")
 		b.WriteString(m.table.View())
 	}
@@ -347,7 +416,7 @@ func (m Model) View() string {
 	b.WriteString("\n")
 
 	// Help bar
-	helpText := styles.HelpStyle.Render("[/] search  [a] approve  [c] complete  [r] refresh  [y] copy link  [o] open")
+	helpText := styles.HelpStyle.Render("[/] search  [a] approve  [c] merge  [r] refresh  [t] auto  [y] copy link  [o] open")
 	b.WriteString(helpText)
 
 	return b.String()
@@ -394,10 +463,11 @@ func (m Model) buildRows() []table.Row {
 			}
 		}
 
-		// Style draft PRs differently
-		titleDisplay := truncate(item.Title, 28)
+		// Style draft PRs differently. The "[Draft] " prefix is 8 chars, so the
+		// title is trimmed to keep both variants inside the 34-wide column.
+		titleDisplay := utils.Truncate(item.Title, 32)
 		if item.IsDraft {
-			titleDisplay = "[Draft] " + truncate(item.Title, 20)
+			titleDisplay = "[Draft] " + utils.Truncate(item.Title, 24)
 		}
 
 		// Format approval status with color
@@ -406,25 +476,15 @@ func (m Model) buildRows() []table.Row {
 		rows = append(rows, table.NewRow(table.RowData{
 			columnKeyID:      fmt.Sprintf("%d", item.ID),
 			columnKeyTitle:   titleDisplay,
-			columnKeyRepo:    truncate(item.RepositoryName, 13),
-			columnKeySource:  truncate(item.SourceBranch, 13),
-			columnKeyTarget:  truncate(item.TargetBranch, 10),
-			columnKeyAuthor:  truncate(item.CreatedBy, 13),
+			columnKeyProject: utils.Truncate(item.Project, 10),
+			columnKeyRepo:    utils.Truncate(item.RepositoryName, 13),
+			columnKeySource:  utils.Truncate(item.SourceBranch, 13),
+			columnKeyTarget:  utils.Truncate(item.TargetBranch, 10),
+			columnKeyAuthor:  utils.Truncate(item.CreatedBy, 13),
 			columnKeyStatus:  statusDisplay,
-			columnKeyActions: "[a]pprove [c]omplete",
 		}))
 	}
 	return rows
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
 }
 
 func getApprovalStyle(status string) lipgloss.Style {
@@ -449,30 +509,16 @@ func (m Model) IsTextInputFocused() bool {
 func (m *Model) copySelectedPRLink() tea.Cmd {
 	pr := m.getSelectedPR()
 	if pr == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no PR selected")}
-		}
+		return link.Fail("copy", fmt.Errorf("no PR selected"))
 	}
-
-	url := utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID)
-	return func() tea.Msg {
-		err := utils.CopyToClipboard(url)
-		return LinkActionMsg{Action: "copy", URL: url, Err: err}
-	}
+	return link.Copy(utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID))
 }
 
 // openSelectedPRInBrowser opens the selected PR in the default browser
 func (m *Model) openSelectedPRInBrowser() tea.Cmd {
 	pr := m.getSelectedPR()
 	if pr == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no PR selected")}
-		}
+		return link.Fail("open", fmt.Errorf("no PR selected"))
 	}
-
-	url := utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID)
-	return func() tea.Msg {
-		err := utils.OpenInBrowser(url)
-		return LinkActionMsg{Action: "open", URL: url, Err: err}
-	}
+	return link.Open("open", utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID))
 }

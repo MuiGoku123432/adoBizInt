@@ -10,9 +10,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/evertras/bubble-table/table"
-	"github.com/rmhubbert/bubbletea-overlay"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/link"
+	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
 )
@@ -25,6 +26,11 @@ const (
 	columnKeyCreated      = "created"
 	columnKeyEnvironments = "environments"
 	columnKeyApprovals    = "approvals"
+
+	// columnKeyReleaseID carries the release ID as hidden row metadata. It has no
+	// matching column so it never renders, but stays attached to the row for
+	// getSelectedRelease to look up.
+	columnKeyReleaseID = "releaseID"
 )
 
 // ReleasesMsg is sent when releases are fetched
@@ -48,13 +54,6 @@ type ApprovalResultMsg struct {
 
 // TickMsg is used for auto-refresh polling
 type TickMsg struct{}
-
-// LinkActionMsg is sent when a link action (copy/open) completes
-type LinkActionMsg struct {
-	Action string // "copy" or "open"
-	URL    string
-	Err    error
-}
 
 type Model struct {
 	client       *ado.Client
@@ -99,7 +98,7 @@ func New(client *ado.Client, orgURL string, projects []string, pollInterval time
 		table.NewColumn(columnKeyDefinition, "Definition", 20),
 		table.NewColumn(columnKeyStatus, "Status", 12),
 		table.NewColumn(columnKeyCreated, "Created", 16),
-		table.NewColumn(columnKeyEnvironments, "Environments", 30),
+		table.NewColumn(columnKeyEnvironments, "Environments", 34),
 		table.NewColumn(columnKeyApprovals, "Pending", 8),
 	}
 
@@ -196,6 +195,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	}
 
+	// The modal delegation below consumes every message, which would swallow the
+	// tick and stop the auto-refresh chain for good. Re-arm the timer instead,
+	// without refreshing rows out from under the open modal.
+	if _, ok := msg.(TickMsg); ok && m.showApproval && m.approvalModal != nil {
+		return m, m.tickCmd()
+	}
+
 	// Delegate to approval modal when open
 	if m.showApproval && m.approvalModal != nil {
 		if wsm, ok := msg.(tea.WindowSizeMsg); ok {
@@ -231,13 +237,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
+			m.err = nil
 			m.releases = msg.Releases
 			m.table = m.table.WithRows(m.buildRows())
-			// Warn if no releases found (could indicate config issue)
-			if len(m.releases) == 0 {
-				m.statusMsg = "No releases found. Check configured pipeline names in config.yaml"
-				m.statusErr = true
-			}
 		}
 
 	case ApprovalsMsg:
@@ -264,7 +266,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, tea.Batch(m.fetchReleases(), m.fetchApprovals())
 		}
 
-	case LinkActionMsg:
+	case link.ActionMsg:
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
 			m.statusErr = true
@@ -335,7 +337,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				m.showApproval = true
 				return m, nil
 			} else {
-				m.statusMsg = "No pending approvals for " + truncate(selectedRelease.Name, 20)
+				m.statusMsg = "No pending approvals for " + utils.Truncate(selectedRelease.Name, 20)
 				m.statusErr = false
 			}
 		case "t":
@@ -358,16 +360,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			if m.filterFocused == 0 {
 				return m, m.openSelectedReleaseInBrowser()
 			}
-		case "d":
-			// Debug: show configured release definitions
-			configured := m.client.ReleaseDefinitions()
-			if len(configured) == 0 {
-				m.statusMsg = "Debug: No release definitions configured"
-			} else {
-				m.statusMsg = fmt.Sprintf("Debug: Configured releases: %v | Found: %d", configured, len(m.releases))
-			}
-			m.statusErr = false
-			return m, nil
 		}
 
 		// Pass key events to table if focused
@@ -395,15 +387,9 @@ func (m *Model) updatePendingCounts() {
 }
 
 func (m Model) View() string {
-	// If approval modal is open, use overlay
+	// If approval modal is open, composite it over the table
 	if m.showApproval && m.approvalModal != nil {
-		modalView := m.approvalModal.View()
-		tableView := m.renderTableView()
-
-		fg := viewWrapper{content: modalView}
-		bg := viewWrapper{content: tableView}
-		o := overlay.New(fg, bg, overlay.Center, overlay.Center, 0, 0)
-		return o.View()
+		return modal.Center(m.approvalModal.View(), m.renderTableView())
 	}
 
 	return m.renderTableView()
@@ -492,7 +478,7 @@ func (m Model) buildRows() []table.Row {
 		statusDisplay := getReleaseStatusStyle(rel.Status).Render(rel.Status)
 
 		// Format release name (show "-" for definitions with no releases)
-		releaseDisplay := truncate(rel.Name, 16)
+		releaseDisplay := utils.Truncate(rel.Name, 16)
 		if rel.Name == "" {
 			releaseDisplay = styles.MutedStyle.Render("-")
 		}
@@ -516,11 +502,12 @@ func (m Model) buildRows() []table.Row {
 
 		rows = append(rows, table.NewRow(table.RowData{
 			columnKeyRelease:      releaseDisplay,
-			columnKeyDefinition:   truncate(rel.DefinitionName, 18),
+			columnKeyDefinition:   utils.Truncate(rel.DefinitionName, 18),
 			columnKeyStatus:       statusDisplay,
 			columnKeyCreated:      createdDisplay,
 			columnKeyEnvironments: envsDisplay,
 			columnKeyApprovals:    approvalsDisplay,
+			columnKeyReleaseID:    rel.ID,
 		}))
 	}
 	return rows
@@ -546,10 +533,11 @@ func formatEnvironments(envs []ado.ReleaseEnvironment) string {
 		return styles.MutedStyle.Render("-")
 	}
 
+	// 5 entries of "*" + 4 name chars, space separated, plus the overflow marker
+	// fits the 34-wide Environments column.
 	var parts []string
 	for _, env := range envs {
-		// Truncate env name to first 3 chars
-		name := truncate(env.Name, 3)
+		name := utils.Truncate(env.Name, 4)
 		indicator := getEnvStatusIndicator(env.Status, env.DeploymentStatus)
 		parts = append(parts, indicator+name)
 	}
@@ -588,25 +576,6 @@ func getEnvStatusIndicator(status, deploymentStatus string) string {
 	}
 }
 
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	if maxLen <= 3 {
-		return s[:maxLen]
-	}
-	return s[:maxLen-3] + "..."
-}
-
-// viewWrapper for overlay
-type viewWrapper struct {
-	content string
-}
-
-func (w viewWrapper) Init() tea.Cmd                       { return nil }
-func (w viewWrapper) Update(tea.Msg) (tea.Model, tea.Cmd) { return w, nil }
-func (w viewWrapper) View() string                        { return w.content }
-
 // IsTextInputFocused returns true when search input or approval modal is focused
 func (m Model) IsTextInputFocused() bool {
 	// Check if approval modal is open (it has a text input)
@@ -624,14 +593,13 @@ func (m *Model) getSelectedRelease() *ado.Release {
 		return nil
 	}
 
-	releaseName, ok := highlightedRow.Data[columnKeyRelease].(string)
+	id, ok := highlightedRow.Data[columnKeyReleaseID].(int)
 	if !ok {
 		return nil
 	}
 
 	for i := range m.releases {
-		// Match by truncated name since that's what's in the table
-		if truncate(m.releases[i].Name, 16) == releaseName {
+		if m.releases[i].ID == id {
 			return &m.releases[i]
 		}
 	}
@@ -642,30 +610,16 @@ func (m *Model) getSelectedRelease() *ado.Release {
 func (m *Model) copySelectedReleaseLink() tea.Cmd {
 	release := m.getSelectedRelease()
 	if release == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "copy", Err: fmt.Errorf("no release selected")}
-		}
+		return link.Fail("copy", fmt.Errorf("no release selected"))
 	}
-
-	url := utils.BuildReleaseURL(m.orgURL, release.Project, release.ID)
-	return func() tea.Msg {
-		err := utils.CopyToClipboard(url)
-		return LinkActionMsg{Action: "copy", URL: url, Err: err}
-	}
+	return link.Copy(utils.BuildReleaseURL(m.orgURL, release.Project, release.ID))
 }
 
 // openSelectedReleaseInBrowser opens the selected release in the default browser
 func (m *Model) openSelectedReleaseInBrowser() tea.Cmd {
 	release := m.getSelectedRelease()
 	if release == nil {
-		return func() tea.Msg {
-			return LinkActionMsg{Action: "open", Err: fmt.Errorf("no release selected")}
-		}
+		return link.Fail("open", fmt.Errorf("no release selected"))
 	}
-
-	url := utils.BuildReleaseURL(m.orgURL, release.Project, release.ID)
-	return func() tea.Msg {
-		err := utils.OpenInBrowser(url)
-		return LinkActionMsg{Action: "open", URL: url, Err: err}
-	}
+	return link.Open("open", utils.BuildReleaseURL(m.orgURL, release.Project, release.ID))
 }
