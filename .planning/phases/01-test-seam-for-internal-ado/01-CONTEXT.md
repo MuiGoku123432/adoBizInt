@@ -336,6 +336,13 @@ decide, or raise them:
   contract (OUT-04, auth-failure code) gives it a proper home and where a
   non-interactive caller has different tolerance for degraded startup than the
   TUI does.
+- **Gap-closure decision (2026-09-04): Preserve approval retry semantics.**
+  Verification showed that cache-only identity resolution turns a transient
+  startup lookup failure into a process-lifetime approval failure. Gap closure
+  must retain the successful construction-time cache while restoring a
+  testable live lookup fallback when `currentUserID` is empty. This supersedes
+  D-11 only where cache-only behavior conflicts with SC3; the non-fatal startup
+  behavior and `AuthenticatedUser.Id` identity choice remain locked.
 - **Setting `connection.Timeout`** — the seam makes it testable, but it is
   TRUST-04 in Phase 2.
 - **Scrum-master use of the dormant `workClient`** — v2, per PROJECT.md
