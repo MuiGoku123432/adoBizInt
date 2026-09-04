@@ -27,47 +27,57 @@ shipping no flag at all, which is why the test seam comes first.
 ## Phase Details
 
 ### Phase 1: Test seam for internal/ado
+
 **Goal**: `internal/ado` write paths can be tested without touching Azure DevOps
 **Depends on**: Nothing (first phase)
 **Requirements**: SEAM-01, SEAM-02, SEAM-03, SEAM-04
 **Success Criteria** (what must be TRUE):
+
   1. Each of the seven write methods has a test asserting the exact ADO call it issues, with no network access
   2. `go test ./internal/ado/...` passes and reports non-zero coverage where it currently reports 0.0%
   3. The TUI builds and runs with no behavior change
   4. Interfaces declare only the methods `internal/ado` actually calls, not the full SDK surface
-**Plans**: 5 plans
+
+**Plans**: 1/5 plans executed
 
 Plans:
-- [ ] 01-01-PLAN.md — Tracer: one narrow interface, one retyped field, one fake, one green write test
+
+- [x] 01-01-PLAN.md — Tracer: one narrow interface, one retyped field, one fake, one green write test
 - [ ] 01-02-PLAN.md — Remaining three interfaces, cached current user ID, all four fakes
 - [ ] 01-03-PLAN.md — The seven write methods plus `GetNextState`, with a release approve/reject cross-check
 - [ ] 01-04-PLAN.md — Characterization tests for the two work-item-query reads, including the dashboard's structurally different swallow
 - [ ] 01-05-PLAN.md — Characterization tests for the remaining six aggregate reads, plus the eight-test phase gate
 
 ### Phase 2: Honest reads
+
 **Goal**: A caller can distinguish an empty result from a failed one
 **Depends on**: Phase 1
 **Requirements**: TRUST-01, TRUST-02, TRUST-03, TRUST-04, OUT-02
 **Success Criteria** (what must be TRUE):
+
   1. Every aggregate read reports which projects failed and why, rather than dropping errors with `continue`
   2. An expired PAT produces a distinct fatal error, never an empty list
   3. A partial result is explicitly flagged incomplete
   4. Every ADO call carries a deadline and `connection.Timeout` is set
   5. Exported `ado` structs carry `json:` tags with stable lower-cased names
   6. The TUI renders failures rather than silently showing an empty table
+
 **Plans**: TBD
 
 Plans:
+
 - [ ] 02-01: Change aggregate read returns to carry failures and a completeness flag
 - [ ] 02-02: Treat 401 and 403 as fatal; set timeouts on connection and contexts
 - [ ] 02-03: Add json tags to exported structs
 - [ ] 02-04: Update TUI call sites to surface partial and failed reads
 
 ### Phase 3: Read CLI
+
 **Goal**: An AI agent can query every existing read operation and parse the result
 **Depends on**: Phase 2
 **Requirements**: CLI-01, CLI-02, CLI-04, CLI-05, CLI-06, OUT-01, OUT-03, OUT-04, OUT-05
 **Success Criteria** (what must be TRUE):
+
   1. `adoBizInt` with no arguments launches the TUI exactly as before
   2. Read subcommands exist for work items, PRs, pipelines, releases, branches and dashboard
   3. `--json` emits parseable JSON on stdout with nothing else written to stdout
@@ -75,46 +85,56 @@ Plans:
   5. `--timeout` bounds the invocation and interrupts are handled
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
+
 **Plans**: TBD
 
 Plans:
+
 - [ ] 03-01: Add subcommand dispatch before TUI construction in main
 - [ ] 03-02: Promote filtering out of the view packages so CLI and TUI share it
 - [ ] 03-03: Read subcommands with JSON output
 - [ ] 03-04: Exit code contract, panic handler, timeout and signal handling
 
 ### Phase 4: Guarded writes
+
 **Goal**: An agent can mutate Azure DevOps without a mistake being silent or irreversible-by-surprise
 **Depends on**: Phase 3
 **Requirements**: CLI-03, SAFE-01, SAFE-02, SAFE-03, SAFE-04
 **Success Criteria** (what must be TRUE):
+
   1. Every write verb performs a dry run unless an explicit confirmation flag is passed
   2. A dry run reports exactly what would change and makes no ADO call that mutates state
   3. Every executed write appends an audit record identifying what changed
   4. Omitting an effort field leaves it unchanged rather than zeroing it
   5. A write that times out reports outcome-unknown, distinct from both success and failure
   6. All of the above are covered by tests using the Phase 1 seam
+
 **Plans**: TBD
 
 Plans:
+
 - [ ] 04-01: Dry-run and confirmation contract shared by all write verbs
 - [ ] 04-02: Write subcommands for the seven mutations
 - [ ] 04-03: Audit record and outcome-unknown handling
 - [ ] 04-04: Nullable effort fields
 
 ### Phase 5: Hardening
+
 **Goal**: The security findings that a CLI makes reachable are closed
 **Depends on**: Phase 4
 **Requirements**: HARD-01, HARD-02, HARD-03, HARD-04, HARD-05
 **Success Criteria** (what must be TRUE):
+
   1. Attachment download takes an identifier, not a URL, and the PAT cannot reach an arbitrary host
   2. Attachment writes cannot escape the intended directory
   3. The nil-dereference sites in CONCERNS.md MED4 are guarded
   4. WIQL project interpolation is escaped and validated against configured projects
   5. CI runs build, vet, race tests and gofmt on every push and fails on regression
+
 **Plans**: TBD
 
 Plans:
+
 - [ ] 05-01: Attachment identifier, host allow-list, timeouts, size cap
 - [ ] 05-02: Path containment and nil guards
 - [ ] 05-03: WIQL escaping and project validation

@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 1
-current_phase_name: Test seam for internal/ado
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-09-04T17:26:13.770Z"
-last_activity: 2026-09-03
-last_activity_desc: Brownfield onboarding complete; codebase mapped, project artifacts created
+current_phase: 01
+current_phase_name: test-seam-for-internal-ado
+status: executing
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-09-04T21:53:32.827Z"
+last_activity: 2026-09-04
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 5
+  completed_plans: 1
 ---
 
 # Project State
@@ -23,16 +23,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-03)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 1 -- Test seam for internal/ado
+**Current focus:** Phase 01 — test-seam-for-internal-ado
 
 ## Current Position
 
-Phase: 1 of 5 (Test seam for internal/ado)
-Plan: 0 of TBD
-Status: Ready to plan
-Last activity: 2026-09-03 -- Brownfield onboarding complete; codebase mapped, project artifacts created
+Phase: 01 (test-seam-for-internal-ado) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-09-04 — Phase 01 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
@@ -53,6 +53,12 @@ Progress: [░░░░░░░░░░] 0%
 - Last 5 plans: none
 - Trend: --
 
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 4 min | 2 tasks | 4 files |
+
 ## Accumulated Context
 
 ### Decisions
@@ -65,6 +71,9 @@ Full log in PROJECT.md Key Decisions.
 - Onboarding: Extract interfaces in `internal/ado` despite the no-abstraction standard -- required to test seven production-mutating writes
 - Design session: Scrum posture is "agent informs, TUI acts" -- most scrum value lands as CLI read verbs on the v1 foundation
 - Design session: Capacity is display-only and never a rule input, because days off are unmaintained and capacity is therefore overstated
+- [Phase 01]: Use the assignable unexported Client.workitemClient field as the injection seam; add no constructor or adapter. — In-package tests can assign the field directly, preserving the public API and avoiding constructor network I/O.
+- [Phase 01]: Rely on NewClient's SDK-interface assignment as compile-time conformance proof; add no ClientImpl assertion. — The SDK constructor returns an interface, so the production assignment is the correct compile-time relationship.
+- [Phase 01]: Require each fake method to fail by interface and method name when its function field is unset. — Unexpected ADO calls must fail at the call site instead of returning misleading zero values.
 
 ### Pending Todos
 
@@ -100,6 +109,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-04T17:26:13.758Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-test-seam-for-internal-ado/01-CONTEXT.md
+Last session: 2026-09-04T21:53:32.822Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
