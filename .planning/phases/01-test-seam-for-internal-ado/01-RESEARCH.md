@@ -667,8 +667,8 @@ connData.AuthorizedUser != nil` guard at `client.go:71`. Preserve the
 
 ## The Eight Aggregate Reads
 
-All eight located and their per-project failure-injection points identified. **Two
-of them do not fail where you would expect.**
+All eight located and their per-project failure-injection points identified. **Three
+of them do not fail where you would expect — and one of them cannot fail at all.**
 
 | # | Function | Location | Swallow site | Fail this call to make a project fail |
 |---|----------|----------|--------------|---------------------------------------|
@@ -679,10 +679,38 @@ of them do not fail where you would expect.**
 | 5 | `GetReleases` | `releases.go:56` | `:73` | `releaseAPI.GetReleaseDefinitions` (`:68`) |
 | 6 | `GetPendingApprovals` | `releases.go:201` | `:220` | `releaseAPI.GetApprovals` (`:214`) |
 | 7 | `GetBranches` | `branches.go:32` | `:51` | `gitAPI.GetRepositories` (`:48`) |
-| 8 | `GetDashboardCounts` | `dashboard.go:23` | `:51` | `workItemAPI.QueryByWiql` (`:100`) — same trap as #1 |
+| 8 | `GetDashboardCounts` | `dashboard.go:23` | `:51` — **UNREACHABLE, see correction** | **no per-project failure path exists**; `workItemAPI.QueryByWiql` (`:100`) makes the project contribute `0`, it does not make it fail |
 
-All eight follow the identical shape: `log.Error(...)` then `continue`, then
-`return x, nil` at the end. `GetWorkItems` is canonical [VERIFIED:
+> **CORRECTION (plan-checker B-1, revision 1).** The original version of this row
+> claimed `GetDashboardCounts` shares the `QueryByWiql` trap with #1 and that "all
+> eight follow the identical shape". **That is wrong for #8 and is corrected here
+> rather than silently rewritten.**
+>
+> The original research verified the Trap-A *iteration* structure inside
+> `getProjectCounts` but never checked whether `getProjectCounts` **propagates**.
+> It does not. [VERIFIED: `dashboard.go:74-141` read in full.] Its only return is
+> line 141 `return counts, nil`. All four internal error sites (`:81`, `:101`,
+> `:115`, `:126`) log in place and fall through to the next call. Therefore:
+>
+> - `getProjectCounts` **never returns a non-nil error**;
+> - the `continue` at `dashboard.go:49-51` is **unreachable dead code**;
+> - failing `QueryByWiql` yields `WorkItems == 0` for that project while its
+>   `PRs` and `Pipelines` **still populate normally**;
+> - **removing that `continue` cannot turn any test red**, so it is not a usable
+>   mutation target.
+>
+> Consequence for planning: **seven** of the eight reads share the identical
+> `log.Error(...)` then `continue` shape. `GetDashboardCounts` is the eighth and is
+> structurally different — it swallows **per call, in place, one layer down**.
+>
+> **Phase 2 warning.** A future `02-01` that inverts TRUST-01 by grepping for
+> `continue` in the per-project loop will find seven sites and **silently miss the
+> dashboard**. Inverting the dashboard requires adding `return nil, err` at each of
+> the four sites inside `getProjectCounts` (or restructuring it to propagate)
+> *before* the loop's `continue` becomes live code at all.
+
+Seven of the eight (#1-#7) follow the identical shape: `log.Error(...)` then
+`continue`, then `return x, nil` at the end. `GetWorkItems` is canonical [VERIFIED:
 `workitems.go:73-83`, quoted]:
 
 ```go
@@ -1077,7 +1105,10 @@ All structural claims — interface method sets, file:line references, SDK
 signatures, field names, control flow — were read from source or the module cache
 this session and are tagged `[VERIFIED]` inline.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three were resolved before planning completed. Retained with inline
+`RESOLVED:` markers rather than deleted, so the audit trail stays honest.
 
 1. **Should `GetNextState` and the other pure functions land in this phase?**
    - What we know: they need no seam, and `GetNextState` (`workitems.go:510`)
@@ -1085,12 +1116,19 @@ this session and are tagged `[VERIFIED]` inline.
    - What's unclear: CONTEXT.md surfaced this without delegating it.
    - Recommendation: include `GetNextState`, defer the rest. See the
      Discretion table. Worth one line of confirmation before planning.
+   - **RESOLVED:** user scope decision, recorded verbatim at
+     `01-01-PLAN.md:104-116`. `GetNextState` is IN scope — seven writes plus
+     `GetNextState` = eight covered units. `pipelineNameMatches`
+     (`pipelines.go:57`) and `calculateApprovalStatus` (`pullrequests.go:119`)
+     are deferred to a later phase. Covered by `01-03` Task 1.
 
 2. **Where exactly do the interfaces live?**
    - What we know: `client.go` is 236 lines and would stay under 300 either way.
    - What's unclear: pure style preference.
    - Recommendation: `internal/ado/interfaces.go`, for the comment block
      documenting the SC4 ceiling and the no-assertion rationale.
+   - **RESOLVED:** `internal/ado/interfaces.go`, per the recommendation. Created
+     by `01-01` Task 1 and extended by `01-02` Task 1.
 
 3. **Do the characterization tests get a sanity check?**
    - What we know: Trap A shows a characterization test can pass while pinning
@@ -1098,6 +1136,15 @@ this session and are tagged `[VERIFIED]` inline.
    - Recommendation: the plan should require each of the eight to be verified by
      temporarily deleting the `continue` it claims to pin and observing a
      failure. That is a manual step during execution, not a committed test.
+   - **RESOLVED:** yes — formalized as the mutation check protocol in `01-01`
+     Task 2 and reused by `01-03`, `01-04` and `01-05`. Evidence requirement was
+     strengthened in revision 1: the SUMMARY must quote the mutated diff hunk
+     alongside the observed `FAIL` text, so the record shows *what was changed*,
+     not merely that something failed. **Note the per-read mutation target is not
+     uniform:** for reads #1-#7 it is removing the `continue`; for
+     `GetDashboardCounts` it is making `getProjectCounts` propagate, because its
+     `continue` is unreachable — see the CORRECTION under "The Eight Aggregate
+     Reads".
 
 ## Sources
 

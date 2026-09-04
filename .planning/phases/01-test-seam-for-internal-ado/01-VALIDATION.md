@@ -37,24 +37,32 @@ created: 2026-09-04
 
 ## Per-Task Verification Map
 
-> Populated by the planner/executor as tasks are authored. Each write-method
-> characterization test must be sanity-checked by temporarily inverting the
-> behavior it claims to pin (RESEARCH.md Trap A/B) — a test that stays green
-> under mutation is not covering anything.
+> Populated by the planner/executor as tasks are authored. Each characterization
+> test must be sanity-checked by temporarily mutating the behavior it claims to
+> pin (RESEARCH.md Trap A/B) — a test that stays green under mutation is not
+> covering anything. **The mutation target is not uniform:** for seven of the
+> eight aggregate reads it is removing the per-project `continue`; for
+> `GetDashboardCounts` the `continue` is unreachable and the target is instead
+> making `getProjectCounts` propagate. See RESEARCH §"The Eight Aggregate Reads"
+> revision-1 CORRECTION. Every mutation record must include the mutated diff hunk
+> alongside the failure output — green plus clean `git status` is identical
+> whether the mutation ran or not.
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
 | 1-01-01 | 01 | 1 | SEAM-01, SEAM-02, SEAM-03 | T-01-01, T-01-02 | No PAT or connection in test files; tracer test proven non-vacuous | compile + unit | `go build ./... && go vet ./... && go test ./internal/ado/ -run TestUpdateWorkItemStateIssuesExactPatch -cover` | ❌ W0 | ⬜ pending |
-| 1-01-02 | 01 | 1 | SEAM-03 | T-01-02 | Mutation observed red then reverted clean | mutation | `test -z "$(git status --porcelain internal/ado/workitems.go)" && go test ./internal/ado/ -run TestUpdateWorkItemStateIssuesExactPatch` | ❌ W0 | ⬜ pending |
+| 1-01-02 | 01 | 1 | SEAM-03 | T-01-02 | Mutation observed red then reverted clean; hunk recorded | mutation | `test -z "$(git status --porcelain internal/ado/workitems.go)" && go test ./internal/ado/ -run TestUpdateWorkItemStateIssuesExactPatch` | ❌ W0 | ⬜ pending |
 | 1-02-01 | 02 | 2 | SEAM-01 | T-01-07 | Exactly 20 methods; no concrete-impl assertion | compile | `go build ./... && go vet ./... && gofmt -l internal/ado/` | ❌ W0 | ⬜ pending |
 | 1-02-02 | 02 | 2 | SEAM-02 | T-01-04, T-01-05, T-01-06 | Authenticated-user id cached; no credential in warning log | compile + grep | `go vet ./... && test 0 -eq "$(grep -v '^[[:space:]]*//' internal/ado/pullrequests.go \| grep -c 'location\.')"` | ❌ W0 | ⬜ pending |
 | 1-02-03 | 02 | 2 | SEAM-02 | T-01-07 | Fail-by-name guard on all 20 fake methods | compile | `go vet ./... && go test ./internal/ado/... -cover` | ❌ W0 | ⬜ pending |
 | 1-03-01 | 03 | 3 | SEAM-03 | T-01-08, T-01-10 | Four field paths verbatim; float-typed effort values; order pinned | unit + mutation | `go test ./internal/ado/ -run 'TestUpdateWorkItem\|TestGetNextState' -v -cover` | ❌ W0 | ⬜ pending |
 | 1-03-02 | 03 | 3 | SEAM-03 | T-01-08, T-01-11, T-01-12 | Empty identity issues no SDK call; fake guards intact | unit + mutation | `go test ./internal/ado/ -run 'TestApprovePullRequest\|TestCompletePullRequest' -v -cover` | ❌ W0 | ⬜ pending |
 | 1-03-03 | 03 | 3 | SEAM-03 | T-01-08, T-01-09 | Status-swap mutation caught by cross-check | unit + mutation | `go test ./internal/ado/ -run 'TestApproveRelease\|TestRejectRelease\|TestApproveAndReject\|TestQueuePipeline' -v -cover` | ❌ W0 | ⬜ pending |
-| 1-04-01 | 04 | 4 | SEAM-04 | T-01-14, T-01-15 | Failure injected at query call, not classification node | unit + mutation | `go test ./internal/ado/ -run 'TestGetWorkItemsSwallows\|TestGetDashboardCountsSwallows' -v -cover` | ❌ W0 | ⬜ pending |
-| 1-04-02 | 04 | 4 | SEAM-04 | T-01-14, T-01-16 | Pipelines slice set so the fake is actually reached | unit + mutation | `go test ./internal/ado/ -run 'TestGetPipelineRunsSwallows\|TestGetPipelineDefinitionsSwallows\|TestGetBranchesSwallows' -v -cover` | ❌ W0 | ⬜ pending |
-| 1-04-03 | 04 | 4 | SEAM-04 | T-01-14, T-01-17, T-01-18 | Exactly 8 swallow tests; sources reverted clean | unit + gate | `test 8 -eq "$(go test ./internal/ado/ -run SwallowsProjectFailure -v 2>/dev/null \| grep -c '^=== RUN   TestGet')" && go test ./... -race -cover` | ❌ W0 | ⬜ pending |
+| 1-04-01 | 04 | 4 | SEAM-04 | T-01-14, T-01-15 | Failure injected at query call, not classification node; mutation = remove `continue` at `workitems.go:77` | unit + mutation | `go test ./internal/ado/ -run 'TestGetWorkItemsSwallows' -v -cover` | ❌ W0 | ⬜ pending |
+| 1-04-02 | 04 | 4 | SEAM-04 | T-01-14, T-01-19, T-01-20 | Pins in-place per-call swallow, not project skipping; mutation = make `getProjectCounts` propagate, NOT remove the unreachable `continue` | unit + mutation | `go test ./internal/ado/ -run 'TestGetDashboardCountsSwallows' -v -cover` | ❌ W0 | ⬜ pending |
+| 1-05-01 | 05 | 5 | SEAM-04 | T-01-14, T-01-16 | Pipelines slice set on BOTH pipeline literals so the fake is actually reached | unit + mutation | `go test ./internal/ado/ -run 'TestGetPipelineRunsSwallows\|TestGetPipelineDefinitionsSwallows\|TestGetBranchesSwallows' -v -cover` | ❌ W0 | ⬜ pending |
+| 1-05-02 | 05 | 5 | SEAM-04 | T-01-14, T-01-17 | Release definitions slice set so filtering cannot empty the assertion | unit + mutation | `go test ./internal/ado/ -run 'TestGetPullRequestsSwallows\|TestGetReleasesSwallows\|TestGetPendingApprovalsSwallows' -v -cover` | ❌ W0 | ⬜ pending |
+| 1-05-03 | 05 | 5 | SEAM-04 | T-01-18, T-01-21 | Exactly 8 swallow tests; sources reverted clean; all three probe items carried forward | gate | `test 8 -eq "$(go test ./internal/ado/ -run SwallowsProjectFailure -v 2>/dev/null \| grep -c '^=== RUN   TestGet')" && go test ./... -race -cover` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
