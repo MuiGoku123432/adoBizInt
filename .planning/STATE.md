@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: test-seam-for-internal-ado
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-09-04T22:07:00.887Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-09-04T22:26:29.287Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 01 (test-seam-for-internal-ado) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-09-04 — Phase 01 execution started
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [████░░░░░░] 40%
 |------|----------|-------|-------|
 | Phase 01 P01 | 4 min | 2 tasks | 4 files |
 | Phase 01 P02 | 9 min | 3 tasks | 4 files |
+| Phase 01 P03 | 15 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 01]: Cache AuthenticatedUser.Id rather than AuthorizedUser.Id for pull request approval under delegated access. — This preserves the identity used by the prior approval implementation.
 - [Phase 01]: Keep identity resolution non-fatal during NewClient construction while warning when approval identity is unavailable. — Read-only TUI startup remains compatible while the lost approval capability becomes visible.
 - [Phase 01]: Keep workClient concrete and intentionally dormant until v2 scrum requirements consume it. — It has no current call sites, so an empty interface would add meaningless abstraction.
+- [Phase 01]: Represent expected effort patch values as float64 literals so interface{} dynamic types match production values. — reflect.DeepEqual compares dynamic types as well as values.
+- [Phase 01]: Use cached Client.currentUserID as the approval reviewer ID. — It preserves AuthenticatedUser.Id semantics from plan 01-02.
+- [Phase 01]: Keep a dedicated release status cross-check in addition to exact-call tests. — It detects aligned test-oracle drift that independent literals can miss.
 
 ### Pending Todos
 
@@ -113,6 +117,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-04T22:07:00.880Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-09-04T22:26:29.282Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None
