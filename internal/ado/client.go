@@ -18,12 +18,14 @@ import (
 )
 
 type Client struct {
-	connection         *azuredevops.Connection
-	workitemClient     workItemAPI
+	connection     *azuredevops.Connection
+	workitemClient workItemAPI
+	// workClient is intentionally dormant; the v2 scrum requirements consume
+	// this seam, so it must not be removed as dead code.
 	workClient         work.Client
-	gitClient          git.Client
-	buildClient        build.Client
-	releaseClient      release.Client
+	gitClient          gitAPI
+	buildClient        buildAPI
+	releaseClient      releaseAPI
 	projects           []string
 	pipelines          []string
 	releaseDefinitions []string // Separate release definition names (falls back to pipelines if empty)
