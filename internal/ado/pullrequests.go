@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/location"
 
 	"sentinovo.ai/bizInt/internal/logging"
 )
@@ -150,17 +149,8 @@ func calculateApprovalStatus(reviewers []git.IdentityRefWithVote) string {
 func (c *Client) ApprovePullRequest(ctx context.Context, project, repositoryID string, prID int) error {
 	log := logging.Logger()
 
-	// Get current user's ID from the connection data
-	locationClient := location.NewClient(ctx, c.connection)
-	connData, err := locationClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
-	if err != nil {
-		return fmt.Errorf("failed to get current user: %w", err)
-	}
-
-	var userID string
-	if connData != nil && connData.AuthenticatedUser != nil && connData.AuthenticatedUser.Id != nil {
-		userID = connData.AuthenticatedUser.Id.String()
-	} else {
+	userID := c.currentUserID
+	if userID == "" {
 		return fmt.Errorf("could not determine current user ID")
 	}
 
@@ -169,7 +159,7 @@ func (c *Client) ApprovePullRequest(ctx context.Context, project, repositoryID s
 		Vote: &vote,
 	}
 
-	_, err = c.gitClient.CreatePullRequestReviewer(ctx, git.CreatePullRequestReviewerArgs{
+	_, err := c.gitClient.CreatePullRequestReviewer(ctx, git.CreatePullRequestReviewerArgs{
 		Reviewer:      reviewer,
 		RepositoryId:  &repositoryID,
 		PullRequestId: &prID,

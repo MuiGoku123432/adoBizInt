@@ -30,6 +30,7 @@ type Client struct {
 	pipelines          []string
 	releaseDefinitions []string // Separate release definition names (falls back to pipelines if empty)
 	currentUser        string
+	currentUserID      string
 	currentUserEmail   string
 }
 
@@ -67,14 +68,21 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	log := logging.Logger()
 	locationClient := location.NewClient(ctx, connection)
 	currentUser := ""
+	currentUserID := ""
 	currentUserEmail := cfg.UserEmail // Use configured email if available
 	if locationClient != nil {
 		connData, err := locationClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
-		if err == nil && connData != nil && connData.AuthorizedUser != nil {
-			if connData.AuthorizedUser.ProviderDisplayName != nil {
+		if err == nil && connData != nil {
+			if connData.AuthorizedUser != nil && connData.AuthorizedUser.ProviderDisplayName != nil {
 				currentUser = *connData.AuthorizedUser.ProviderDisplayName
 			}
+			if connData.AuthenticatedUser != nil && connData.AuthenticatedUser.Id != nil {
+				currentUserID = connData.AuthenticatedUser.Id.String()
+			}
 		}
+	}
+	if currentUserID == "" {
+		log.Warn("Could not resolve current user ID; pull request approval will fail")
 	}
 	log.Info("Current user identity", "displayName", currentUser, "email", currentUserEmail)
 
@@ -95,6 +103,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		pipelines:          cfg.Pipelines,
 		releaseDefinitions: releaseDefinitions,
 		currentUser:        currentUser,
+		currentUserID:      currentUserID,
 		currentUserEmail:   currentUserEmail,
 	}, nil
 }
