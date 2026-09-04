@@ -24,7 +24,7 @@ Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 - [x] **SEAM-01**: `internal/ado` exposes narrow interfaces for the ADO sub-clients it consumes
 - [x] **SEAM-02**: `ado.Client` accepts injected sub-clients so tests can substitute fakes
 - [x] **SEAM-03**: All seven write methods have test coverage asserting the exact ADO call they issue
-- [ ] **SEAM-04**: The aggregate read failure paths from TRUST-01 are covered by tests
+- [x] **SEAM-04**: The aggregate read failure paths from TRUST-01 are covered by tests
 
 ### CLI Surface
 
@@ -218,7 +218,7 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEAM-01 .. SEAM-04 | Phase 1 | Pending |
+| SEAM-01 .. SEAM-04 | Phase 1 | Complete |
 | TRUST-01 .. TRUST-04 | Phase 2 | Pending |
 | OUT-02 | Phase 2 | Pending |
 | CLI-01, CLI-02, CLI-04, CLI-05, CLI-06 | Phase 3 | Pending |

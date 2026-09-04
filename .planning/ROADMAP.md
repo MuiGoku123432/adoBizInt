@@ -38,7 +38,7 @@ shipping no flag at all, which is why the test seam comes first.
   3. The TUI builds and runs with no behavior change
   4. Interfaces declare only the methods `internal/ado` actually calls, not the full SDK surface
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 
@@ -46,7 +46,7 @@ Plans:
 - [x] 01-02-PLAN.md — Remaining three interfaces, cached current user ID, all four fakes
 - [x] 01-03-PLAN.md — The seven write methods plus `GetNextState`, with a release approve/reject cross-check
 - [x] 01-04-PLAN.md — Characterization tests for the two work-item-query reads, including the dashboard's structurally different swallow
-- [ ] 01-05-PLAN.md — Characterization tests for the remaining six aggregate reads, plus the eight-test phase gate
+- [x] 01-05-PLAN.md — Characterization tests for the remaining six aggregate reads, plus the eight-test phase gate
 
 ### Phase 2: Honest reads
 

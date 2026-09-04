@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: test-seam-for-internal-ado
-status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-09-04T22:49:47.363Z"
+status: verifying
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-04T23:04:54.425Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 
 Phase: 01 (test-seam-for-internal-ado) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-04 — Phase 01 execution started
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [████████░░] 80%
 | Phase 01 P02 | 9 min | 3 tasks | 4 files |
 | Phase 01 P03 | 15 min | 3 tasks | 4 files |
 | Phase 01 P04 | 18 min | 2 tasks | 2 files |
+| Phase 01 P05 | 11 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 01]: Inject aggregate work-item failures at QueryByWiql, because classification-node failures are warned and discarded. — This is the first error path that actually fails GetWorkItems at project scope.
 - [Phase 01]: Assert distinct positive pull request counts from both dashboard projects. — The two-project sum distinguishes in-place query swallowing from project skipping.
 - [Phase 01]: Use continue-to-return propagation for the GetWorkItems mutation proof. — Deleting continue alone is behaviorally inert because the failed result slice is nil.
+- [Phase 01]: Use poisoned non-nil fixture data with injected project errors so deleting continue produces an observable failed-project result. — A nil error result can make literal continue removal behaviorally inert; poisoned data proves the characterization is non-vacuous.
+- [Phase 01]: Use the anchored top-level-only pattern ^=== RUN   TestGet.*SwallowsProjectFailure$ for the eight-test phase gate. — The anchor excludes the intentional GetWorkItems trap subtest without deleting it and remains stable if more subtests are added.
+- [Phase 01]: Preserve dashboard inversion as a getProjectCounts propagation change rather than an outer-loop-only edit. — Dashboard errors are swallowed in place and its outer continue is unreachable until the helper propagates.
 
 ### Pending Todos
 
@@ -121,6 +125,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-04T22:49:47.358Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-09-04T23:04:54.420Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
