@@ -185,7 +185,7 @@ index 7534a18..1fb1953 100644
 2026/09/04 17:56:51 INFO Pipeline count project=project-definitions-fail configured_pipelines=[pipeline-one] matching=1 total=1
 2026/09/04 17:56:51 INFO Pipeline count project=project-definitions-succeed configured_pipelines=[pipeline-one] matching=1 total=1
 2026/09/04 17:56:51 INFO Pipeline runs fetched total_count=2 configured_pipelines=[pipeline-one]
-    pipelines_test.go:83: GetPipelineRuns() returned 2 runs, want 1 surviving run: [{... Project:project-definitions-fail ...} {... Project:project-definitions-succeed ...}]
+    pipelines_test.go:83: GetPipelineRuns() returned 2 runs, want 1 surviving run: [{ID:0 BuildNumber: PipelineName:pipeline-one PipelineID:17 Project:project-definitions-fail Status:neverRun Result: SourceBranch: SourceVersion: RequestedBy: RequestedFor: StartTime:0001-01-01 00:00:00 +0000 UTC FinishTime:0001-01-01 00:00:00 +0000 UTC QueueTime:0001-01-01 00:00:00 +0000 UTC Duration:0s RepositoryID:} {ID:0 BuildNumber: PipelineName:pipeline-one PipelineID:17 Project:project-definitions-succeed Status:neverRun Result: SourceBranch: SourceVersion: RequestedBy: RequestedFor: StartTime:0001-01-01 00:00:00 +0000 UTC FinishTime:0001-01-01 00:00:00 +0000 UTC QueueTime:0001-01-01 00:00:00 +0000 UTC Duration:0s RepositoryID:}]
 --- FAIL: TestGetPipelineRunsSwallowsProjectFailure (0.00s)
 FAIL
 FAIL	sentinovo.ai/bizInt/internal/ado	0.496s
@@ -237,7 +237,7 @@ index c38507d..4dad923 100644
 === RUN   TestGetBranchesSwallowsProjectFailure
 2026/09/04 17:57:43 ERROR Failed to get repositories project=project-repositories-fail error="repositories failed"
 2026/09/04 17:57:43 INFO Branches fetched total_count=2
-    branches_test.go:54: GetBranches() returned 2 branches, want 1 surviving branch: [{Name:poisoned-failed-project-branch Project:project-repositories-fail ...} {Name:main Project:project-repositories-succeed ...}]
+    branches_test.go:54: GetBranches() returned 2 branches, want 1 surviving branch: [{Name:poisoned-failed-project-branch Project:project-repositories-fail RepositoryID:01000000-0000-0000-0000-000000000000 RepositoryName:repository-one DefaultBranch:main IsDefault:false AheadCount:0 BehindCount:0 LastCommitDate:0001-01-01 00:00:00 +0000 UTC LastCommitBy: CommitID:} {Name:main Project:project-repositories-succeed RepositoryID:01000000-0000-0000-0000-000000000000 RepositoryName:repository-one DefaultBranch:main IsDefault:true AheadCount:0 BehindCount:0 LastCommitDate:0001-01-01 00:00:00 +0000 UTC LastCommitBy: CommitID:}]
 --- FAIL: TestGetBranchesSwallowsProjectFailure (0.00s)
 FAIL
 FAIL	sentinovo.ai/bizInt/internal/ado	0.399s
@@ -263,7 +263,7 @@ index 3c81ad3..28cb31d 100644
 === RUN   TestGetPullRequestsSwallowsProjectFailure
 2026/09/04 18:00:45 ERROR Failed to get pull requests project=project-pull-requests-fail error="pull requests failed"
 2026/09/04 18:00:45 INFO Pull requests fetched total_count=2
-    pullrequests_test.go:169: GetPullRequests() returned 2 pull requests, want 1 surviving pull request: [{ID:42 Title:poisoned failed-project pull request ... Project:project-pull-requests-fail ...} {ID:42 Title:surviving pull request ... Project:project-pull-requests-succeed ...}]
+    pullrequests_test.go:169: GetPullRequests() returned 2 pull requests, want 1 surviving pull request: [{ID:42 Title:poisoned failed-project pull request Description: Project:project-pull-requests-fail RepositoryID: RepositoryName: SourceBranch: TargetBranch: CreatedBy: CreatedByID: CreationDate:0001-01-01 00:00:00 +0000 UTC Status: IsDraft:false ReviewerCount:0 ApprovalStatus:} {ID:42 Title:surviving pull request Description: Project:project-pull-requests-succeed RepositoryID: RepositoryName: SourceBranch: TargetBranch: CreatedBy: CreatedByID: CreationDate:0001-01-01 00:00:00 +0000 UTC Status: IsDraft:false ReviewerCount:0 ApprovalStatus:}]
 --- FAIL: TestGetPullRequestsSwallowsProjectFailure (0.00s)
 FAIL
 FAIL	sentinovo.ai/bizInt/internal/ado	0.448s
@@ -291,7 +291,7 @@ index f5d4230..d10c1cd 100644
 2026/09/04 18:01:13 INFO Release definition count project=project-release-definitions-fail configured_definitions=[release-definition-one] matching=1 total=1
 2026/09/04 18:01:13 INFO Release definition count project=project-release-definitions-succeed configured_definitions=[release-definition-one] matching=1 total=1
 2026/09/04 18:01:13 INFO Releases fetched total_count=2 configured_definitions=[release-definition-one]
-    releases_test.go:141: GetReleases() returned 2 releases, want 1 surviving release: [{ID:0 Name: DefinitionID:31 DefinitionName:release-definition-one Project:project-release-definitions-fail Status:noReleases ...} {ID:0 Name: DefinitionID:31 DefinitionName:release-definition-one Project:project-release-definitions-succeed Status:noReleases ...}]
+    releases_test.go:141: GetReleases() returned 2 releases, want 1 surviving release: [{ID:0 Name: DefinitionID:31 DefinitionName:release-definition-one Project:project-release-definitions-fail Status:noReleases CreatedOn:0001-01-01 00:00:00 +0000 UTC ModifiedOn:0001-01-01 00:00:00 +0000 UTC Environments:[] PendingApprovals:0} {ID:0 Name: DefinitionID:31 DefinitionName:release-definition-one Project:project-release-definitions-succeed Status:noReleases CreatedOn:0001-01-01 00:00:00 +0000 UTC ModifiedOn:0001-01-01 00:00:00 +0000 UTC Environments:[] PendingApprovals:0}]
 --- FAIL: TestGetReleasesSwallowsProjectFailure (0.00s)
 FAIL
 FAIL	sentinovo.ai/bizInt/internal/ado	0.391s
@@ -317,7 +317,7 @@ index f5d4230..6b1dd9e 100644
 === RUN   TestGetPendingApprovalsSwallowsProjectFailure
 2026/09/04 18:01:36 ERROR Failed to get approvals project=project-approvals-fail error="approvals failed"
 2026/09/04 18:01:36 INFO Pending approvals fetched total_count=2
-    releases_test.go:177: GetPendingApprovals() returned 2 approvals, want 1 surviving approval: [{ID:47 ... Project:project-approvals-fail ...} {ID:47 ... Project:project-approvals-succeed ...}]
+    releases_test.go:177: GetPendingApprovals() returned 2 approvals, want 1 surviving approval: [{ID:47 ReleaseID:0 ReleaseName: EnvironmentID:0 EnvironmentName: Project:project-approvals-fail Status: ApprovalType: Approver: ApproverID: CreatedOn:0001-01-01 00:00:00 +0000 UTC Comments:} {ID:47 ReleaseID:0 ReleaseName: EnvironmentID:0 EnvironmentName: Project:project-approvals-succeed Status: ApprovalType: Approver: ApproverID: CreatedOn:0001-01-01 00:00:00 +0000 UTC Comments:}]
 --- FAIL: TestGetPendingApprovalsSwallowsProjectFailure (0.00s)
 FAIL
 FAIL	sentinovo.ai/bizInt/internal/ado	0.404s
