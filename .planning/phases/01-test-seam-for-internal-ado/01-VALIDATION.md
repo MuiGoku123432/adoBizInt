@@ -62,7 +62,7 @@ created: 2026-09-04
 | 1-04-02 | 04 | 4 | SEAM-04 | T-01-14, T-01-19, T-01-20 | Pins in-place per-call swallow, not project skipping; mutation = make `getProjectCounts` propagate, NOT remove the unreachable `continue` | unit + mutation | `go test ./internal/ado/ -run 'TestGetDashboardCountsSwallows' -v -cover` | ❌ W0 | ⬜ pending |
 | 1-05-01 | 05 | 5 | SEAM-04 | T-01-14, T-01-16 | Pipelines slice set on BOTH pipeline literals so the fake is actually reached | unit + mutation | `go test ./internal/ado/ -run 'TestGetPipelineRunsSwallows\|TestGetPipelineDefinitionsSwallows\|TestGetBranchesSwallows' -v -cover` | ❌ W0 | ⬜ pending |
 | 1-05-02 | 05 | 5 | SEAM-04 | T-01-14, T-01-17 | Release definitions slice set so filtering cannot empty the assertion | unit + mutation | `go test ./internal/ado/ -run 'TestGetPullRequestsSwallows\|TestGetReleasesSwallows\|TestGetPendingApprovalsSwallows' -v -cover` | ❌ W0 | ⬜ pending |
-| 1-05-03 | 05 | 5 | SEAM-04 | T-01-18, T-01-21 | Exactly 8 swallow tests; sources reverted clean; all three probe items carried forward | gate | `test 8 -eq "$(go test ./internal/ado/ -run SwallowsProjectFailure -v 2>/dev/null \| grep -c '^=== RUN   TestGet')" && go test ./... -race -cover` | ❌ W0 | ⬜ pending |
+| 1-05-03 | 05 | 5 | SEAM-04 | T-01-18, T-01-21 | Exactly 8 swallow tests (TOP-LEVEL only — `$`-anchor excludes mandated subtests); sources reverted clean; all three probe items carried forward | gate | `test 8 -eq "$(go test ./internal/ado/ -run SwallowsProjectFailure -v 2>/dev/null \| grep -c '^=== RUN   TestGet.*SwallowsProjectFailure$')" && go test ./... -race -cover` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
