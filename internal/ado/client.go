@@ -19,7 +19,7 @@ import (
 
 type Client struct {
 	connection         *azuredevops.Connection
-	workitemClient     workitemtracking.Client
+	workitemClient     workItemAPI
 	workClient         work.Client
 	gitClient          git.Client
 	buildClient        build.Client
