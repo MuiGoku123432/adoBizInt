@@ -1,1 +1,1 @@
-No external API integration: this phase declares narrow Go interfaces over Azure DevOps SDK methods `internal/ado` already calls, adds no SDK method beyond the existing 20 call sites, adds no dependency, and its only behavioral change removes a network round-trip rather than adding one.
+No external API integration: this phase narrows existing Azure DevOps SDK usage to the 20 methods already called and adds no endpoint or dependency.

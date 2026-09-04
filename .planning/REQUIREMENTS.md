@@ -21,10 +21,10 @@ Prerequisite for every read verb. Source: CONCERNS.md C1.
 
 Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 
-- [x] **SEAM-01**: `internal/ado` exposes narrow interfaces for the ADO sub-clients it consumes
-- [x] **SEAM-02**: `ado.Client` accepts injected sub-clients so tests can substitute fakes
-- [x] **SEAM-03**: All seven write methods have test coverage asserting the exact ADO call they issue
-- [x] **SEAM-04**: The aggregate read failure paths from TRUST-01 are covered by tests
+- [ ] **SEAM-01**: `internal/ado` exposes narrow interfaces for the ADO sub-clients it consumes
+- [ ] **SEAM-02**: `ado.Client` accepts injected sub-clients so tests can substitute fakes
+- [ ] **SEAM-03**: All seven write methods have test coverage asserting the exact ADO call they issue
+- [ ] **SEAM-04**: The aggregate read failure paths from TRUST-01 are covered by tests
 
 ### CLI Surface
 
