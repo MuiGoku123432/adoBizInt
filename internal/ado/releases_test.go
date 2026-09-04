@@ -2,6 +2,7 @@ package ado
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -98,5 +99,84 @@ func TestApproveAndRejectReleaseSendDifferentStatuses(t *testing.T) {
 	}
 	if len(statuses) != 2 || statuses[0] == statuses[1] {
 		t.Fatalf("copy-paste swap guard: statuses = %v, want two different values", statuses)
+	}
+}
+
+// TestGetReleasesSwallowsProjectFailure pins pre-TRUST-01 behavior.
+// Phase 2 inverts this characterization so the project failure reaches the caller.
+func TestGetReleasesSwallowsProjectFailure(t *testing.T) {
+	const (
+		failedProject    = "project-release-definitions-fail"
+		survivingProject = "project-release-definitions-succeed"
+		definitionName   = "release-definition-one"
+	)
+
+	client := &Client{
+		projects:           []string{failedProject, survivingProject},
+		releaseDefinitions: []string{definitionName},
+		releaseClient: &fakeReleaseAPI{
+			t: t,
+			GetReleaseDefinitionsFunc: func(_ context.Context, args release.GetReleaseDefinitionsArgs) (*release.GetReleaseDefinitionsResponseValue, error) {
+				definitionID := 31
+				definitions := &release.GetReleaseDefinitionsResponseValue{Value: []release.ReleaseDefinition{{
+					Id:   &definitionID,
+					Name: strPtr(definitionName),
+				}}}
+				if args.Project != nil && *args.Project == failedProject {
+					return definitions, errors.New("release definitions failed")
+				}
+				return definitions, nil
+			},
+			GetReleasesFunc: func(_ context.Context, _ release.GetReleasesArgs) (*release.GetReleasesResponseValue, error) {
+				return &release.GetReleasesResponseValue{}, nil
+			},
+		},
+	}
+
+	releases, err := client.GetReleases(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetReleases() error = %v, want nil", err)
+	}
+	if len(releases) != 1 {
+		t.Fatalf("GetReleases() returned %d releases, want 1 surviving release: %+v", len(releases), releases)
+	}
+	if releases[0].Project != survivingProject || releases[0].DefinitionName != definitionName {
+		t.Errorf("GetReleases()[0] = %+v, want project %q and definition %q", releases[0], survivingProject, definitionName)
+	}
+}
+
+// TestGetPendingApprovalsSwallowsProjectFailure pins pre-TRUST-01 behavior.
+// Phase 2 inverts this characterization so the project failure reaches the caller.
+func TestGetPendingApprovalsSwallowsProjectFailure(t *testing.T) {
+	const (
+		failedProject    = "project-approvals-fail"
+		survivingProject = "project-approvals-succeed"
+	)
+
+	client := &Client{
+		projects:           []string{failedProject, survivingProject},
+		releaseDefinitions: []string{"release-definition-one"},
+		releaseClient: &fakeReleaseAPI{
+			t: t,
+			GetApprovalsFunc: func(_ context.Context, args release.GetApprovalsArgs) (*release.GetApprovalsResponseValue, error) {
+				approvalID := 47
+				approvals := &release.GetApprovalsResponseValue{Value: []release.ReleaseApproval{{Id: &approvalID}}}
+				if args.Project != nil && *args.Project == failedProject {
+					return approvals, errors.New("approvals failed")
+				}
+				return approvals, nil
+			},
+		},
+	}
+
+	approvals, err := client.GetPendingApprovals(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetPendingApprovals() error = %v, want nil", err)
+	}
+	if len(approvals) != 1 {
+		t.Fatalf("GetPendingApprovals() returned %d approvals, want 1 surviving approval: %+v", len(approvals), approvals)
+	}
+	if approvals[0].Project != survivingProject || approvals[0].ID != 47 {
+		t.Errorf("GetPendingApprovals()[0] = %+v, want project %q and approval ID 47", approvals[0], survivingProject)
 	}
 }

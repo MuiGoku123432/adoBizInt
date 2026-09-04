@@ -2,6 +2,7 @@ package ado
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -127,5 +128,47 @@ func TestCompletePullRequestWithNilMergeCommitReturnsError(t *testing.T) {
 
 	if err := client.CompletePullRequest(context.Background(), "project-one", "repository-one", 42); err == nil {
 		t.Fatal("CompletePullRequest() error = nil, want non-nil")
+	}
+}
+
+// TestGetPullRequestsSwallowsProjectFailure pins pre-TRUST-01 behavior.
+// Phase 2 inverts this characterization so the project failure reaches the caller.
+func TestGetPullRequestsSwallowsProjectFailure(t *testing.T) {
+	const (
+		failedProject    = "project-pull-requests-fail"
+		survivingProject = "project-pull-requests-succeed"
+	)
+
+	client := &Client{
+		projects: []string{failedProject, survivingProject},
+		gitClient: &fakeGitAPI{
+			t: t,
+			GetPullRequestsByProjectFunc: func(_ context.Context, args git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+				pullRequestID := 42
+				pullRequestTitle := "surviving pull request"
+				if args.Project != nil && *args.Project == failedProject {
+					pullRequestTitle = "poisoned failed-project pull request"
+				}
+				pullRequests := []git.GitPullRequest{{
+					PullRequestId: &pullRequestID,
+					Title:         &pullRequestTitle,
+				}}
+				if args.Project != nil && *args.Project == failedProject {
+					return &pullRequests, errors.New("pull requests failed")
+				}
+				return &pullRequests, nil
+			},
+		},
+	}
+
+	pullRequests, err := client.GetPullRequests(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetPullRequests() error = %v, want nil", err)
+	}
+	if len(pullRequests) != 1 {
+		t.Fatalf("GetPullRequests() returned %d pull requests, want 1 surviving pull request: %+v", len(pullRequests), pullRequests)
+	}
+	if pullRequests[0].Project != survivingProject || pullRequests[0].Title != "surviving pull request" {
+		t.Errorf("GetPullRequests()[0] = %+v, want surviving project result", pullRequests[0])
 	}
 }
