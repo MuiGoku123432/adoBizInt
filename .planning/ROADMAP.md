@@ -35,12 +35,13 @@ shipping no flag at all, which is why the test seam comes first.
   2. `go test ./internal/ado/...` passes and reports non-zero coverage where it currently reports 0.0%
   3. The TUI builds and runs with no behavior change
   4. Interfaces declare only the methods `internal/ado` actually calls, not the full SDK surface
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 01-01: Extract narrow interfaces for the ADO sub-clients in use
-- [ ] 01-02: Add an injectable constructor alongside the existing `NewClient`
-- [ ] 01-03: Cover the seven write methods with fakes
+- [ ] 01-01-PLAN.md — Tracer: one narrow interface, one retyped field, one fake, one green write test
+- [ ] 01-02-PLAN.md — Remaining three interfaces, cached current user ID, all four fakes
+- [ ] 01-03-PLAN.md — The seven write methods plus `GetNextState`, with a release approve/reject cross-check
+- [ ] 01-04-PLAN.md — Characterization tests pinning the swallow on all eight aggregate reads
 
 ### Phase 2: Honest reads
 **Goal**: A caller can distinguish an empty result from a failed one
