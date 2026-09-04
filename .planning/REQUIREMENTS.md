@@ -21,8 +21,8 @@ Prerequisite for every read verb. Source: CONCERNS.md C1.
 
 Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 
-- [ ] **SEAM-01**: `internal/ado` exposes narrow interfaces for the ADO sub-clients it consumes
-- [ ] **SEAM-02**: `ado.Client` accepts injected sub-clients so tests can substitute fakes
+- [x] **SEAM-01**: `internal/ado` exposes narrow interfaces for the ADO sub-clients it consumes
+- [x] **SEAM-02**: `ado.Client` accepts injected sub-clients so tests can substitute fakes
 - [ ] **SEAM-03**: All seven write methods have test coverage asserting the exact ADO call they issue
 - [ ] **SEAM-04**: The aggregate read failure paths from TRUST-01 are covered by tests
 
@@ -228,6 +228,7 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 | HARD-01 .. HARD-05 | Phase 5 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 27 total
 - Covered by phases: 27
 - Uncovered: 0

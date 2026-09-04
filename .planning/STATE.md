@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 01
 current_phase_name: test-seam-for-internal-ado
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-09-04T21:53:32.827Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-09-04T22:07:00.887Z"
 last_activity: 2026-09-04
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 01 (test-seam-for-internal-ado) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-04 — Phase 01 execution started
 
-Progress: [██░░░░░░░░] 20%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -58,6 +58,7 @@ Progress: [██░░░░░░░░] 20%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 4 min | 2 tasks | 4 files |
+| Phase 01 P02 | 9 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 01]: Use the assignable unexported Client.workitemClient field as the injection seam; add no constructor or adapter. — In-package tests can assign the field directly, preserving the public API and avoiding constructor network I/O.
 - [Phase 01]: Rely on NewClient's SDK-interface assignment as compile-time conformance proof; add no ClientImpl assertion. — The SDK constructor returns an interface, so the production assignment is the correct compile-time relationship.
 - [Phase 01]: Require each fake method to fail by interface and method name when its function field is unset. — Unexpected ADO calls must fail at the call site instead of returning misleading zero values.
+- [Phase 01]: Cache AuthenticatedUser.Id rather than AuthorizedUser.Id for pull request approval under delegated access. — This preserves the identity used by the prior approval implementation.
+- [Phase 01]: Keep identity resolution non-fatal during NewClient construction while warning when approval identity is unavailable. — Read-only TUI startup remains compatible while the lost approval capability becomes visible.
+- [Phase 01]: Keep workClient concrete and intentionally dormant until v2 scrum requirements consume it. — It has no current call sites, so an empty interface would add meaningless abstraction.
 
 ### Pending Todos
 
@@ -109,6 +113,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-04T21:53:32.822Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-09-04T22:07:00.880Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
