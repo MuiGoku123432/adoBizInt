@@ -41,12 +41,28 @@ shipping no flag at all, which is why the test seam comes first.
 **Plans**: 6 plans (5 executed, 1 gap closure pending)
 
 Plans:
+**Wave 1**
 
 - [x] 01-01-PLAN.md — Tracer: one narrow interface, one retyped field, one fake, one green write test
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 01-02-PLAN.md — Remaining three interfaces, cached current user ID, all four fakes
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 01-03-PLAN.md — The seven write methods plus `GetNextState`, with a release approve/reject cross-check
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [x] 01-04-PLAN.md — Characterization tests for the two work-item-query reads, including the dashboard's structurally different swallow
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [x] 01-05-PLAN.md — Characterization tests for the remaining six aggregate reads, plus the eight-test phase gate
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
 - [ ] 01-06-PLAN.md — Gap closure: exact PR fetch assertion and retryable identity lookup seam
 
 ### Phase 2: Honest reads
