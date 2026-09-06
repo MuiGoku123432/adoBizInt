@@ -18,7 +18,7 @@ shipping no flag at all, which is why the test seam comes first.
 
 ## Phases
 
-- [ ] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable
+- [x] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable
 - [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline
 - [ ] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters
 - [ ] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record
@@ -38,7 +38,7 @@ shipping no flag at all, which is why the test seam comes first.
   3. The TUI builds and runs with no behavior change
   4. Interfaces declare only the methods `internal/ado` actually calls, not the full SDK surface
 
-**Plans**: 6 plans (5 executed, 1 gap closure pending)
+**Plans**: 6/6 plans executed (complete 2026-09-06)
 
 Plans:
 **Wave 1**
@@ -63,7 +63,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 01-06-PLAN.md — Gap closure: exact PR fetch assertion and retryable identity lookup seam
+- [x] 01-06-PLAN.md — Gap closure: exact PR fetch assertion and retryable identity lookup seam
 
 ### Phase 2: Honest reads
 
