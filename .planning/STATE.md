@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 01
 current_phase_name: test-seam-for-internal-ado
-status: complete
-stopped_at: Completed 01-06-PLAN.md
+status: needs_review
+stopped_at: Awaiting Phase 01 human verification
 last_updated: "2026-09-06T05:42:53.464Z"
 last_activity: 2026-09-06
 last_activity_desc: Phase 01 execution started
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 
 ## Current Position
 
-Phase: 01 (test-seam-for-internal-ado) — COMPLETE
+Phase: 01 (test-seam-for-internal-ado) -- NEEDS REVIEW
 Plan: 6 of 6
-Status: Phase complete
+Status: Automated verification passed; one human verification item remains
 Last activity: 2026-09-06 — Completed gap-closure plan 01-06
 
 Progress: [██████████] 100%
