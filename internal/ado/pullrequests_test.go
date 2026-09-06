@@ -162,13 +162,15 @@ func TestApprovePullRequestWithoutAuthenticatedUserIDDoesNotCallGit(t *testing.T
 }
 
 func TestCompletePullRequestIssuesFetchThenMerge(t *testing.T) {
-	var got git.UpdatePullRequestArgs
+	var gotFetch git.GetPullRequestArgs
+	var gotUpdate git.UpdatePullRequestArgs
 	var calls []string
 	commitID := "source-commit-id"
 	client := &Client{
 		gitClient: &fakeGitAPI{
 			t: t,
-			GetPullRequestFunc: func(_ context.Context, _ git.GetPullRequestArgs) (*git.GitPullRequest, error) {
+			GetPullRequestFunc: func(_ context.Context, args git.GetPullRequestArgs) (*git.GitPullRequest, error) {
+				gotFetch = args
 				calls = append(calls, "get")
 				return &git.GitPullRequest{
 					LastMergeSourceCommit: &git.GitCommitRef{
@@ -178,7 +180,7 @@ func TestCompletePullRequestIssuesFetchThenMerge(t *testing.T) {
 			},
 			UpdatePullRequestFunc: func(_ context.Context, args git.UpdatePullRequestArgs) (*git.GitPullRequest, error) {
 				calls = append(calls, "update")
-				got = args
+				gotUpdate = args
 				return &git.GitPullRequest{}, nil
 			},
 		},
@@ -193,6 +195,18 @@ func TestCompletePullRequestIssuesFetchThenMerge(t *testing.T) {
 		t.Fatalf("call order = %v, want %v", calls, wantCalls)
 	}
 
+	wantFetchProject := "project-one"
+	wantFetchRepositoryID := "repository-one"
+	wantFetchPullRequestID := 42
+	wantFetch := git.GetPullRequestArgs{
+		RepositoryId:  &wantFetchRepositoryID,
+		PullRequestId: &wantFetchPullRequestID,
+		Project:       &wantFetchProject,
+	}
+	if !reflect.DeepEqual(gotFetch, wantFetch) {
+		t.Errorf("GetPullRequest args = %+v, want %+v", gotFetch, wantFetch)
+	}
+
 	wantProject := "project-one"
 	wantRepositoryID := "repository-one"
 	wantPullRequestID := 42
@@ -200,7 +214,7 @@ func TestCompletePullRequestIssuesFetchThenMerge(t *testing.T) {
 	wantMergeStrategy := git.GitPullRequestMergeStrategyValues.NoFastForward
 	wantStatus := git.PullRequestStatusValues.Completed
 	wantCommitID := "source-commit-id"
-	want := git.UpdatePullRequestArgs{
+	wantUpdate := git.UpdatePullRequestArgs{
 		GitPullRequestToUpdate: &git.GitPullRequest{
 			Status: &wantStatus,
 			CompletionOptions: &git.GitPullRequestCompletionOptions{
@@ -216,8 +230,8 @@ func TestCompletePullRequestIssuesFetchThenMerge(t *testing.T) {
 		Project:       &wantProject,
 	}
 
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("UpdatePullRequest args = %+v, want %+v", got, want)
+	if !reflect.DeepEqual(gotUpdate, wantUpdate) {
+		t.Errorf("UpdatePullRequest args = %+v, want %+v", gotUpdate, wantUpdate)
 	}
 }
 
