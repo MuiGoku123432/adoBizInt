@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/location"
 
 	"sentinovo.ai/bizInt/internal/logging"
 )
@@ -151,7 +152,17 @@ func (c *Client) ApprovePullRequest(ctx context.Context, project, repositoryID s
 
 	userID := c.currentUserID
 	if userID == "" {
-		return fmt.Errorf("could not determine current user ID")
+		if c.getConnectionData == nil {
+			return fmt.Errorf("could not determine current user ID")
+		}
+		connData, err := c.getConnectionData(ctx, location.GetConnectionDataArgs{})
+		if err != nil {
+			return fmt.Errorf("failed to get current user: %w", err)
+		}
+		if connData == nil || connData.AuthenticatedUser == nil || connData.AuthenticatedUser.Id == nil {
+			return fmt.Errorf("could not determine current user ID")
+		}
+		userID = connData.AuthenticatedUser.Id.String()
 	}
 
 	vote := 10 // Approved

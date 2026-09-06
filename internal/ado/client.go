@@ -32,6 +32,7 @@ type Client struct {
 	currentUser        string
 	currentUserID      string
 	currentUserEmail   string
+	getConnectionData  func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
 }
 
 func NewClient(cfg *config.Config) (*Client, error) {
@@ -70,8 +71,10 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	currentUser := ""
 	currentUserID := ""
 	currentUserEmail := cfg.UserEmail // Use configured email if available
+	var getConnectionData func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
 	if locationClient != nil {
-		connData, err := locationClient.GetConnectionData(ctx, location.GetConnectionDataArgs{})
+		getConnectionData = locationClient.GetConnectionData
+		connData, err := getConnectionData(ctx, location.GetConnectionDataArgs{})
 		if err == nil && connData != nil {
 			if connData.AuthorizedUser != nil && connData.AuthorizedUser.ProviderDisplayName != nil {
 				currentUser = *connData.AuthorizedUser.ProviderDisplayName
@@ -82,7 +85,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		}
 	}
 	if currentUserID == "" {
-		log.Warn("Could not resolve current user ID; pull request approval will fail")
+		log.Warn("Could not cache current user ID; pull request approval will retry identity lookup")
 	}
 	log.Info("Current user identity", "displayName", currentUser, "email", currentUserEmail)
 
@@ -105,6 +108,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		currentUser:        currentUser,
 		currentUserID:      currentUserID,
 		currentUserEmail:   currentUserEmail,
+		getConnectionData:  getConnectionData,
 	}, nil
 }
 
