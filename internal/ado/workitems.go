@@ -52,8 +52,19 @@ type Attachment struct {
 	Size int64
 }
 
-// GetWorkItems fetches work items for the specified projects
-func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkItem, error) {
+// opGetWorkItems and opGetWorkItemsBatch label the SDK calls in any Failure the
+// work-item read records. The batch label is distinct because a project can
+// answer its query and still fail its detail fetch (D-02): reporting only the
+// outer failure would mark a partially-answering project complete.
+const (
+	opGetWorkItems      = "get work items"
+	opGetWorkItemsBatch = "get work item batch"
+)
+
+// GetWorkItems fetches work items for the specified projects. Per-project query
+// failures and per-batch detail failures are both reported in the returned
+// envelope rather than swallowed.
+func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[WorkItem], error) {
 	log := logging.Logger()
 
 	targetProjects := projects
@@ -65,25 +76,41 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) ([]WorkIte
 
 	if len(targetProjects) == 0 {
 		log.Warn("No projects to fetch work items for")
-		return []WorkItem{}, nil
+		return newResult([]WorkItem{}, nil), nil
 	}
 
 	var allItems []WorkItem
+	var failures []Failure
 
 	for _, project := range targetProjects {
-		items, err := c.getProjectWorkItems(ctx, project)
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12).
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetWorkItems, err)
+			continue
+		}
+
+		items, batchFailures, err := c.getProjectWorkItems(ctx, project)
+		// Batch failures are attributed even when the query itself answered, so
+		// a project that answered partially is never reported as complete.
+		failures = append(failures, batchFailures...)
 		if err != nil {
 			log.Error("Failed to get work items for project", "project", project, "error", err)
+			// The loop still visits every configured project: D-08 rejected
+			// short-circuiting on auth failure explicitly.
+			failures = appendFailure(failures, project, opGetWorkItems, err)
 			continue
 		}
 		allItems = append(allItems, items...)
 	}
 
-	log.Info("Work items fetched", "total_count", len(allItems))
-	return allItems, nil
+	log.Info("Work items fetched", "total_count", len(allItems), "failure_count", len(failures))
+	return newResult(allItems, failures), nil
 }
 
-func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]WorkItem, error) {
+// getProjectWorkItems returns the work items it collected alongside any batch
+// failures, so the caller can attribute a partial answer to its project.
+func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]WorkItem, []Failure, error) {
 	log := logging.Logger()
 
 	// Get recent iterations (sprints active in last 90 days)
@@ -111,12 +138,12 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 
 	result, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if result == nil || result.WorkItems == nil || len(*result.WorkItems) == 0 {
 		log.Info("Query returned no work items", "project", project)
-		return []WorkItem{}, nil
+		return []WorkItem{}, nil, nil
 	}
 
 	totalFound := len(*result.WorkItems)
@@ -131,7 +158,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	}
 
 	if len(ids) == 0 {
-		return []WorkItem{}, nil
+		return []WorkItem{}, nil, nil
 	}
 
 	// Fetch full work item details in batches (Azure DevOps API limit is 200 IDs per request)
@@ -139,6 +166,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	fields := []string{"System.Id", "System.Title", "System.Description", "Microsoft.VSTS.Scheduling.StoryPoints", "System.WorkItemType", "System.State", "System.AssignedTo"}
 
 	var allItems []workitemtracking.WorkItem
+	var failures []Failure
 	for i := 0; i < len(ids); i += batchSize {
 		end := i + batchSize
 		if end > len(ids) {
@@ -154,7 +182,10 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		})
 		if err != nil {
 			log.Error("Failed to get work item batch", "project", project, "batch", i/batchSize+1, "error", err)
-			continue // Skip failed batches, get as many as possible
+			// Still collect as many batches as possible, but report the gap so
+			// the caller cannot present this project as complete (D-02).
+			failures = appendFailure(failures, project, opGetWorkItemsBatch, err)
+			continue
 		}
 		if items != nil {
 			allItems = append(allItems, *items...)
@@ -208,7 +239,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	}
 
 	log.Debug("Got work items for project", "project", project, "count", len(workItems))
-	return workItems, nil
+	return workItems, failures, nil
 }
 
 // UpdateWorkItemState updates the state of a work item

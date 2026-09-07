@@ -40,10 +40,12 @@ var doneStates = map[string]bool{
 	"Removed":  true,
 }
 
-// WorkItemsMsg is sent when work items are fetched
+// WorkItemsMsg is sent when work items are fetched. Result carries the items
+// plus whatever failed and whether the read is the whole picture; Err is
+// reserved for a transport failure that produced no envelope at all.
 type WorkItemsMsg struct {
-	Items []ado.WorkItem
-	Err   error
+	Result ado.Result[ado.WorkItem]
+	Err    error
 }
 
 // StateUpdateMsg is sent when a work item state is updated
@@ -133,8 +135,8 @@ func (m Model) Init() tea.Cmd {
 func (m Model) fetchWorkItems() tea.Cmd {
 	projects := m.projects
 	return func() tea.Msg {
-		items, err := m.client.GetWorkItems(context.Background(), projects)
-		return WorkItemsMsg{Items: items, Err: err}
+		result, err := m.client.GetWorkItems(context.Background(), projects)
+		return WorkItemsMsg{Result: result, Err: err}
 	}
 }
 
@@ -358,7 +360,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
-			m.items = msg.Items
+			m.items = msg.Result.Items
 			// Clean up priorities for items that no longer exist
 			if m.priorities != nil {
 				validIDs := make(map[int]bool)
