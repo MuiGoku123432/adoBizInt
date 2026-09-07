@@ -12,10 +12,10 @@ requirement below is traceable to a finding in `.planning/codebase/`.
 
 Prerequisite for every read verb. Source: CONCERNS.md C1.
 
-- [ ] **TRUST-01**: Aggregate read functions return per-project failures alongside results instead of dropping them with `continue`
-- [ ] **TRUST-02**: HTTP 401 and 403 are fatal and never render as an empty result set
-- [ ] **TRUST-03**: A partial result is explicitly marked incomplete, so a caller can tell "three of four projects answered" from "four projects, no work"
-- [ ] **TRUST-04**: Every ADO call carries a deadline; `connection.Timeout` is set rather than left at the SDK default
+- [x] **TRUST-01**: Aggregate read functions return per-project failures alongside results instead of dropping them with `continue`
+- [x] **TRUST-02**: HTTP 401 and 403 are fatal and never render as an empty result set
+- [x] **TRUST-03**: A partial result is explicitly marked incomplete, so a caller can tell "three of four projects answered" from "four projects, no work"
+- [x] **TRUST-04**: Every ADO call carries a deadline; `connection.Timeout` is set rather than left at the SDK default
 
 ### Test Seam
 

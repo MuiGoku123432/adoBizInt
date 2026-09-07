@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: honest-reads
 status: executing
-stopped_at: Completed 02-01-tracer-honest-read-PLAN.md
-last_updated: "2026-09-07T21:49:25.113Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-09-07T21:59:30.391Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 02 execution started
 progress:
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 02 (honest-reads) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 02 execution started
 
@@ -65,6 +65,7 @@ Progress: [██████░░░░] 55%
 | Phase 01 P05 | 11 min | 3 tasks | 4 files |
 | Phase 01 P06 | 9 min | 2 tasks | 3 files |
 | Phase 02 P01 | 41 min | 4 tasks | 12 files |
+| Phase 02 P02 | 34 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 02]: Leave location.NewClient and getConnectionData on an unbounded startup context as a recorded scope call
 - [Phase 02]: Assumption A1 confirmed: a rejected PAT returns 401 as a bare WrappedError value, so the dual-target errors.As extraction is load-bearing
 - [Phase 02]: Defer routing startup-time auth failures through the classified auth banner; out of scope for plan 02-01
+- [Phase 02]: Empty repositories are identified by status 404 exactly, not a 4xx range, so a 403 on a per-repository branch fetch still records an auth failure
+- [Phase 02]: No fifth FailureKind for not-found; the empty-repository case is suppressed rather than named (D-07)
+- [Phase 02]: The repository identity rides in the Failure operation label rather than a new struct field, keeping T-02-01 intact
+- [Phase 02]: getProjectWorkItems returns ([]WorkItem, []Failure, error) so batch failures are attributed without double-wrapping the envelope
 
 ### Pending Todos
 
@@ -137,6 +142,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-07T21:49:15.920Z
-Stopped at: Completed 02-01-tracer-honest-read-PLAN.md
+Last session: 2026-09-07T21:59:30.385Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

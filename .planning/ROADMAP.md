@@ -84,7 +84,7 @@ Plans:
 Plans:
 
 - [x] 02-01-tracer-honest-read-PLAN.md — Wave 1: result envelope, failure classifier, both timeout budgets, and the pull-request read wired end to end through the prs view
-- [ ] 02-02-expand-aggregate-reads-PLAN.md — Wave 2: expand the envelope across work items, both pipeline reads, both release reads, and branches
+- [x] 02-02-expand-aggregate-reads-PLAN.md — Wave 2: expand the envelope across work items, both pipeline reads, both release reads, and branches
 - [ ] 02-03-dashboard-partial-counts-PLAN.md — Wave 2: dashboard partial counts reported per sub-query without discarding the projects that answered
 - [ ] 02-04-json-field-contract-PLAN.md — Wave 3: json tags on the eleven serializable structs and retirement of the Phase 1 characterization test names
 - [ ] 02-05-tui-failure-surfacing-PLAN.md — Wave 3: the remaining five views render auth banners, partial warnings, and stale markers
