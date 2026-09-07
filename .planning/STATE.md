@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: honest-reads
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-09-07T21:59:30.391Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-09-07T22:07:43.274Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 02 execution started
 progress:
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 02 (honest-reads) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 02 execution started
 
@@ -66,6 +66,7 @@ Progress: [██████░░░░] 55%
 | Phase 01 P06 | 9 min | 2 tasks | 3 files |
 | Phase 02 P01 | 41 min | 4 tasks | 12 files |
 | Phase 02 P02 | 34 min | 3 tasks | 12 files |
+| Phase 02 P03 | 22 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 02]: No fifth FailureKind for not-found; the empty-repository case is suppressed rather than named (D-07)
 - [Phase 02]: The repository identity rides in the Failure operation label rather than a new struct field, keeping T-02-01 intact
 - [Phase 02]: getProjectWorkItems returns ([]WorkItem, []Failure, error) so batch failures are attributed without double-wrapping the envelope
+- [Phase 02]: Dashboard aggregate rides a one-element Items slice in Result[DashboardCounts] rather than a bespoke struct — D-01's purpose is that Phase 3 writes failure/completeness JSON handling once; a second envelope shape would be a permanent tax on every downstream consumer
+- [Phase 02]: The failed dashboard iteration lookup is recorded as a failure, not a silent fallback — It silently drops the WIQL iteration clause, so the count is taken under a different query and renders overstated with no visible seam (T-02-05)
 
 ### Pending Todos
 
@@ -142,6 +145,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-07T21:59:30.385Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-09-07T22:07:43.269Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None
