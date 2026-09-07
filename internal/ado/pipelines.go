@@ -86,15 +86,23 @@ func pipelineNameMatches(name string, configuredPipelines []string) bool {
 	return false
 }
 
-// GetPipelineRuns fetches ALL matching pipeline definitions and their latest runs
-// Returns one entry per pipeline definition, showing latest run status if available
-func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]PipelineRun, error) {
+// opGetPipelineRuns and opGetPipelineDefinitions label the SDK calls in any
+// Failure these reads record.
+const (
+	opGetPipelineRuns        = "get pipeline definitions for runs"
+	opGetPipelineDefinitions = "get pipeline definitions"
+)
+
+// GetPipelineRuns fetches ALL matching pipeline definitions and their latest runs.
+// Returns one entry per pipeline definition, showing latest run status if
+// available. Per-project failures are reported in the returned envelope.
+func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result[PipelineRun], error) {
 	log := logging.Logger()
 
 	// If no pipelines configured, return empty
 	if len(c.pipelines) == 0 {
 		log.Info("No pipelines configured, skipping pipeline runs fetch")
-		return []PipelineRun{}, nil
+		return newResult([]PipelineRun{}, nil), nil
 	}
 
 	targetProjects := projects
@@ -103,14 +111,26 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 	}
 
 	var allRuns []PipelineRun
+	var failures []Failure
 
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12). These N+1 fan-outs are the reads most
+		// likely to exhaust the fan-out budget mid-sweep.
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetPipelineRuns, err)
+			continue
+		}
+
 		// Step 1: Fetch ALL pipeline definitions for this project
 		definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
 			Project: &project,
 		})
 		if err != nil {
 			log.Error("Failed to get pipeline definitions", "project", project, "error", err)
+			// The loop still visits every configured project: D-08 rejected
+			// short-circuiting on auth failure explicitly.
+			failures = appendFailure(failures, project, opGetPipelineRuns, err)
 			continue
 		}
 
@@ -223,18 +243,19 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) ([]Pipe
 		}
 	}
 
-	log.Info("Pipeline runs fetched", "total_count", len(allRuns), "configured_pipelines", c.pipelines)
-	return allRuns, nil
+	log.Info("Pipeline runs fetched", "total_count", len(allRuns), "configured_pipelines", c.pipelines, "failure_count", len(failures))
+	return newResult(allRuns, failures), nil
 }
 
-// GetPipelineDefinitions fetches pipeline definitions for configured pipelines
-func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) ([]PipelineDefinition, error) {
+// GetPipelineDefinitions fetches pipeline definitions for configured pipelines.
+// Per-project failures are reported in the returned envelope.
+func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) (Result[PipelineDefinition], error) {
 	log := logging.Logger()
 
 	// If no pipelines configured, return empty
 	if len(c.pipelines) == 0 {
 		log.Info("No pipelines configured, skipping definitions fetch")
-		return []PipelineDefinition{}, nil
+		return newResult([]PipelineDefinition{}, nil), nil
 	}
 
 	targetProjects := projects
@@ -243,13 +264,22 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 	}
 
 	var allDefs []PipelineDefinition
+	var failures []Failure
 
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12).
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetPipelineDefinitions, err)
+			continue
+		}
+
 		definitions, err := c.buildClient.GetDefinitions(ctx, build.GetDefinitionsArgs{
 			Project: &project,
 		})
 		if err != nil {
 			log.Error("Failed to get pipeline definitions", "project", project, "error", err)
+			failures = appendFailure(failures, project, opGetPipelineDefinitions, err)
 			continue
 		}
 
@@ -311,8 +341,8 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 		}
 	}
 
-	log.Info("Pipeline definitions fetched", "total_count", len(allDefs))
-	return allDefs, nil
+	log.Info("Pipeline definitions fetched", "total_count", len(allDefs), "failure_count", len(failures))
+	return newResult(allDefs, failures), nil
 }
 
 // GetBranchesForPipeline fetches available branches for a pipeline's repository

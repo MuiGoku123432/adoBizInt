@@ -30,16 +30,18 @@ const (
 	columnKeyDuration    = "duration"
 )
 
-// PipelinesMsg is sent when pipeline runs are fetched
+// PipelinesMsg is sent when pipeline runs are fetched. Result carries the items
+// plus whatever failed and whether the read is the whole picture; Err is
+// reserved for a transport failure that produced no envelope at all.
 type PipelinesMsg struct {
-	Runs []ado.PipelineRun
-	Err  error
+	Result ado.Result[ado.PipelineRun]
+	Err    error
 }
 
-// DefinitionsMsg is sent when pipeline definitions are fetched
+// DefinitionsMsg is sent when pipeline definitions are fetched.
 type DefinitionsMsg struct {
-	Definitions []ado.PipelineDefinition
-	Err         error
+	Result ado.Result[ado.PipelineDefinition]
+	Err    error
 }
 
 // TriggerResultMsg is sent when a pipeline is triggered
@@ -141,8 +143,8 @@ func (m Model) fetchPipelineRuns() tea.Cmd {
 	projects := m.projects
 	client := m.client
 	return func() tea.Msg {
-		runs, err := client.GetPipelineRuns(context.Background(), projects)
-		return PipelinesMsg{Runs: runs, Err: err}
+		result, err := client.GetPipelineRuns(context.Background(), projects)
+		return PipelinesMsg{Result: result, Err: err}
 	}
 }
 
@@ -150,8 +152,8 @@ func (m Model) fetchDefinitions() tea.Cmd {
 	projects := m.projects
 	client := m.client
 	return func() tea.Msg {
-		defs, err := client.GetPipelineDefinitions(context.Background(), projects)
-		return DefinitionsMsg{Definitions: defs, Err: err}
+		result, err := client.GetPipelineDefinitions(context.Background(), projects)
+		return DefinitionsMsg{Result: result, Err: err}
 	}
 }
 
@@ -225,7 +227,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
-			m.runs = msg.Runs
+			m.runs = msg.Result.Items
 			m.table = m.table.WithRows(m.buildRows())
 			// Warn if no pipeline runs found (could indicate config issue)
 			if len(m.runs) == 0 {
@@ -240,7 +242,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.statusMsg = "Warning: Could not load pipeline definitions - trigger may not work"
 			m.statusErr = true
 		} else {
-			m.definitions = msg.Definitions
+			m.definitions = msg.Result.Items
 		}
 
 	case TriggerResultMsg:

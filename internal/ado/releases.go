@@ -52,8 +52,16 @@ type ReleaseApproval struct {
 	Comments        string
 }
 
-// GetReleases fetches recent releases for configured pipelines
-func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release, error) {
+// opGetReleases and opGetPendingApprovals label the SDK calls in any Failure
+// these reads record.
+const (
+	opGetReleases         = "get release definitions"
+	opGetPendingApprovals = "get pending approvals"
+)
+
+// GetReleases fetches recent releases for configured pipelines. Per-project
+// failures are reported in the returned envelope.
+func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Release], error) {
 	log := logging.Logger()
 
 	targetProjects := projects
@@ -62,14 +70,26 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release,
 	}
 
 	var allReleases []Release
+	var failures []Failure
 
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12). This N+1 fan-out is among the reads
+		// most likely to exhaust the fan-out budget mid-sweep.
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetReleases, err)
+			continue
+		}
+
 		// Step 1: Fetch ALL release definitions for this project
 		releaseDefs, err := c.releaseClient.GetReleaseDefinitions(ctx, release.GetReleaseDefinitionsArgs{
 			Project: &project,
 		})
 		if err != nil {
 			log.Error("Failed to get release definitions", "project", project, "error", err)
+			// The loop still visits every configured project: D-08 rejected
+			// short-circuiting on auth failure explicitly.
+			failures = appendFailure(failures, project, opGetReleases, err)
 			continue
 		}
 
@@ -193,12 +213,13 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) ([]Release,
 		}
 	}
 
-	log.Info("Releases fetched", "total_count", len(allReleases), "configured_definitions", c.releaseDefinitions)
-	return allReleases, nil
+	log.Info("Releases fetched", "total_count", len(allReleases), "configured_definitions", c.releaseDefinitions, "failure_count", len(failures))
+	return newResult(allReleases, failures), nil
 }
 
-// GetPendingApprovals fetches pending approvals across projects
-func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) ([]ReleaseApproval, error) {
+// GetPendingApprovals fetches pending approvals across projects. Per-project
+// failures are reported in the returned envelope.
+func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) (Result[ReleaseApproval], error) {
 	log := logging.Logger()
 
 	targetProjects := projects
@@ -207,8 +228,16 @@ func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) ([]
 	}
 
 	var allApprovals []ReleaseApproval
+	var failures []Failure
 
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12).
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetPendingApprovals, err)
+			continue
+		}
+
 		statusFilter := release.ApprovalStatusValues.Pending
 
 		approvals, err := c.releaseClient.GetApprovals(ctx, release.GetApprovalsArgs{
@@ -217,6 +246,7 @@ func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) ([]
 		})
 		if err != nil {
 			log.Error("Failed to get approvals", "project", project, "error", err)
+			failures = appendFailure(failures, project, opGetPendingApprovals, err)
 			continue
 		}
 
@@ -264,8 +294,8 @@ func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) ([]
 		}
 	}
 
-	log.Info("Pending approvals fetched", "total_count", len(allApprovals))
-	return allApprovals, nil
+	log.Info("Pending approvals fetched", "total_count", len(allApprovals), "failure_count", len(failures))
+	return newResult(allApprovals, failures), nil
 }
 
 // ApproveRelease approves a pending approval with optional comment

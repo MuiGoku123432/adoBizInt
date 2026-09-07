@@ -33,16 +33,18 @@ const (
 	columnKeyReleaseID = "releaseID"
 )
 
-// ReleasesMsg is sent when releases are fetched
+// ReleasesMsg is sent when releases are fetched. Result carries the items plus
+// whatever failed and whether the read is the whole picture; Err is reserved for
+// a transport failure that produced no envelope at all.
 type ReleasesMsg struct {
-	Releases []ado.Release
-	Err      error
+	Result ado.Result[ado.Release]
+	Err    error
 }
 
-// ApprovalsMsg is sent when approvals are fetched
+// ApprovalsMsg is sent when approvals are fetched.
 type ApprovalsMsg struct {
-	Approvals []ado.ReleaseApproval
-	Err       error
+	Result ado.Result[ado.ReleaseApproval]
+	Err    error
 }
 
 // ApprovalResultMsg is sent when an approval action completes
@@ -142,8 +144,8 @@ func (m Model) fetchReleases() tea.Cmd {
 	projects := m.projects
 	client := m.client
 	return func() tea.Msg {
-		releases, err := client.GetReleases(context.Background(), projects)
-		return ReleasesMsg{Releases: releases, Err: err}
+		result, err := client.GetReleases(context.Background(), projects)
+		return ReleasesMsg{Result: result, Err: err}
 	}
 }
 
@@ -151,8 +153,8 @@ func (m Model) fetchApprovals() tea.Cmd {
 	projects := m.projects
 	client := m.client
 	return func() tea.Msg {
-		approvals, err := client.GetPendingApprovals(context.Background(), projects)
-		return ApprovalsMsg{Approvals: approvals, Err: err}
+		result, err := client.GetPendingApprovals(context.Background(), projects)
+		return ApprovalsMsg{Result: result, Err: err}
 	}
 }
 
@@ -238,7 +240,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.err = msg.Err
 		} else {
 			m.err = nil
-			m.releases = msg.Releases
+			m.releases = msg.Result.Items
 			m.table = m.table.WithRows(m.buildRows())
 		}
 
@@ -248,7 +250,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.statusMsg = "Warning: Could not load pending approvals"
 			m.statusErr = true
 		} else {
-			m.approvals = msg.Approvals
+			m.approvals = msg.Result.Items
 			// Update pending approval counts in releases
 			m.updatePendingCounts()
 			m.table = m.table.WithRows(m.buildRows())
