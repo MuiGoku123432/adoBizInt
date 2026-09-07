@@ -35,8 +35,27 @@ type Client struct {
 	getConnectionData  func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
 }
 
-func NewClient(cfg *config.Config) (*Client, error) {
+// newConnection builds the SDK connection with the per-call budget already
+// installed.
+//
+// The ordering matters and is the whole point of this helper: azuredevops.NewClient
+// reads connection.Timeout once at construction, copies it into the http.Client,
+// and the Connection caches the constructed client. Setting Timeout after any
+// sub-client has been built compiles, vets, passes every test, and bounds nothing.
+//
+// A zero configured budget leaves Timeout nil rather than installing a zero
+// duration, which http.Client reads as "no deadline at all".
+func newConnection(cfg *config.Config) *azuredevops.Connection {
 	connection := azuredevops.NewPatConnection(cfg.OrgURL, cfg.PAT)
+	if cfg.RequestTimeout > 0 {
+		timeout := cfg.RequestTimeout
+		connection.Timeout = &timeout
+	}
+	return connection
+}
+
+func NewClient(cfg *config.Config) (*Client, error) {
+	connection := newConnection(cfg)
 
 	ctx := context.Background()
 

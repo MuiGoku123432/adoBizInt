@@ -44,6 +44,8 @@ type Config struct {
 	ReleaseDefinitions StringSlice                  `yaml:"release_definitions"` // Optional: separate release definition names (falls back to pipelines)
 	Repositories       StringSlice                  `yaml:"repositories"`        // Optional: specific repository names to filter PRs
 	PollInterval       time.Duration                `yaml:"poll_interval"`
+	RequestTimeout     time.Duration                `yaml:"request_timeout"` // Bounds a single HTTP call to Azure DevOps
+	FetchTimeout       time.Duration                `yaml:"fetch_timeout"`   // Bounds a whole multi-project fan-out
 	StateTransitions   map[string]map[string]string `yaml:"state_transitions"`
 	UserEmail          string                       `yaml:"user_email"` // User's email for "Assigned to Me" filter
 }
@@ -78,8 +80,12 @@ var DefaultStateTransitions = map[string]map[string]string{
 }
 
 func Load() (*Config, error) {
+	// Both timeout defaults are load-bearing, not cosmetic. A zero duration means
+	// no bound at all for http.Client, and instant expiry for context.WithTimeout.
 	cfg := &Config{
-		PollInterval: 30 * time.Second,
+		PollInterval:   30 * time.Second,
+		RequestTimeout: 30 * time.Second,
+		FetchTimeout:   2 * time.Minute,
 	}
 
 	if err := cfg.loadFromFile(); err != nil {
@@ -147,6 +153,11 @@ func (c *Config) Validate() error {
 	}
 	if c.OrgURL == "" {
 		return &ConfigError{Field: "org_url", Message: "Organization URL is required"}
+	}
+	// A fan-out budget at or below the poll interval cancels itself exactly as the
+	// next tick fires, producing a view that fails permanently and looks like an outage.
+	if c.FetchTimeout <= c.PollInterval {
+		return &ConfigError{Field: "fetch_timeout", Message: "must be greater than poll_interval"}
 	}
 	return nil
 }
