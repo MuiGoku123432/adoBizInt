@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
@@ -250,8 +251,10 @@ func TestCompletePullRequestWithNilMergeCommitReturnsError(t *testing.T) {
 	}
 }
 
-// TestGetPullRequestsSwallowsProjectFailure pins pre-TRUST-01 behavior.
-// Phase 2 inverts this characterization so the project failure reaches the caller.
+// TestGetPullRequestsSwallowsProjectFailure now pins the inverted TRUST-01
+// behavior: the project failure reaches the caller instead of being swallowed.
+// The name is retained until the phase-wide rename sweep, because the anchored
+// Phase 1 gate that counts these names is the phase's completion signal.
 func TestGetPullRequestsSwallowsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-pull-requests-fail"
@@ -280,14 +283,118 @@ func TestGetPullRequestsSwallowsProjectFailure(t *testing.T) {
 		},
 	}
 
-	pullRequests, err := client.GetPullRequests(context.Background(), nil)
+	result, err := client.GetPullRequests(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("GetPullRequests() error = %v, want nil", err)
 	}
-	if len(pullRequests) != 1 {
-		t.Fatalf("GetPullRequests() returned %d pull requests, want 1 surviving pull request: %+v", len(pullRequests), pullRequests)
+	if len(result.Items) != 1 {
+		t.Fatalf("GetPullRequests() returned %d pull requests, want 1 surviving pull request: %+v", len(result.Items), result.Items)
 	}
-	if pullRequests[0].Project != survivingProject || pullRequests[0].Title != "surviving pull request" {
-		t.Errorf("GetPullRequests()[0] = %+v, want surviving project result", pullRequests[0])
+	if result.Items[0].Project != survivingProject || result.Items[0].Title != "surviving pull request" {
+		t.Errorf("GetPullRequests()[0] = %+v, want surviving project result", result.Items[0])
+	}
+	if len(result.Failures) != 1 {
+		t.Fatalf("GetPullRequests() Failures = %+v, want exactly one entry for the failing project", result.Failures)
+	}
+	if result.Failures[0].Project != failedProject {
+		t.Errorf("GetPullRequests() Failures[0].Project = %v, want %v", result.Failures[0].Project, failedProject)
+	}
+	if result.Failures[0].Operation == "" {
+		t.Errorf("GetPullRequests() Failures[0].Operation = %q, want a named operation", result.Failures[0].Operation)
+	}
+	if result.Complete {
+		t.Errorf("GetPullRequests() Complete = %v, want false when a project failed", result.Complete)
+	}
+}
+
+func TestGetPullRequestsClassifiesRejectedToken(t *testing.T) {
+	const failedProject = "project-pull-requests-unauthorized"
+
+	client := &Client{
+		projects: []string{failedProject},
+		gitClient: &fakeGitAPI{
+			t: t,
+			GetPullRequestsByProjectFunc: func(_ context.Context, _ git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+				return nil, wrappedErrorValue(401, "TF400813: The user is not authorized")
+			},
+		},
+	}
+
+	result, err := client.GetPullRequests(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetPullRequests() error = %v, want nil", err)
+	}
+	if len(result.Items) != 0 {
+		t.Errorf("GetPullRequests() Items = %+v, want empty", result.Items)
+	}
+	if len(result.Failures) != 1 {
+		t.Fatalf("GetPullRequests() Failures = %+v, want one entry — empty must be distinguishable from failed", result.Failures)
+	}
+	if result.Failures[0].Kind != FailureAuth {
+		t.Errorf("GetPullRequests() Failures[0].Kind = %v, want %v", result.Failures[0].Kind, FailureAuth)
+	}
+	if result.Complete {
+		t.Errorf("GetPullRequests() Complete = %v, want false", result.Complete)
+	}
+}
+
+func TestGetPullRequestsReportsCompleteWhenEveryProjectAnswers(t *testing.T) {
+	client := &Client{
+		projects: []string{"project-one", "project-two"},
+		gitClient: &fakeGitAPI{
+			t: t,
+			GetPullRequestsByProjectFunc: func(_ context.Context, _ git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+				return &[]git.GitPullRequest{}, nil
+			},
+		},
+	}
+
+	result, err := client.GetPullRequests(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetPullRequests() error = %v, want nil", err)
+	}
+	if !result.Complete {
+		t.Errorf("GetPullRequests() Complete = %v, want true", result.Complete)
+	}
+	if len(result.Failures) != 0 {
+		t.Errorf("GetPullRequests() Failures = %+v, want none", result.Failures)
+	}
+}
+
+// TestFetchTimeoutMarksUnreached is D-12's only mechanical gate in this phase.
+func TestFetchTimeoutMarksUnreached(t *testing.T) {
+	projects := []string{"project-one", "project-two", "project-three"}
+
+	client := &Client{
+		projects: projects,
+		gitClient: &fakeGitAPI{
+			t: t,
+			GetPullRequestsByProjectFunc: func(_ context.Context, _ git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+				t.Errorf("GetPullRequestsByProject called after the deadline elapsed; want no doomed calls issued")
+				return nil, nil
+			},
+		},
+	}
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	result, err := client.GetPullRequests(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetPullRequests() error = %v, want nil", err)
+	}
+	if len(result.Failures) != len(projects) {
+		t.Fatalf("GetPullRequests() Failures length = %d, want %d — one per unreached project", len(result.Failures), len(projects))
+	}
+	for i, failure := range result.Failures {
+		if failure.Kind != FailureTimeout {
+			t.Errorf("GetPullRequests() Failures[%d].Kind = %v, want %v", i, failure.Kind, FailureTimeout)
+		}
+		if failure.Project != projects[i] {
+			t.Errorf("GetPullRequests() Failures[%d].Project = %v, want %v — failures follow configured iteration order", i, failure.Project, projects[i])
+		}
+	}
+	if result.Complete {
+		t.Errorf("GetPullRequests() Complete = %v, want false", result.Complete)
 	}
 }
