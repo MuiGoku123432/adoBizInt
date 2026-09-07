@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/release"
@@ -16,6 +17,29 @@ var (
 	_ buildAPI    = (*fakeBuildAPI)(nil)
 	_ releaseAPI  = (*fakeReleaseAPI)(nil)
 )
+
+// azuredevops.Client.UnwrapError returns a *WrappedError on two paths and a bare
+// WrappedError value on two others, so tests that inject an SDK failure must be
+// able to produce either shape. These constructors keep that detail in one place
+// rather than in every expansion read's test file.
+
+// wrappedErrorValue builds the bare-value error shape the SDK returns for a
+// text/plain body (client.go:389) and for a normal JSON error body (client.go:411).
+func wrappedErrorValue(statusCode int, message string) error {
+	return azuredevops.WrappedError{Message: &message, StatusCode: &statusCode}
+}
+
+// wrappedErrorPointer builds the pointer error shape the SDK returns for an empty
+// body (client.go:366) and for an improper-error JSON envelope (client.go:403).
+func wrappedErrorPointer(statusCode int, message string) error {
+	return &azuredevops.WrappedError{Message: &message, StatusCode: &statusCode}
+}
+
+// wrappedErrorNoStatus builds an SDK error with no status code, which must never
+// classify as auth.
+func wrappedErrorNoStatus(message string) error {
+	return azuredevops.WrappedError{Message: &message}
+}
 
 type fakeWorkItemAPI struct {
 	t *testing.T
