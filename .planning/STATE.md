@@ -1,20 +1,20 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-current_phase: 01
-current_phase_name: test-seam-for-internal-ado
-status: needs_review
-stopped_at: Phase 2 context gathered
-last_updated: "2026-09-07T17:29:06.309Z"
-last_activity: 2026-09-06
-last_activity_desc: Phase 01 execution started
-state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
-progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 6
-  completed_plans: 6
 milestone_name: milestone
+current_phase: 02
+current_phase_name: honest-reads
+status: executing
+stopped_at: Completed 02-01-tracer-honest-read-PLAN.md
+last_updated: "2026-09-07T21:49:25.113Z"
+last_activity: 2026-09-07
+last_activity_desc: Phase 02 execution started
+progress:
+  total_phases: 2
+  completed_phases: 1
+  total_plans: 11
+  completed_plans: 6
+state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
 # Project State
@@ -24,16 +24,16 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-03)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 01 — test-seam-for-internal-ado
+**Current focus:** Phase 02 — honest-reads
 
 ## Current Position
 
-Phase: 01 (test-seam-for-internal-ado) -- NEEDS REVIEW
-Plan: 6 of 6
-Status: Automated verification passed; one human verification item remains
-Last activity: 2026-09-06 — Completed gap-closure plan 01-06
+Phase: 02 (honest-reads) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-09-07 — Phase 02 execution started
 
-Progress: [██████████] 100%
+Progress: [██████░░░░] 55%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100%
 | Phase 01 P04 | 18 min | 2 tasks | 2 files |
 | Phase 01 P05 | 11 min | 3 tasks | 4 files |
 | Phase 01 P06 | 9 min | 2 tasks | 3 files |
+| Phase 02 P01 | 41 min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,13 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 01]: Preserve dashboard inversion as a getProjectCounts propagation change rather than an outer-loop-only edit. — Dashboard errors are swallowed in place and its outer continue is unreachable until the helper propagates.
 - [Phase 01]: Keep successful eager identity caching and retry through the retained location provider whenever the approval cache is empty. — This restores transient-failure recovery without adding public API or shared mutable state.
 - [Phase 01]: Do not memoize fallback identity results; each empty-cache approval performs a fresh lookup. — The 1/0, 2/1, and 3/2 provider/Git contract preserves per-attempt retry semantics.
+- [Phase 02]: Expose the fan-out budget via a Client.FetchTimeout() accessor rather than threading a parameter through six view constructors and app.go
+- [Phase 02]: Leave connection.Timeout nil for a zero configured budget, because a zero duration means no bound at all for http.Client
+- [Phase 02]: Check cancellation before the timeout branch so Phase 3 CLI-04 interrupts never classify as server timeouts
+- [Phase 02]: Exclude DownloadAttachment's http.DefaultClient from TRUST-04 and defer it to Phase 5 with the host allow-list
+- [Phase 02]: Leave location.NewClient and getConnectionData on an unbounded startup context as a recorded scope call
+- [Phase 02]: Assumption A1 confirmed: a rejected PAT returns 401 as a bare WrappedError value, so the dual-target errors.As extraction is load-bearing
+- [Phase 02]: Defer routing startup-time auth failures through the classified auth banner; out of scope for plan 02-01
 
 ### Pending Todos
 
@@ -129,6 +137,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-07T17:29:06.227Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-honest-reads/02-CONTEXT.md
+Last session: 2026-09-07T21:49:15.920Z
+Stopped at: Completed 02-01-tracer-honest-read-PLAN.md
+Resume file: None

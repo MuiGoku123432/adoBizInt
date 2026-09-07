@@ -79,11 +79,11 @@ Plans:
   5. Exported `ado` structs carry `json:` tags with stable lower-cased names
   6. The TUI renders failures rather than silently showing an empty table
 
-**Plans**: 5 plans
+**Plans**: 0/5 plans executed
 
 Plans:
 
-- [ ] 02-01-tracer-honest-read-PLAN.md — Wave 1: result envelope, failure classifier, both timeout budgets, and the pull-request read wired end to end through the prs view
+- [x] 02-01-tracer-honest-read-PLAN.md — Wave 1: result envelope, failure classifier, both timeout budgets, and the pull-request read wired end to end through the prs view
 - [ ] 02-02-expand-aggregate-reads-PLAN.md — Wave 2: expand the envelope across work items, both pipeline reads, both release reads, and branches
 - [ ] 02-03-dashboard-partial-counts-PLAN.md — Wave 2: dashboard partial counts reported per sub-query without discarding the projects that answered
 - [ ] 02-04-json-field-contract-PLAN.md — Wave 3: json tags on the eleven serializable structs and retirement of the Phase 1 characterization test names
