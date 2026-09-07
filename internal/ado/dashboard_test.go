@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
@@ -171,14 +172,98 @@ func TestGetProjectCountsReportsPartialFailures(t *testing.T) {
 	}
 }
 
-// TestGetDashboardCountsSwallowsProjectFailure characterizes the current
-// TRUST-01 behavior. Phase 2 inverts this contract so the query failure reaches
-// the caller instead of making that project's work-item count look empty.
+// dashboardClientFor wires several projects, each with its own sub-query
+// outcomes, and visits them in the given order.
+func dashboardClientFor(t *testing.T, order []string, byProject map[string]dashboardStubs) *Client {
+	t.Helper()
+
+	stubsFor := func(project string) dashboardStubs {
+		stubs, ok := byProject[project]
+		if !ok {
+			t.Fatalf("unexpected call for project %q, want one of %v", project, order)
+		}
+		return stubs
+	}
+
+	return &Client{
+		projects:  order,
+		pipelines: []string{dashboardPipeline},
+		workitemClient: &fakeWorkItemAPI{
+			t: t,
+			GetClassificationNodeFunc: func(_ context.Context, args workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+				if args.Project == nil {
+					t.Fatal("GetClassificationNode project = nil")
+				}
+				if err := stubsFor(*args.Project).iterErr; err != nil {
+					return nil, err
+				}
+				return nil, nil
+			},
+			QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
+				if args.Project == nil {
+					t.Fatal("QueryByWiql project = nil")
+				}
+				stubs := stubsFor(*args.Project)
+				if stubs.wiqlErr != nil {
+					return nil, stubs.wiqlErr
+				}
+				refs := make([]workitemtracking.WorkItemReference, stubs.workItems)
+				return &workitemtracking.WorkItemQueryResult{WorkItems: &refs}, nil
+			},
+		},
+		gitClient: &fakeGitAPI{
+			t: t,
+			GetPullRequestsByProjectFunc: func(_ context.Context, args git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+				if args.Project == nil {
+					t.Fatal("GetPullRequestsByProject project = nil")
+				}
+				stubs := stubsFor(*args.Project)
+				if stubs.prErr != nil {
+					return nil, stubs.prErr
+				}
+				prs := make([]git.GitPullRequest, stubs.prs)
+				return &prs, nil
+			},
+		},
+		buildClient: &fakeBuildAPI{
+			t: t,
+			GetBuildsFunc: func(_ context.Context, args build.GetBuildsArgs) (*build.GetBuildsResponseValue, error) {
+				if args.Project == nil {
+					t.Fatal("GetBuilds project = nil")
+				}
+				stubs := stubsFor(*args.Project)
+				if stubs.buildErr != nil {
+					return nil, stubs.buildErr
+				}
+				name := dashboardPipeline
+				builds := make([]build.Build, stubs.builds)
+				for i := range builds {
+					builds[i].Definition = &build.DefinitionReference{Name: &name}
+				}
+				return &build.GetBuildsResponseValue{Value: builds}, nil
+			},
+		},
+	}
+}
+
+// dashboardTotal unwraps the single aggregate the dashboard envelope carries.
+// The dashboard's payload is one summed value rather than a list, so it rides in
+// a one-element Items slice to keep the failure list and completeness flag the
+// same shape as the other seven reads (D-01).
+func dashboardTotal(t *testing.T, result Result[DashboardCounts]) DashboardCounts {
+	t.Helper()
+	if len(result.Items) != 1 {
+		t.Fatalf("GetDashboardCounts() Items length = %d, want exactly 1 aggregate", len(result.Items))
+	}
+	return result.Items[0]
+}
+
+// TestGetDashboardCountsSwallowsProjectFailure now asserts the inverted
+// contract: the failing project's work-item query is reported by name, its PRs
+// still count, and the total is explicitly labelled incomplete.
 //
 // Dashboard swallowing is structurally different from the other seven reads: it
 // happens per call inside getProjectCounts, not at the aggregate loop's continue.
-// Phase 2 must make getProjectCounts propagate each failure; grepping only for
-// per-project loop continues will find seven sites and silently miss this one.
 func TestGetDashboardCountsSwallowsProjectFailure(t *testing.T) {
 	const (
 		failingProject   = "project-query-fails"
@@ -190,63 +275,122 @@ func TestGetDashboardCountsSwallowsProjectFailure(t *testing.T) {
 		survivingWorkItems  = 4
 	)
 
-	workItemRefs := make([]workitemtracking.WorkItemReference, survivingWorkItems)
-	api := &fakeWorkItemAPI{
-		t: t,
-		GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
-			return nil, nil
-		},
-		QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
-			if args.Project == nil {
-				t.Fatal("QueryByWiql project = nil")
-			}
-			switch *args.Project {
-			case failingProject:
-				return nil, errors.New("query failed")
-			case survivingProject:
-				return &workitemtracking.WorkItemQueryResult{WorkItems: &workItemRefs}, nil
-			default:
-				t.Fatalf("QueryByWiql project = %q, want %q or %q", *args.Project, failingProject, survivingProject)
-				return nil, nil
-			}
-		},
-	}
-	gitAPI := &fakeGitAPI{
-		t: t,
-		GetPullRequestsByProjectFunc: func(_ context.Context, args git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
-			if args.Project == nil {
-				t.Fatal("GetPullRequestsByProject project = nil")
-			}
-			var count int
-			switch *args.Project {
-			case failingProject:
-				count = failingProjectPRs
-			case survivingProject:
-				count = survivingProjectPRs
-			default:
-				t.Fatalf("GetPullRequestsByProject project = %q, want %q or %q", *args.Project, failingProject, survivingProject)
-			}
-			prs := make([]git.GitPullRequest, count)
-			return &prs, nil
-		},
-	}
-	client := &Client{
-		projects:       []string{failingProject, survivingProject},
-		workitemClient: api,
-		gitClient:      gitAPI,
-		buildClient:    &fakeBuildAPI{t: t},
-	}
+	client := dashboardClientFor(t, []string{failingProject, survivingProject}, map[string]dashboardStubs{
+		failingProject:   {wiqlErr: errors.New("query failed"), prs: failingProjectPRs},
+		survivingProject: {workItems: survivingWorkItems, prs: survivingProjectPRs},
+	})
 
-	counts, err := client.GetDashboardCounts(context.Background(), nil)
+	result, err := client.GetDashboardCounts(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
 	}
+	counts := dashboardTotal(t, result)
+
 	if counts.WorkItems != survivingWorkItems {
-		t.Errorf("GetDashboardCounts().WorkItems = %d, want %d from only the surviving project", counts.WorkItems, survivingWorkItems)
+		t.Errorf("GetDashboardCounts() WorkItems = %d, want %d from only the surviving project", counts.WorkItems, survivingWorkItems)
 	}
 	// This two-project sum is load-bearing: in-place swallowing continues to the
 	// failing project's PR call, while project-level skipping would lose its PRs.
 	if counts.PRs != failingProjectPRs+survivingProjectPRs {
-		t.Errorf("GetDashboardCounts().PRs = %d, want %d from both projects", counts.PRs, failingProjectPRs+survivingProjectPRs)
+		t.Errorf("GetDashboardCounts() PRs = %d, want %d from both projects", counts.PRs, failingProjectPRs+survivingProjectPRs)
+	}
+
+	// A non-zero total with a failure list is the exact case D-03 exists for: the
+	// number is kept and labelled understated rather than zeroed or unmarked.
+	if len(result.Failures) != 1 {
+		t.Fatalf("GetDashboardCounts() Failures = %v, want exactly one", failureOps(result.Failures))
+	}
+	if result.Failures[0].Project != failingProject {
+		t.Errorf("Failures[0].Project = %q, want %q", result.Failures[0].Project, failingProject)
+	}
+	if result.Failures[0].Operation != opDashboardWorkItems {
+		t.Errorf("Failures[0].Operation = %q, want %q", result.Failures[0].Operation, opDashboardWorkItems)
+	}
+	if result.Complete {
+		t.Error("GetDashboardCounts() Complete = true, want false — a partial total must never report complete")
+	}
+}
+
+func TestGetDashboardCountsReportsCompleteWhenEveryProjectAnswers(t *testing.T) {
+	const (
+		first  = "project-one"
+		second = "project-two"
+	)
+
+	client := dashboardClientFor(t, []string{first, second}, map[string]dashboardStubs{
+		first:  {workItems: 4, prs: 3, builds: 2},
+		second: {workItems: 1, prs: 5, builds: 7},
+	})
+
+	result, err := client.GetDashboardCounts(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
+	}
+	counts := dashboardTotal(t, result)
+
+	want := DashboardCounts{WorkItems: 5, PRs: 8, Pipelines: 9}
+	if counts != want {
+		t.Errorf("GetDashboardCounts() total = %+v, want %+v", counts, want)
+	}
+	if len(result.Failures) != 0 {
+		t.Errorf("GetDashboardCounts() Failures = %v, want none", failureOps(result.Failures))
+	}
+	if !result.Complete {
+		t.Error("GetDashboardCounts() Complete = false, want true on a clean two-project sweep")
+	}
+}
+
+// TestGetDashboardCountsRecordsDegradedIterationLookup pins the decision taken on
+// the fourth swallow at dashboard.go's iteration lookup. A failed lookup silently
+// substitutes a date-only WIQL filter, which changes the work-item count the user
+// reads as authoritative, so it is recorded as a failure rather than left silent
+// (T-02-05).
+func TestGetDashboardCountsRecordsDegradedIterationLookup(t *testing.T) {
+	const project = "project-degraded-filter"
+
+	client := dashboardClientFor(t, []string{project}, map[string]dashboardStubs{
+		project: {iterErr: errors.New("iterations unavailable"), workItems: 4, prs: 3, builds: 2},
+	})
+
+	result, err := client.GetDashboardCounts(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
+	}
+
+	counts := dashboardTotal(t, result)
+	if counts.WorkItems != 4 {
+		t.Errorf("GetDashboardCounts() WorkItems = %d, want 4 — the degraded query still returns counts", counts.WorkItems)
+	}
+	if len(result.Failures) != 1 {
+		t.Fatalf("GetDashboardCounts() Failures = %v, want exactly one for the degraded iteration lookup", failureOps(result.Failures))
+	}
+	if result.Failures[0].Operation != opDashboardIterations {
+		t.Errorf("Failures[0].Operation = %q, want %q", result.Failures[0].Operation, opDashboardIterations)
+	}
+	if result.Complete {
+		t.Error("GetDashboardCounts() Complete = true, want false — a count taken under a substituted filter is not the whole picture")
+	}
+}
+
+func TestFetchTimeoutMarksUnreachedDashboard(t *testing.T) {
+	projects := []string{"project-one", "project-two"}
+	client := dashboardClientFor(t, projects, map[string]dashboardStubs{
+		projects[0]: {},
+		projects[1]: {},
+	})
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	result, err := client.GetDashboardCounts(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
+	}
+
+	assertAllUnreached(t, "GetDashboardCounts", result.Failures, result.Complete, projects)
+
+	counts := dashboardTotal(t, result)
+	if counts != (DashboardCounts{}) {
+		t.Errorf("GetDashboardCounts() total = %+v, want a zero total when no project was reached", counts)
 	}
 }
