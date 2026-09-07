@@ -15,7 +15,7 @@ import (
 
 // CountsMsg is sent when dashboard counts are fetched
 type CountsMsg struct {
-	Counts *ado.DashboardCounts
+	Result ado.Result[ado.DashboardCounts]
 	Err    error
 }
 
@@ -94,8 +94,8 @@ func (m Model) Init() tea.Cmd {
 func (m Model) fetchCounts() tea.Cmd {
 	selected := m.selectedProjects
 	return func() tea.Msg {
-		counts, err := m.client.GetDashboardCounts(context.Background(), selected)
-		return CountsMsg{Counts: counts, Err: err}
+		result, err := m.client.GetDashboardCounts(context.Background(), selected)
+		return CountsMsg{Result: result, Err: err}
 	}
 }
 
@@ -129,10 +129,16 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.loading = false
 		if msg.Err != nil {
 			m.err = msg.Err
-		} else if msg.Counts != nil {
-			m.workItemCount = msg.Counts.WorkItems
-			m.prCount = msg.Counts.PRs
-			m.pipelineCount = msg.Counts.Pipelines
+		} else if len(msg.Result.Items) > 0 {
+			// Compile fix only. The envelope's Failures and Complete are
+			// deliberately not read here: rendering the auth banner, the
+			// understated-total warning and the completeness gate (D-03, D-13,
+			// D-14) belongs to plan 02-05. Until then this view still presents a
+			// partial total as if it were whole.
+			counts := msg.Result.Items[0]
+			m.workItemCount = counts.WorkItems
+			m.prCount = counts.PRs
+			m.pipelineCount = counts.Pipelines
 		}
 	}
 	return m, nil

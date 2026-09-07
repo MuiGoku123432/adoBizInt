@@ -23,14 +23,25 @@ type DashboardCounts struct {
 // project, so each needs its own label: a partial total is only actionable if
 // the user can tell which of the three did not answer.
 const (
+	opDashboardIterations   = "get dashboard iterations"
 	opDashboardWorkItems    = "get dashboard work item count"
 	opDashboardPullRequests = "get dashboard pull request count"
 	opDashboardBuilds       = "get dashboard build count"
 )
 
-// GetDashboardCounts fetches counts for work items, PRs, and pipelines
-// If projects is empty, uses all configured projects
-func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (*DashboardCounts, error) {
+// GetDashboardCounts fetches counts for work items, PRs, and pipelines.
+// If projects is empty, uses all configured projects.
+//
+// The returned envelope carries the summed counts as a single-element Items
+// slice. The dashboard's payload is one aggregate rather than a list, but the
+// failure list and completeness flag must be the same shape as the other seven
+// reads so Phase 3 writes its JSON handling once (D-01).
+//
+// The total is the sum of the projects that answered, including projects that
+// answered only partially. It is never zeroed or discarded when something
+// failed; instead Complete is false, which is the only signal that a single
+// number with no visible seam is understated (D-03).
+func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (Result[DashboardCounts], error) {
 	log := logging.Logger()
 
 	// Use provided projects or fall back to configured projects
@@ -47,17 +58,29 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (*Da
 
 	if len(targetProjects) == 0 {
 		log.Warn("No projects to fetch counts for - projects list is empty")
-		return &DashboardCounts{}, nil
+		return newResult([]DashboardCounts{{}}, nil), nil
 	}
 
 	counts := &DashboardCounts{}
+	var failures []Failure
 
 	// Aggregate counts across all target projects
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12).
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opDashboardWorkItems, err)
+			continue
+		}
+
 		log.Debug("Fetching counts for project", "project", project)
+		// Every project is visited, including ones that already failed: D-08
+		// rejected short-circuiting, and a project that answered partially still
+		// contributes what it did return.
 		projectCounts, projectFailures := c.getProjectCounts(ctx, project)
 		if len(projectFailures) > 0 {
 			log.Error("Incomplete counts for project", "project", project, "failure_count", len(projectFailures))
+			failures = append(failures, projectFailures...)
 		}
 		log.Debug("Got counts for project",
 			"project", project,
@@ -74,9 +97,10 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (*Da
 		"total_work_items", counts.WorkItems,
 		"total_prs", counts.PRs,
 		"total_pipelines", counts.Pipelines,
+		"failure_count", len(failures),
 	)
 
-	return counts, nil
+	return newResult([]DashboardCounts{*counts}, failures), nil
 }
 
 // getProjectCounts fetches counts for a single project. It returns both the
@@ -99,6 +123,13 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	iterations, err := c.GetRecentIterations(ctx, project)
 	if err != nil {
 		log.Warn("Failed to get iterations for dashboard, using date filter only", "project", project, "error", err)
+		// This is a degradation, not a neutral fallback: the WIQL filter below
+		// silently loses its iteration clause, so the work-item count that gets
+		// summed into the dashboard total was taken under a different query than
+		// intended. A count produced under a substituted filter is presented with
+		// the same authority as a correct one, so it is recorded rather than left
+		// silent (T-02-05).
+		failures = appendFailure(failures, project, opDashboardIterations, err)
 	} else if len(iterations) > 0 {
 		escapedPaths := make([]string, len(iterations))
 		for i, path := range iterations {
