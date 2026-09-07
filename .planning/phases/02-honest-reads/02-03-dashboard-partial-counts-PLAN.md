@@ -2,8 +2,8 @@
 phase: 02-honest-reads
 plan: 03
 type: execute
-wave: 2
-depends_on: [02-01]
+wave: 3
+depends_on: [02-01, 02-02]
 files_modified:
   - internal/ado/dashboard.go
   - internal/ado/dashboard_test.go
@@ -61,10 +61,19 @@ previously received a bare pointer. Nothing else.
 
 The reducer and render work — the auth banner, the understated-total warning line,
 and the completeness gate of D-03, D-13 and D-14 — belongs to plan 02-05, which runs
-in the next wave. Do not start it here.
+in a later wave. Do not start it here.
 
-Touch only `internal/ui/dashboard/dashboard.go`. The other four view packages belong
-to plan 02-02, which runs in parallel with this one.
+Touch only `internal/ui/dashboard/dashboard.go`. The other four view packages were
+already compile-fixed by plan 02-02, which ran in the **previous** wave.
+
+**Why this plan is serialized after 02-02 rather than parallel with it.** This plan
+edits `internal/ado/dashboard.go`; 02-02 edits `workitems.go`, `pipelines.go`,
+`releases.go` and `branches.go`. Those are different *files* but the same Go
+*package*. Go compiles per package: Task 1 below changes the `getProjectCounts`
+signature, and while that edit is in flight `internal/ado` does not compile, so every
+`go build`/`go test` in 02-02 would fail spuriously — and vice versa. There is no safe
+interleaving, so 02-02 must land first. `files_modified` overlap being zero is not
+sufficient for Go.
 </call_site_scope>
 
 <execution_context>
@@ -246,6 +255,10 @@ to plan 02-02, which runs in parallel with this one.
     - `go test ./internal/ado/ -count=1 -v` includes a passing case that pins the
       chosen behavior for the degraded iteration lookup, either asserting a failure is
       recorded or asserting none is.
+    - `go test ./internal/ado/ -run TestFetchTimeoutMarksUnreached -count=1 -v` passes
+      with a `GetDashboardCounts` case asserting an already-expired fetch context
+      produces a timeout-kind failure for each unreached project and `Complete == false`
+      (D-12, `02-VALIDATION.md:57`).
     - `grep -vn '^\s*//' internal/ado/dashboard.go | grep -c 'Skip projects with errors'` returns `0`.
     - `gofmt -l .` prints nothing.
   </acceptance_criteria>

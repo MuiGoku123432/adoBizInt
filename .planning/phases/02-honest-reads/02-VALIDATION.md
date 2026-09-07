@@ -33,8 +33,15 @@ Two packages currently have tests: `internal/ado` and `internal/ui/releases`. Fo
 
 - **After every task commit:** Run `go test ./internal/ado/... -count=1`
 - **After every plan wave:** Run `go build ./... && go vet ./... && gofmt -l . && go test ./... -count=1`
+  — **except inside wave 4.** Plans `02-04` and `02-05` share wave 4 and own different
+  Go packages (`internal/ado` and `internal/ui/...` respectively). Go compiles per
+  package, so a repo-wide gate run while the sibling plan is mid-edit fails spuriously.
+  Within wave 4, each plan's tasks are scoped to the package it owns, and the repo-wide
+  gate is `02-05` Task 4 (phase close), which is gated on `02-04-SUMMARY.md` existing.
 - **Before `/gsd-verify-work`:** Full suite must be green
-- **Phase gate (additional):** `go test ./internal/ado/ -v -run TestGet 2>&1 | grep -c '^=== RUN   TestGet.*SwallowsProjectFailure$'` returns `0`
+- **Phase gate (additional):** `go test ./internal/ado/ -v -run TestGet 2>&1 | grep -cE '^=== RUN   TestGet[A-Za-z]*SwallowsProjectFailure$'` returns `0`
+  (the `[A-Za-z]*` + `$` anchoring excludes subtest lines, which plans 02-01..02-03 add
+  under these exact parents)
 - **Max feedback latency:** 45 seconds
 
 ---
@@ -84,6 +91,13 @@ Two packages currently have tests: `internal/ado` and `internal/ui/releases`. Fo
 ---
 
 ## Validation Sign-Off
+
+> **Owner:** plan `02-05`, **Task 4 (phase close)**. That task runs the repo-wide gate,
+> sets every Status cell in the map above from the real result of running that row's
+> command, ticks the boxes below, and flips the frontmatter to
+> `status: validated` / `nyquist_compliant: true` / `wave_0_complete: true` — but only
+> if every box below is genuinely ticked. If any is not, the frontmatter stays as-is and
+> the reason is recorded in `02-05-SUMMARY.md`.
 
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies
 - [ ] Sampling continuity: no 3 consecutive tasks without automated verify

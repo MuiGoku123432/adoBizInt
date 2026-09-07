@@ -319,14 +319,20 @@ returning the envelope; and the prs view rendering auth, partial, and stale stat
       and asserts both durations are non-zero with an absent config file.
     - `go test ./internal/config/ -run TestValidate -count=1 -v` includes a case where
       the fan-out budget equals the poll interval and asserts a `ConfigError` is returned.
-    - `go test ./internal/ado/ -run TestNewConnection -count=1 -v` passes and asserts
-      the returned connection's `Timeout` is non-nil and equal to the configured
-      per-call budget.
-    - `grep -n 'request_timeout\|fetch_timeout' internal/config/config.go` returns exactly
-      two lines, both inside the `Config` struct declaration.
+    - `go test ./internal/ado/ -run TestNewClientSetsTimeout -count=1 -v` passes and
+      asserts the helper's returned `*azuredevops.Connection` has a non-nil `Timeout`
+      equal to `cfg.RequestTimeout`. (Name per `02-VALIDATION.md:55`.)
+    - `grep -c 'yaml:"request_timeout"\|yaml:"fetch_timeout"' internal/config/config.go`
+      returns `2` — one tagged field each, both inside the `Config` struct declaration.
     - `grep -vn '^\s*//' internal/config/config.go | grep -c 'ADO_REQUEST_TIMEOUT\|ADO_FETCH_TIMEOUT'` returns `0`.
-    - In `internal/ado/client.go`, the line assigning the connection timeout has a
-      lower line number than every `NewClient(` call in the file.
+    - `grep -n 'azuredevops.NewClient\|workitemtracking.NewClient\|git.NewClient\|build.NewClient\|work.NewClient\|release.NewClient\|location.NewClient' internal/ado/client.go`
+      shows every match occurring *after* the connection-helper call inside `NewClient`'s
+      body — i.e. the helper is invoked as the first statement of `NewClient`, so the
+      timeout is already set on the `Connection` before any sub-client is constructed.
+      (Do not attempt a bare `grep 'NewClient('` line-number comparison: it matches the
+      enclosing `func NewClient(...)` declaration at :38, and a helper declared below
+      `NewClient` is correct yet sorts after all six constructors. The behavioural
+      assertion above is the real gate.)
     - `gofmt -l internal/config internal/ado` prints nothing.
   </acceptance_criteria>
   <done>Both budgets are configurable with safe defaults and a validated relationship to the poll interval, and every SDK sub-client inherits the per-call deadline because the timeout is set before any of them is constructed.</done>
@@ -475,6 +481,12 @@ returning the envelope; and the prs view rendering auth, partial, and stale stat
       was before this task, and `grep -n 'context.WithTimeout' internal/ui/prs/prs.go`
       returns at least one line inside `fetchPRs`.
     - `grep -n 'utils.Truncate' internal/ui/styles/styles.go` returns at least one line.
+    - `go test ./internal/ado/ -run TestFetchTimeoutMarksUnreached -count=1 -v` passes
+      (name per `02-VALIDATION.md:57`) and asserts that, given a context whose deadline
+      has already elapsed, `GetPullRequests` records a timeout-kind failure entry for
+      **each** project it did not reach and returns a result with `Complete == false`.
+      This is D-12's only mechanical gate in the phase — without it D-12 can be skipped
+      with every other check green.
     - `grep -c 'continue' internal/ado/pullrequests.go` is unchanged from before this
       task — the loop still visits every configured project.
     - `git diff --stat internal/ado/workitems.go internal/ado/pipelines.go internal/ado/releases.go internal/ado/branches.go internal/ado/dashboard.go` is empty.

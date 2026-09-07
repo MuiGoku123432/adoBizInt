@@ -53,8 +53,8 @@ and branches (including the nested per-repository swallow).
 Purpose: 02-01 proved the envelope, the classifier, and the deadline behavior on
 one read. These six follow the same template mechanically — but the template only
 holds if each edit targets the exact error line from the research inventory. Ten
-of the twenty-six `continue` statements in this package are error swallows; the
-other sixteen are nil guards and name-pattern filters, and converting those
+of the twenty-eight `continue` statements in this package are error swallows; the
+other eighteen are nil guards and name-pattern filters, and converting those
 corrupts the filtering logic.
 
 Output: six aggregate reads returning the shared envelope, six characterization
@@ -70,14 +70,17 @@ model previously received a bare slice. Nothing else.
 
 The reducer and render work — the auth banner, the persistent warning line, the stale
 marker, and the completeness-gated zero-row messages of D-13 through D-15 — belongs to
-plan 02-05, which runs in the next wave. Do not start it here. A partial rendering
+plan 02-05, which runs in a later wave. Do not start it here. A partial rendering
 implementation split across two waves is harder to review than a compile fix followed
 by a complete one, and 02-05 owns the shared-renderer decisions.
 
 The four view files touched for the compile fix are `internal/ui/workitems/workitems.go`,
 `internal/ui/pipelines/pipelines.go`, `internal/ui/releases/releases.go`, and
 `internal/ui/branches/branches.go`. Do not touch `internal/ui/dashboard/dashboard.go`
-— that belongs to plan 02-03, which runs in parallel with this one.
+— that belongs to plan 02-03, which runs in the **next** wave (wave 3) precisely
+because it edits `internal/ado/dashboard.go`, the same Go package this plan edits.
+Go compiles per package, not per file: this plan and 02-03 cannot be interleaved
+without producing spurious compile failures in each other's verify runs.
 </call_site_scope>
 
 <execution_context>
@@ -165,8 +168,13 @@ The four view files touched for the compile fix are `internal/ui/workitems/worki
     - `go build ./...` succeeds, proving every consumer of `GetWorkItems` was updated.
     - `go test ./internal/ado/ -run 'TestGetWorkItems' -count=1 -v` includes a passing
       case asserting a surviving project's items alongside exactly one failure entry.
-    - `go test ./internal/ado/ -count=1 -v` includes a passing test covering a batch
-      fetch failure that asserts the result is incomplete while items are still returned.
+    - `go test ./internal/ado/ -run TestGetWorkItemsReportsBatchFailure -count=1 -v`
+      passes (name per `02-VALIDATION.md:47`) and asserts a batch fetch failure yields
+      an incomplete result while the items already retrieved are still returned.
+    - `go test ./internal/ado/ -run TestFetchTimeoutMarksUnreached -count=1 -v` passes
+      with a `GetWorkItems` case asserting an already-expired fetch context produces a
+      timeout-kind failure for each unreached project and `Complete == false` (D-12,
+      `02-VALIDATION.md:57`).
     - `grep -c 'continue' internal/ado/workitems.go` is unchanged from before this task.
     - `go test ./internal/ado/ -count=1 -v` includes a case injecting a typed 401 and
       asserting the auth kind on a `GetWorkItems` failure entry.
@@ -243,9 +251,15 @@ The four view files touched for the compile fix are `internal/ui/workitems/worki
     - `grep -c 'continue' internal/ado/pipelines.go` and
       `grep -c 'continue' internal/ado/releases.go` are both unchanged from before
       this task.
-    - `git diff internal/ado/pipelines.go internal/ado/releases.go` shows no change on
-      any line within three lines of the filter sites at pipelines.go:118, :126, :170,
-      :257, :271, :276 and releases.go:77, :85, :132, :224 other than line-number shift.
+    - `go test ./internal/ado/ -count=1 -v` includes, for each of the four reads, a
+      passing case asserting that a **fully successful** two-project fetch returns the
+      same row count as before this change. This — not a diff-proximity check — is what
+      detects a data filter accidentally converted into a failure record: a converted
+      filter changes the row count on the happy path.
+    - `go test ./internal/ado/ -run TestFetchTimeoutMarksUnreached -count=1 -v` passes
+      with a case per read asserting an already-expired fetch context produces a
+      timeout-kind failure for each unreached project and `Complete == false` (D-12,
+      `02-VALIDATION.md:57`).
     - `gofmt -l internal/ado` prints nothing.
   </acceptance_criteria>
   <done>All four pipeline and release reads report their per-project failures, and every data filter in those files is untouched.</done>
@@ -325,12 +339,15 @@ The four view files touched for the compile fix are `internal/ui/workitems/worki
     - `go build ./...` succeeds with `GetBranches` returning the envelope.
     - `go test ./internal/ado/ -run 'TestGetBranches' -count=1 -v` includes a passing
       case asserting a surviving project's branches alongside exactly one failure entry.
-    - `go test ./internal/ado/ -count=1 -v` includes a passing case injecting a
-      404-family per-repository error and asserting the failure list is empty and the
-      result is complete.
-    - `go test ./internal/ado/ -count=1 -v` includes a passing case injecting a
-      500 per-repository error and asserting exactly one failure whose operation label
-      contains the repository name.
+    - `go test ./internal/ado/ -run TestGetBranchesReportsRepoFailure -count=1 -v`
+      passes (name per `02-VALIDATION.md:48`) with one case injecting a 404-family
+      per-repository error asserting the failure list is empty and the result is
+      complete, and one injecting a 500 asserting exactly one failure whose operation
+      label contains the repository name.
+    - `go test ./internal/ado/ -run TestFetchTimeoutMarksUnreached -count=1 -v` passes
+      with a `GetBranches` case asserting an already-expired fetch context produces a
+      timeout-kind failure for each unreached project and `Complete == false` (D-12,
+      `02-VALIDATION.md:57`).
     - `grep -c 'FailureKind' internal/ado/result.go` shows no fifth kind was added:
       the constant count is unchanged from 02-01.
     - `gofmt -l internal/ado` prints nothing.

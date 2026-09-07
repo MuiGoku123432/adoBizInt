@@ -393,7 +393,7 @@ All `continue` locations below are from a `grep -n continue internal/ado/*.go` e
 
 [VERIFIED: `grep -n continue internal/ado/*.go` this session; signature and return lines read directly in workitems.go, pullrequests.go, branches.go, dashboard.go, releases.go, pipelines.go]
 
-**Filter-vs-failure discrimination is the trap in this table.** Twenty-six `continue` statements exist across the six files; only **ten** are error swallows. A plan task phrased as "replace `continue` with failure recording" will corrupt the filtering logic in `pipelines.go` and `releases.go`. Every task must name the exact line.
+**Filter-vs-failure discrimination is the trap in this table.** Twenty-eight `continue` statements exist across the six production files (`grep -c continue internal/ado/*.go`, non-test: branches 7, dashboard 1, pipelines 10, pullrequests 1, releases 6, workitems 3); only **ten** are error swallows. A plan task phrased as "replace `continue` with failure recording" will corrupt the filtering logic in `pipelines.go` and `releases.go`. Every task must name the exact line.
 
 **`GetDashboardCounts` is a two-level change**, and its `getProjectCounts` returns `*DashboardCounts` — a pointer whose partial value is still meaningful under D-03. Propagating an error from `getProjectCounts` must *not* discard the counts it did collect, or D-03's "sum of the projects that answered" degrades to "sum of the projects that answered perfectly".
 
@@ -578,7 +578,7 @@ This is the exact "empty vs failed" confusion the phase exists to remove, and it
 **How to avoid:** set it on line 40 of `internal/ado/client.go`, immediately after `NewPatConnection`.
 **Warning signs:** a hung refresh that never returns despite `request_timeout` being configured.
 
-### Pitfall 3: Treating all 26 `continue` statements as swallows
+### Pitfall 3: Treating all 28 `continue` statements as swallows
 
 **What goes wrong:** sixteen of them are legitimate data filters (nil pointer guards, name-pattern filters, repository allow-list checks). Converting them to failure records produces a failure list full of phantom entries and, worse, can invert filter logic.
 **Why it happens:** a plan task phrased as "remove `continue`" instead of "change the error path at line N".

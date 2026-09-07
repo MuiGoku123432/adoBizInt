@@ -2,7 +2,7 @@
 phase: 02-honest-reads
 plan: 05
 type: execute
-wave: 3
+wave: 4
 depends_on: [02-01, 02-02, 02-03]
 files_modified:
   - internal/ui/styles/styles.go
@@ -16,13 +16,14 @@ files_modified:
   - internal/ui/releases/releases_test.go
   - internal/ui/branches/branches.go
   - internal/ui/branches/branches_test.go
+  - .planning/phases/02-honest-reads/02-VALIDATION.md
 autonomous: true
 requirements: [TRUST-02, TRUST-03]
 
 estimate:
-  tokens: 92000
-  raw_tokens: 46000
-  tasks: 3
+  tokens: 100000
+  raw_tokens: 50000
+  tasks: 4
   confidence: low
 
 must_haves:
@@ -40,6 +41,7 @@ must_haves:
   prohibitions:
     - "Must NOT present a zero-row or zero-count result as an absence of work when the result is flagged incomplete"
     - "Must NOT report a partial dashboard total without labelling it understated"
+    - "Must NOT run a repo-wide `go build ./...` / `go test ./...` gate inside Tasks 1-3 — plan 02-04 is retagging `internal/ado` in the same wave. Scope those tasks to `./internal/ui/...`; the repo-wide gate is Task 4, which is gated on 02-04 having landed"
   artifacts:
     - internal/ui/dashboard/dashboard_test.go
     - internal/ui/workitems/workitems_test.go
@@ -62,9 +64,25 @@ no work when in fact nothing was successfully fetched. The phase goal is only ha
 met until this lands.
 
 Output: eight message types carrying the envelope, six reducers implementing the
-asymmetry between auth failure and partial data, five new view test files, and
-every zero-row message gated on completeness.
+asymmetry between auth failure and partial data, five new view test files, every
+zero-row message gated on completeness, and the phase-close gate.
 </objective>
+
+<wave_scoping>
+This plan runs in wave 4 **alongside plan 02-04**, which is concurrently retagging the
+exported structs in `internal/ado` and renaming eight tests there. Go compiles per
+package, so a repo-wide `go build ./...` or `go test ./...` in Tasks 1-3 would compile
+`internal/ado` mid-retag and fail spuriously.
+
+Therefore **Tasks 1-3 scope every verify command and acceptance criterion to
+`./internal/ui/...`**. This plan owns exactly the packages under `internal/ui/`.
+
+The single repo-wide gate
+`go build ./... && go vet ./... && gofmt -l . && go test ./... -count=1`
+is **Task 4**, the phase-close task, which carries a precondition that 02-04's summary
+exists. Task 4 is where the phase's full suite, the anchored Phase 1 countdown gate, and
+the `02-VALIDATION.md` sign-off all land together.
+</wave_scoping>
 
 <execution_context>
 @/Users/e1001547-mbp-it/.config/opencode/gsd-core/workflows/execute-plan.md
@@ -100,10 +118,16 @@ every zero-row message gated on completeness.
       stale-marker renderers added there.
     - `internal/ui/pipelines/pipelines.go` — `PipelinesMsg` at :34-37, `DefinitionsMsg`
       at :40-43, the fetch commands at :144 and :153, the reducer arms at :225 and
-      :238-241, and the zero-row status-line message at **:232-233**.
+      :238-241, the zero-row **status-line** message at **:232-233**, and — separately —
+      the zero-row **view render branch** at **:397**
+      (`} else if len(m.runs) == 0 {` → "No pipeline runs found. Configure pipelines in
+      config.yaml"). These are two different branches in two different functions and
+      **both** must be gated.
     - `internal/ui/releases/releases.go` — `ReleasesMsg` at :37-40, `ApprovalsMsg` at
-      :43-45, the fetch commands at :145 and :154, and the reducer arms at :237-240
-      and :246-249.
+      :43-45, the fetch commands at :145 and :154, the reducer arms at :237-240
+      and :246-249, and the zero-row **view render branch** at **:426**
+      (`} else if len(m.releases) == 0 {` → "No releases found. Configure pipelines in
+      config.yaml").
     - `internal/ui/releases/releases_test.go` in full — the only existing view test,
       including its nil-client `newTestModel` helper and its regression-comment style.
     - `.planning/phases/02-honest-reads/02-RESEARCH.md` §"The eight message types
@@ -158,11 +182,23 @@ every zero-row message gated on completeness.
     auth failure on a secondary fetch would blank a table the primary fetch populated
     correctly, and two reducers would race to set the banner state.
 
-    Fix `pipelines.go:232-233` specifically. It currently sets a status-line message on
-    a successful zero-row fetch that names the configured pipeline list as the likely
-    cause. That is the empty-versus-failed confusion in its worst form — it does not
-    merely fail to report a failure, it actively misdirects the user toward their own
-    configuration. Gate it on the envelope reporting the result complete.
+    Fix **two distinct sites in pipelines**, not one:
+
+    - `pipelines.go:232-233` — the reducer's status-line message on a successful
+      zero-row fetch, which names the configured pipeline list as the likely cause.
+      That is the empty-versus-failed confusion in its worst form: it does not merely
+      fail to report a failure, it actively misdirects the user toward their own
+      configuration. Gate it on the envelope reporting the result complete.
+    - `pipelines.go:397` — the `View()` render branch
+      `} else if len(m.runs) == 0 {`, which renders "No pipeline runs found. Configure
+      pipelines in config.yaml". This is the branch the *user actually reads* in the
+      body of the pane, and it carries the same configuration-blaming text. Render it
+      only when the envelope reports the result complete; otherwise render the failure
+      state. Gating only :232-233 leaves criterion 6's hard half unmet.
+
+    Do the same for releases at **`releases.go:426`** — the `} else if
+    len(m.releases) == 0 {` branch rendering "No releases found. Configure pipelines in
+    config.yaml". Same text, same misdirection, same gate.
 
     Add a stale marker to both views. Note that retention of the last good rows is
     already the existing behavior in these reducers, so what this adds is the marker,
@@ -183,15 +219,17 @@ every zero-row message gated on completeness.
     would be exactly the speculative generality the standards forbid.
   </action>
   <verify>
-    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go build ./... &amp;&amp; go vet ./internal/ui/... &amp;&amp; gofmt -l internal/ui &amp;&amp; go test ./internal/ui/pipelines/ ./internal/ui/releases/ -count=1 -v</automated>
+    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go vet ./internal/ui/... &amp;&amp; gofmt -l internal/ui &amp;&amp; go test ./internal/ui/pipelines/ ./internal/ui/releases/ -count=1 -v</automated>
   </verify>
   <acceptance_criteria>
     - `go test ./internal/ui/pipelines/ -count=1 -v` passes and includes a case driving
       the primary reducer with an auth-carrying envelope asserting the banner state,
       and a case with an incomplete zero-row envelope asserting the configuration-blaming
-      message is not produced.
+      message is not produced — asserted against **both** the reducer status-line site
+      (:232-233) and the `View()` render branch (:397).
     - `go test ./internal/ui/releases/ -count=1 -v` passes and includes the same two
-      cases for its primary message.
+      cases for its primary message, with the zero-row case asserting the
+      configuration-blaming render at :426 is not produced on an incomplete envelope.
     - `go test ./internal/ui/pipelines/ ./internal/ui/releases/ -count=1 -v` includes a
       case per view driving the secondary message with an auth-carrying envelope and
       asserting the blocking banner state is NOT set.
@@ -212,9 +250,13 @@ every zero-row message gated on completeness.
     - `internal/ui/prs/prs.go` as it stands after 02-01 — the reference implementation.
     - `internal/ui/pipelines/pipelines.go` as it stands after Task 1 of this plan.
     - `internal/ui/workitems/workitems.go` — `WorkItemsMsg` at :44-47, the fetch at
-      :136, the reducer arm at :358, and the error render at :682.
+      :136, the reducer arm at :358, the error render at :682, and — separately — the
+      zero-row **view render branch** at **:690**
+      (`} else if len(m.items) == 0 {` → "No work items found").
     - `internal/ui/branches/branches.go` — `BranchesMsg` at :32-35, the fetch at :98,
-      the reducer arm at :114-116, and the error render at :230.
+      the reducer arm at :114-116, the error render at :230, and — separately — the
+      zero-row **view render branch** at **:238**
+      (`} else if len(m.items) == 0 {` → "No branches found").
     - `internal/ui/releases/releases_test.go:9-20` — the nil-client test-model helper
       and the regression-comment style.
     - `.planning/phases/02-honest-reads/02-CONTEXT.md` D-13, D-14, D-16.
@@ -244,6 +286,12 @@ every zero-row message gated on completeness.
     and rows plus a persistent warning line for a non-auth partial.
 
     Gate each view's zero-row message on the envelope reporting the result complete.
+    The named edit sites are **`workitems.go:690`** and **`branches.go:238`** — the
+    `} else if len(m.items) == 0 {` branches in each `View()`, rendering "No work items
+    found" and "No branches found" respectively. Those are the branches the user
+    actually reads; the error renders at :682 and :230 are a different, already-handled
+    path. Render the no-work message only on a complete envelope; otherwise render the
+    failure state.
 
     Neither of these is a polling view, so D-15's stale marker does not apply to them —
     D-15 names the three polling views specifically. Record that scope call rather than
@@ -259,15 +307,17 @@ every zero-row message gated on completeness.
     build the helper carefully and keep the assertions to the reducer's outputs.
   </action>
   <verify>
-    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go build ./... &amp;&amp; go vet ./internal/ui/... &amp;&amp; gofmt -l internal/ui &amp;&amp; go test ./internal/ui/workitems/ ./internal/ui/branches/ -count=1 -v</automated>
+    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go vet ./internal/ui/... &amp;&amp; gofmt -l internal/ui &amp;&amp; go test ./internal/ui/workitems/ ./internal/ui/branches/ -count=1 -v</automated>
   </verify>
   <acceptance_criteria>
     - `go test ./internal/ui/workitems/ -count=1 -v` passes and includes a case driving
-      the reducer with an auth-carrying envelope and a case with an incomplete zero-row
-      envelope.
+      the reducer with an auth-carrying envelope asserting the banner state, and a case
+      with an incomplete zero-row envelope **asserting the "No work items found" render
+      at :690 is not produced**.
     - `go test ./internal/ui/branches/ -count=1 -v` passes and includes the same two
-      cases, plus a case asserting a per-repository failure's operation label reaches
-      the warning line.
+      cases — the zero-row case **asserting the "No branches found" render at :238 is
+      not produced on an incomplete envelope** — plus a case asserting a per-repository
+      failure's operation label reaches the warning line.
     - `grep -c 'context.Background()' internal/ui/workitems/workitems.go` is strictly
       lower than before this task, and `grep -c 'context.WithTimeout' internal/ui/workitems/workitems.go` is at least 1.
     - `grep -c 'context.WithTimeout' internal/ui/branches/branches.go` is at least 1.
@@ -332,7 +382,7 @@ every zero-row message gated on completeness.
     pattern. Cover every bullet in the behavior block.
   </action>
   <verify>
-    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go build ./... &amp;&amp; go vet ./... &amp;&amp; gofmt -l . &amp;&amp; go test ./... -count=1</automated>
+    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go vet ./internal/ui/... &amp;&amp; gofmt -l internal/ui &amp;&amp; go test ./internal/ui/... -count=1</automated>
   </verify>
   <acceptance_criteria>
     - `go test ./internal/ui/dashboard/ -count=1 -v` passes and includes a case driving
@@ -340,13 +390,71 @@ every zero-row message gated on completeness.
     - `go test ./internal/ui/dashboard/ -count=1 -v` includes a case with non-zero
       counts and a non-auth failure asserting both that the counts are rendered and that
       the warning states the totals are understated.
+    - `go test ./internal/ui/dashboard/ -count=1 -v` includes a case with an
+      **incomplete envelope whose counts are zero, asserting the authoritative-zero
+      render is not produced** — the dashboard's equivalent of the other five views'
+      zero-row gate, and the behavior this task's `<behavior>` block requires.
     - `go test ./internal/ui/dashboard/ -count=1 -v` includes a case with a complete
       envelope asserting no warning line is produced.
     - `grep -c 'context.WithTimeout' internal/ui/dashboard/dashboard.go` is at least 1.
-    - `go build ./... &amp;&amp; go vet ./... &amp;&amp; gofmt -l . &amp;&amp; go test ./... -count=1` is fully green.
+    - `go vet ./internal/ui/... &amp;&amp; gofmt -l internal/ui &amp;&amp; go test ./internal/ui/... -count=1` is green.
     - `ls internal/ui/dashboard/dashboard_test.go internal/ui/workitems/workitems_test.go internal/ui/prs/prs_test.go internal/ui/pipelines/pipelines_test.go internal/ui/branches/branches_test.go internal/ui/releases/releases_test.go` lists six files.
   </acceptance_criteria>
   <done>The dashboard total is shown with its understatement stated rather than implied, and all six view packages have reducer tests.</done>
+</task>
+
+<task type="auto">
+  <name>Task 4: Phase close — run the repo-wide gate and sign off the validation map</name>
+  <files>.planning/phases/02-honest-reads/02-VALIDATION.md</files>
+  <precondition>
+    `.planning/phases/02-honest-reads/02-04-SUMMARY.md` exists. This task runs the only
+    repo-wide compile-and-test gate in the phase, and plan 02-04 shares wave 4 with this
+    plan while editing `internal/ado`. Running this gate before 02-04 has landed
+    produces a failure that says nothing about this phase's correctness. If the file is
+    absent, halt and wait for 02-04.
+  </precondition>
+  <read_first>
+    - `.planning/phases/02-honest-reads/02-VALIDATION.md` in full — the frontmatter, the
+      Per-Task Verification Map's Status column, the Wave 0 Requirements checklist, and
+      the Validation Sign-Off checklist.
+    - `.planning/phases/02-honest-reads/02-04-SUMMARY.md` — confirms the ado-side work
+      landed, including the anchored countdown gate reaching zero.
+  </read_first>
+  <action>
+    Run the phase's single repo-wide gate. Every prior task in every plan was
+    deliberately scoped to the one Go package its plan owned, because plans sharing a
+    wave that share a package produce spurious failures in each other's verify runs.
+    This is the one place the whole tree is compiled and tested together.
+
+    Then update `02-VALIDATION.md` to reflect the actual outcome. It is still carrying
+    its seeded draft state and no earlier task touches it:
+
+    - Set the Status column of every row in the Per-Task Verification Map to reflect the
+      real result of running that row's command — green where the command passes, red
+      where it does not. Do not mark a row green without running its command.
+    - Tick the Wave 0 Requirements checklist items that are now satisfied.
+    - Tick the Validation Sign-Off checklist items that are now satisfied, and set the
+      frontmatter to `status: validated`, `nyquist_compliant: true`,
+      `wave_0_complete: true` **only if** every sign-off box is genuinely ticked. If any
+      is not, leave the frontmatter as-is and record which box failed and why in the
+      plan summary. A validation map that claims compliance it does not have is worse
+      than one that admits a gap.
+    - Update the **Approval** line from `pending` to record the outcome.
+
+    Change no source file in this task.
+  </action>
+  <verify>
+    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go build ./... &amp;&amp; go vet ./... &amp;&amp; gofmt -l . &amp;&amp; go test ./... -count=1</automated>
+  </verify>
+  <acceptance_criteria>
+    - `go build ./... &amp;&amp; go vet ./... &amp;&amp; gofmt -l . &amp;&amp; go test ./... -count=1` is fully green.
+    - `go test ./internal/ado/ -v -run TestGet 2>&amp;1 | grep -cE '^=== RUN   TestGet[A-Za-z]*SwallowsProjectFailure$'` returns `0` — the Phase 1 countdown gate, confirmed against the whole tree.
+    - `grep -c '⬜ pending' .planning/phases/02-honest-reads/02-VALIDATION.md` returns `0` — every row in the verification map has a real status.
+    - `grep -c '^status: draft' .planning/phases/02-honest-reads/02-VALIDATION.md` returns `0`.
+    - `grep -c '^\*\*Approval:\*\* pending' .planning/phases/02-honest-reads/02-VALIDATION.md` returns `0`.
+    - `git diff --stat -- internal/ cmd/` is empty for this task — no source file changed.
+  </acceptance_criteria>
+  <done>The whole tree builds, vets, formats and tests clean in one command, and the phase's validation map records what was actually verified instead of its seeded draft state.</done>
 </task>
 
 </tasks>
@@ -390,12 +498,17 @@ every zero-row message gated on completeness.
 </artifacts_this_phase_produces>
 
 <verification>
-- `go build ./... && go vet ./... && gofmt -l . && go test ./... -count=1` is green.
+- Tasks 1-3 are scoped to `./internal/ui/...` and are green there.
+- Task 4's repo-wide gate `go build ./... && go vet ./... && gofmt -l . && go test ./... -count=1`
+  is green — the phase's single whole-tree gate.
 - All six view packages have a test file, up from one before this phase.
 - Every read fetch command in the six views uses a derived deadline rather than an
   unbounded background context; every write call site is unchanged.
 - Each of the six views has a test asserting the auth banner and a test asserting the
-  completeness gate on its zero-row message.
+  completeness gate on its zero-row (or zero-count) message, with the render branch
+  named by line: prs.go:389, pipelines.go:397, releases.go:426, workitems.go:690,
+  branches.go:238, and the dashboard's authoritative-zero render.
+- `02-VALIDATION.md` carries real statuses and a recorded approval, not its seeded draft.
 - `git diff --stat go.mod go.sum` is empty.
 </verification>
 
@@ -404,10 +517,12 @@ every zero-row message gated on completeness.
 - A user with three of four projects answering sees the three, and sees which one did not.
 - A user with a genuinely empty backlog still sees the ordinary no-work message.
 - No view attributes a failure to the user's configuration.
+- The whole tree is green in one command and the validation map says so honestly.
 </success_criteria>
 
 <output>
 Create `.planning/phases/02-honest-reads/02-05-SUMMARY.md` when done. It must record
-the scope call that D-15's stale marker applies to the three polling views only, and
-the wording chosen for the dashboard's understated-total warning.
+the scope call that D-15's stale marker applies to the three polling views only, the
+wording chosen for the dashboard's understated-total warning, and — if any
+`02-VALIDATION.md` sign-off box could not honestly be ticked — which one and why.
 </output>

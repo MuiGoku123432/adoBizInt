@@ -2,7 +2,7 @@
 phase: 02-honest-reads
 plan: 04
 type: execute
-wave: 3
+wave: 4
 depends_on: [02-01, 02-02, 02-03]
 files_modified:
   - internal/ado/result.go
@@ -40,7 +40,9 @@ must_haves:
     - "No aggregate read test in internal/ado still carries a name asserting the pre-inversion swallowing behavior"
     - statement: "Field ordering in the marshalled object follows struct declaration order, and the embedded struct's fields appear at the position of the embedding"
       verification: backstop
-  prohibitions: []
+  prohibitions:
+    - "Must NOT add a field to `Failure` without updating the exact-key-set test in `internal/ado/json_test.go` in the same change — from Phase 3 onward the tagged record is a machine-readable public contract, and D-04 makes these field names a one-way door"
+    - "Must NOT run a repo-wide `go build ./...` / `go test ./...` gate inside this plan's task verifies — plan 02-05 is rewriting `internal/ui/*` in the same wave. Scope every command to `./internal/ado/`; the repo-wide gate is the phase-close step owned by 02-05"
   artifacts:
     - internal/ado/json_test.go
   key_links:
@@ -62,6 +64,23 @@ Output: eleven tagged structs, a field-name assertion test covering all of them,
 one recorded decision on the duration field's marshalled shape, and a clean run of
 the Phase 1 anchored gate.
 </objective>
+
+<wave_scoping>
+This plan runs in wave 4 **alongside plan 02-05**, which is concurrently rewriting
+every package under `internal/ui/`. Go compiles per package, so a repo-wide
+`go build ./...` or `go test ./...` here would compile 02-05's half-written view
+packages and fail spuriously — and 02-05's repo-wide gates would compile the
+`internal/ado` structs this plan is mid-retag on.
+
+Therefore **every verify command and every acceptance criterion in this plan is scoped
+to `./internal/ado/`**. This plan owns exactly that package (plus its test files) and
+touches no file outside it.
+
+The single repo-wide gate
+`go build ./... && go vet ./... && gofmt -l . && go test ./... -count=1`
+is the **phase-close step**, and it lives in plan 02-05's final task, which runs only
+after this plan's summary exists. Do not add it back here.
+</wave_scoping>
 
 <execution_context>
 @/Users/e1001547-mbp-it/.config/opencode/gsd-core/workflows/execute-plan.md
@@ -227,7 +246,7 @@ the Phase 1 anchored gate.
     named test so it is a recorded finding rather than an incidental pass.
   </action>
   <verify>
-    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go build ./... &amp;&amp; go vet ./internal/ado/ &amp;&amp; gofmt -l internal/ado &amp;&amp; go test ./internal/ado/ -run 'TestJSON' -count=1 -v</automated>
+    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go vet ./internal/ado/ &amp;&amp; gofmt -l internal/ado &amp;&amp; go test ./internal/ado/ -run 'TestJSON' -count=1 -v</automated>
   </verify>
   <acceptance_criteria>
     - `grep -c 'json:"' internal/ado/branches.go internal/ado/dashboard.go internal/ado/pipelines.go internal/ado/pullrequests.go internal/ado/releases.go internal/ado/workitems.go` shows a non-zero count in each of the six files.
@@ -283,19 +302,24 @@ the Phase 1 anchored gate.
     needs to change to make it pass, that is a defect from an earlier plan and belongs
     in that plan, not here.
 
-    Then run the phase gate from `02-VALIDATION.md` and confirm the countdown has
-    reached zero.
+    Then run the anchored gate from `02-VALIDATION.md`, scoped to `./internal/ado/`,
+    and confirm the countdown has reached zero. Do **not** run the repo-wide suite
+    here — see `<wave_scoping>`; that is 02-05's phase-close step.
   </action>
   <verify>
-    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go build ./... &amp;&amp; go vet ./... &amp;&amp; gofmt -l . &amp;&amp; go test ./... -count=1 &amp;&amp; go test ./internal/ado/ -v -run 'TestGet.*ReportsProjectFailure' -count=1</automated>
+    <automated>cd /Users/e1001547-mbp-it/repos/mine/GoApps/adoBizInt &amp;&amp; go vet ./internal/ado/ &amp;&amp; gofmt -l internal/ado &amp;&amp; go test ./internal/ado/ -count=1 &amp;&amp; go test ./internal/ado/ -v -run 'TestGet.*ReportsProjectFailure' -count=1</automated>
   </verify>
   <acceptance_criteria>
-    - `go test ./internal/ado/ -v -run TestGet 2>&amp;1 | grep -c '^=== RUN   TestGet.*SwallowsProjectFailure$'` returns `0`.
-    - `go test ./internal/ado/ -v -run 'TestGet.*ReportsProjectFailure' -count=1 2>&amp;1 | grep -c '^=== RUN   TestGet'` returns `8`.
+    - `go test ./internal/ado/ -v -run TestGet 2>&amp;1 | grep -cE '^=== RUN   TestGet[A-Za-z]*SwallowsProjectFailure$'` returns `0`.
+    - `go test ./internal/ado/ -v -run 'TestGet.*ReportsProjectFailure' -count=1 2>&amp;1 | grep -cE '^=== RUN   TestGet[A-Za-z]*ReportsProjectFailure$'` returns `8`.
+      The `[A-Za-z]*` + `$` anchoring is load-bearing: plans 02-01 through 02-03 add
+      subtests under these exact eight parents, and an unanchored `^=== RUN   TestGet`
+      count would include every `.../subtest_name` line and over-count.
     - `git diff --stat internal/ado/workitems.go internal/ado/pullrequests.go internal/ado/pipelines.go internal/ado/releases.go internal/ado/branches.go internal/ado/dashboard.go` is empty for this task — no production file changed.
     - Every renamed test carries a rewritten doc comment describing the old dropped-failure
       behavior rather than describing itself as pinning pre-TRUST-01 behavior.
-    - `go build ./... &amp;&amp; go vet ./... &amp;&amp; gofmt -l . &amp;&amp; go test ./... -count=1` is fully green.
+    - `go vet ./internal/ado/ &amp;&amp; gofmt -l internal/ado &amp;&amp; go test ./internal/ado/ -count=1` is green.
+      (The repo-wide gate is 02-05's phase-close step, not this task's.)
   </acceptance_criteria>
   <done>The Phase 1 countdown gate reads zero, eight tests are named for what they now assert, and the full suite is green.</done>
 </task>
@@ -334,11 +358,16 @@ not by this plan.
 </artifacts_this_phase_produces>
 
 <verification>
-- `go build ./... && go vet ./... && gofmt -l . && go test ./... -count=1` is green.
+- `go vet ./internal/ado/ && gofmt -l internal/ado && go test ./internal/ado/ -count=1` is green.
+  (The repo-wide gate is deliberately **not** run here — see `<wave_scoping>`. It is
+  plan 02-05's phase-close task.)
 - `go test ./internal/ado/ -run TestJSONFieldNames -count=1 -v` passes with a subtest
   per tagged struct plus the envelope and the failure record.
-- The Phase 1 anchored gate returns zero matches and the replacement pattern returns eight.
+- The Phase 1 anchored gate returns zero matches and the anchored replacement pattern
+  returns eight.
 - `git diff --stat go.mod go.sum` is empty.
+- `git diff --stat -- . ':!internal/ado'` is empty — this plan touched nothing outside
+  the package it owns for the wave.
 - The Task 1 decision is recorded in the plan summary with its rationale.
 </verification>
 
