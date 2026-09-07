@@ -28,10 +28,12 @@ const (
 	columnKeyIndex = "index"
 )
 
-// BranchesMsg is sent when branches are fetched
+// BranchesMsg is sent when branches are fetched. Result carries the items plus
+// whatever failed and whether the read is the whole picture; Err is reserved for
+// a transport failure that produced no envelope at all.
 type BranchesMsg struct {
-	Items []ado.Branch
-	Err   error
+	Result ado.Result[ado.Branch]
+	Err    error
 }
 
 type Model struct {
@@ -95,8 +97,8 @@ func (m Model) fetchBranches() tea.Cmd {
 	projects := m.projects
 	repositories := m.repositories
 	return func() tea.Msg {
-		items, err := client.GetBranches(context.Background(), projects, repositories)
-		return BranchesMsg{Items: items, Err: err}
+		result, err := client.GetBranches(context.Background(), projects, repositories)
+		return BranchesMsg{Result: result, Err: err}
 	}
 }
 
@@ -114,7 +116,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
-			m.items = msg.Items
+			m.items = msg.Result.Items
 			m.table = m.table.WithRows(m.buildRows())
 		}
 

@@ -26,10 +26,30 @@ type Branch struct {
 	CommitID       string
 }
 
+// opGetRepositories labels the per-project repository listing in any Failure
+// this read records. Per-repository branch-stat failures build their own label
+// from opGetBranchStats so a user reading the warning line can tell which
+// repository is broken.
+const (
+	opGetRepositories = "get repositories"
+	opGetBranchStats  = "get branch stats"
+)
+
+// emptyRepositoryStatus is the status the SDK returns when a repository has no
+// branch stats to report. It is suppressed rather than recorded: naming every
+// empty repository in the org on the branches view would train the user to
+// ignore the exact channel D-13 depends on.
+//
+// D-07 fixed the failure kind set at four and explicitly deferred a not-found
+// kind; this is the site where such a kind would have earned its keep. If it
+// comes back, it comes back from the deferred-ideas list in 02-CONTEXT.md.
+const emptyRepositoryStatus = 404
+
 // GetBranches fetches branches for every repository in the specified projects,
 // sorted by most recent commit first. When repositories is non-empty only those
-// repository names are fetched.
-func (c *Client) GetBranches(ctx context.Context, projects, repositories []string) ([]Branch, error) {
+// repository names are fetched. Per-project and per-repository failures are
+// reported in the returned envelope.
+func (c *Client) GetBranches(ctx context.Context, projects, repositories []string) (Result[Branch], error) {
 	log := logging.Logger()
 
 	targetProjects := projects
@@ -43,11 +63,22 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 	}
 
 	var allBranches []Branch
+	var failures []Failure
 
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12).
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetRepositories, err)
+			continue
+		}
+
 		repos, err := c.gitClient.GetRepositories(ctx, git.GetRepositoriesArgs{Project: &project})
 		if err != nil {
 			log.Error("Failed to get repositories", "project", project, "error", err)
+			// The loop still visits every configured project: D-08 rejected
+			// short-circuiting on auth failure explicitly.
+			failures = appendFailure(failures, project, opGetRepositories, err)
 			continue
 		}
 		if repos == nil {
@@ -75,6 +106,11 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 			if err != nil {
 				// Empty repositories have no branch stats to report
 				log.Warn("Failed to get branch stats", "project", project, "repository", *repo.Name, "error", err)
+				// Distinguish by status code (D-06): a not-found response is an
+				// ordinary empty repository, not a broken read.
+				if status, ok := statusCodeOf(err); !ok || status != emptyRepositoryStatus {
+					failures = appendFailure(failures, project, opGetBranchStats+" for "+*repo.Name, err)
+				}
 				continue
 			}
 			if stats == nil {
@@ -122,6 +158,6 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 		return allBranches[i].LastCommitDate.After(allBranches[j].LastCommitDate)
 	})
 
-	log.Info("Branches fetched", "total_count", len(allBranches))
-	return allBranches, nil
+	log.Info("Branches fetched", "total_count", len(allBranches), "failure_count", len(failures))
+	return newResult(allBranches, failures), nil
 }
