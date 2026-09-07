@@ -18,6 +18,16 @@ type DashboardCounts struct {
 	Pipelines int
 }
 
+// opDashboard* label the SDK calls in any Failure this read records. The
+// dashboard is the only read that issues three independent sub-queries per
+// project, so each needs its own label: a partial total is only actionable if
+// the user can tell which of the three did not answer.
+const (
+	opDashboardWorkItems    = "get dashboard work item count"
+	opDashboardPullRequests = "get dashboard pull request count"
+	opDashboardBuilds       = "get dashboard build count"
+)
+
 // GetDashboardCounts fetches counts for work items, PRs, and pipelines
 // If projects is empty, uses all configured projects
 func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (*DashboardCounts, error) {
@@ -45,10 +55,9 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (*Da
 	// Aggregate counts across all target projects
 	for _, project := range targetProjects {
 		log.Debug("Fetching counts for project", "project", project)
-		projectCounts, err := c.getProjectCounts(ctx, project)
-		if err != nil {
-			log.Error("Failed to get counts for project", "project", project, "error", err)
-			continue // Skip projects with errors, aggregate what we can
+		projectCounts, projectFailures := c.getProjectCounts(ctx, project)
+		if len(projectFailures) > 0 {
+			log.Error("Incomplete counts for project", "project", project, "failure_count", len(projectFailures))
 		}
 		log.Debug("Got counts for project",
 			"project", project,
@@ -70,10 +79,20 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (*Da
 	return counts, nil
 }
 
-// getProjectCounts fetches counts for a single project
-func (c *Client) getProjectCounts(ctx context.Context, project string) (*DashboardCounts, error) {
+// getProjectCounts fetches counts for a single project. It returns both the
+// counts it managed to collect and the failures it hit, so a project that
+// answered two of its three sub-queries still contributes those two to the
+// dashboard total while the third is reported by name (D-03).
+//
+// It deliberately does not return an error: an error return would push the
+// caller back onto a `continue` and discard the counts this project did
+// provide, degrading "the sum of the projects that answered" into "the sum of
+// the projects that answered perfectly". The counts value is non-nil on every
+// path, including the path where all three sub-queries failed.
+func (c *Client) getProjectCounts(ctx context.Context, project string) (*DashboardCounts, []Failure) {
 	log := logging.Logger()
 	counts := &DashboardCounts{}
+	var failures []Failure
 
 	// Get recent iterations (sprints active in last 90 days)
 	iterationFilter := ""
@@ -100,6 +119,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	workItems, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
 		log.Error("Failed to query work items", "project", project, "error", err)
+		failures = appendFailure(failures, project, opDashboardWorkItems, err)
 	} else if workItems != nil && workItems.WorkItems != nil {
 		counts.WorkItems = len(*workItems.WorkItems)
 		log.Info("Dashboard work item count", "project", project, "count", counts.WorkItems)
@@ -114,6 +134,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	})
 	if err != nil {
 		log.Error("Failed to get pull requests", "project", project, "error", err)
+		failures = appendFailure(failures, project, opDashboardPullRequests, err)
 	} else if prs != nil {
 		counts.PRs = len(*prs)
 	}
@@ -125,6 +146,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		})
 		if err != nil {
 			log.Error("Failed to get builds", "project", project, "error", err)
+			failures = appendFailure(failures, project, opDashboardBuilds, err)
 		} else if builds != nil && builds.Value != nil {
 			// Filter to only configured pipelines using normalized matching
 			for _, b := range builds.Value {
@@ -138,5 +160,5 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		}
 	}
 
-	return counts, nil
+	return counts, failures
 }
