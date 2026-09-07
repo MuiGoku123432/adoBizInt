@@ -29,10 +29,12 @@ const (
 	columnKeyStatus  = "status"
 )
 
-// PRsMsg is sent when pull requests are fetched
+// PRsMsg is sent when pull requests are fetched. Result carries the items plus
+// whatever failed and whether the read is the whole picture; Err is reserved for
+// a genuine transport failure that produced no envelope at all.
 type PRsMsg struct {
-	Items []ado.PullRequest
-	Err   error
+	Result ado.Result[ado.PullRequest]
+	Err    error
 }
 
 // TickMsg is used for auto-refresh polling
@@ -56,8 +58,18 @@ type Model struct {
 	searchInput textinput.Model
 	items       []ado.PullRequest
 
-	loading       bool
-	err           error
+	loading bool
+	err     error
+	// authBlocked suppresses the table entirely: a rejected credential is not
+	// partial data. partialWarning is persistent because the status line is
+	// already used for action feedback and is too easy to miss across a
+	// 30-second refresh. stale marks rows that survived a failed refresh.
+	authBlocked    bool
+	authBanner     string
+	partialWarning string
+	stale          bool
+	complete       bool
+
 	width         int
 	height        int
 	filterFocused int // 0 = table, 1 = search
@@ -126,10 +138,51 @@ func (m Model) tickCmd() tea.Cmd {
 func (m Model) fetchPRs() tea.Cmd {
 	projects := m.projects
 	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		items, err := client.GetPullRequests(context.Background(), projects)
-		return PRsMsg{Items: items, Err: err}
+		ctx := context.Background()
+		if budget > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, budget)
+			defer cancel()
+		}
+		result, err := client.GetPullRequests(ctx, projects)
+		return PRsMsg{Result: result, Err: err}
 	}
+}
+
+// applyResult folds an aggregate read envelope into render state. An auth-kind
+// failure blocks the table (D-14); any other failure keeps the rows and raises a
+// persistent warning (D-13).
+func (m *Model) applyResult(result ado.Result[ado.PullRequest]) {
+	m.items = result.Items
+	m.table = m.table.WithRows(m.buildRows())
+	m.complete = result.Complete
+	m.authBlocked = false
+	m.authBanner = ""
+	m.partialWarning = ""
+
+	if len(result.Failures) == 0 {
+		return
+	}
+
+	for _, failure := range result.Failures {
+		if failure.Kind == ado.FailureAuth {
+			message := ""
+			if failure.Err != nil {
+				message = failure.Err.Error()
+			}
+			m.authBlocked = true
+			m.authBanner = styles.RenderAuthBanner(string(failure.Kind), failure.Project, message)
+			return
+		}
+	}
+
+	parts := make([]string, 0, len(result.Failures))
+	for _, failure := range result.Failures {
+		parts = append(parts, fmt.Sprintf("%s (%s)", failure.Project, failure.Kind))
+	}
+	m.partialWarning = "could not read: " + strings.Join(parts, ", ")
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -154,11 +207,14 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case PRsMsg:
 		m.loading = false
 		if msg.Err != nil {
+			// The previously loaded rows stay on screen; they are simply no
+			// longer known to be current.
 			m.err = msg.Err
+			m.stale = len(m.items) > 0
 		} else {
 			m.err = nil
-			m.items = msg.Items
-			m.table = m.table.WithRows(m.buildRows())
+			m.stale = false
+			m.applyResult(msg.Result)
 		}
 
 	case PRActionMsg:
@@ -382,12 +438,31 @@ func (m Model) View() string {
 		b.WriteString("\n\n")
 	}
 
+	// A rejected credential replaces the table rather than annotating it: with no
+	// data read, an empty table would assert something the tool does not know.
+	if m.authBlocked {
+		b.WriteString(m.authBanner)
+		b.WriteString("\n")
+	} else if m.partialWarning != "" {
+		b.WriteString(styles.RenderPartialWarning(m.partialWarning))
+		b.WriteString("\n")
+	}
+	if m.stale {
+		b.WriteString(styles.RenderStaleMarker())
+		b.WriteString("\n")
+	}
+
 	// Show loading or table. Once rows exist a refresh keeps them on screen and
 	// only annotates the count line, rather than blanking the table.
-	if m.loading && len(m.items) == 0 {
+	if m.authBlocked {
+		// Nothing further: the banner above is the whole answer.
+	} else if m.loading && len(m.items) == 0 {
 		b.WriteString(styles.SubtitleStyle.Render("Loading pull requests..."))
 	} else if len(m.items) == 0 {
-		b.WriteString(styles.SubtitleStyle.Render("No open pull requests found"))
+		// Only a completed read may assert an absence of work.
+		if m.complete {
+			b.WriteString(styles.SubtitleStyle.Render("No open pull requests found"))
+		}
 	} else {
 		// Show filtered count
 		filteredCount := len(m.buildRows())

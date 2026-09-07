@@ -31,8 +31,17 @@ type PullRequest struct {
 	ApprovalStatus string
 }
 
-// GetPullRequests fetches all active pull requests across specified projects
-func (c *Client) GetPullRequests(ctx context.Context, projects []string) ([]PullRequest, error) {
+// opGetPullRequests labels the SDK call in any Failure this read records.
+const opGetPullRequests = "get pull requests"
+
+// GetPullRequests fetches all active pull requests across specified projects.
+// Per-project failures are reported in the returned envelope rather than
+// swallowed, so a caller can tell a rejected token from an empty backlog.
+//
+// The caller owns the deadline: this method deliberately creates no
+// context.WithTimeout of its own, because a method-internal budget would be
+// invisible to the CLI's --timeout in Phase 3.
+func (c *Client) GetPullRequests(ctx context.Context, projects []string) (Result[PullRequest], error) {
 	log := logging.Logger()
 
 	targetProjects := projects
@@ -41,8 +50,16 @@ func (c *Client) GetPullRequests(ctx context.Context, projects []string) ([]Pull
 	}
 
 	var allPRs []PullRequest
+	var failures []Failure
 
 	for _, project := range targetProjects {
+		// Record the remaining projects as unreached rather than issuing calls
+		// that are already doomed (D-12).
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, project, opGetPullRequests, err)
+			continue
+		}
+
 		prs, err := c.gitClient.GetPullRequestsByProject(ctx, git.GetPullRequestsByProjectArgs{
 			Project: &project,
 			SearchCriteria: &git.GitPullRequestSearchCriteria{
@@ -51,18 +68,18 @@ func (c *Client) GetPullRequests(ctx context.Context, projects []string) ([]Pull
 		})
 		if err != nil {
 			log.Error("Failed to get pull requests", "project", project, "error", err)
-			continue
-		}
-
-		if prs != nil {
+			// The loop still visits every configured project: D-08 rejected
+			// short-circuiting on auth failure explicitly.
+			failures = appendFailure(failures, project, opGetPullRequests, err)
+		} else if prs != nil {
 			for _, pr := range *prs {
 				allPRs = append(allPRs, c.convertPR(pr, project))
 			}
 		}
 	}
 
-	log.Info("Pull requests fetched", "total_count", len(allPRs))
-	return allPRs, nil
+	log.Info("Pull requests fetched", "total_count", len(allPRs), "failure_count", len(failures))
+	return newResult(allPRs, failures), nil
 }
 
 func (c *Client) convertPR(pr git.GitPullRequest, project string) PullRequest {

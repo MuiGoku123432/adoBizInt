@@ -32,6 +32,7 @@ type Client struct {
 	currentUser        string
 	currentUserID      string
 	currentUserEmail   string
+	fetchTimeout       time.Duration
 	getConnectionData  func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
 }
 
@@ -127,8 +128,16 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		currentUser:        currentUser,
 		currentUserID:      currentUserID,
 		currentUserEmail:   currentUserEmail,
+		fetchTimeout:       cfg.FetchTimeout,
 		getConnectionData:  getConnectionData,
 	}, nil
+}
+
+// FetchTimeout reports the configured budget for one whole multi-project
+// fan-out. Views read it here rather than having it threaded through six view
+// constructors and app.go for a value that already travels with the client.
+func (c *Client) FetchTimeout() time.Duration {
+	return c.fetchTimeout
 }
 
 func (c *Client) Projects() []string {
