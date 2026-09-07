@@ -17,7 +17,7 @@ updated: 2026-09-07T00:55:09Z
 ### 1. NewClient eager identity failure and recovery
 expected: Construction remains non-fatal, the warning describes retry behavior, successful eager lookup caches AuthenticatedUser.Id, and subsequent approval can recover through the retained provider.
 result: issue
-reported: "it did not open when I turned off wifi"
+reported: "With Wi-Fi disabled, ./adoBizInt exits before opening: Error connecting to Azure DevOps: Options https://dev.azure.com/windstream/_apis: dial tcp: lookup dev.azure.com: no such host"
 severity: blocker
 
 ## Summary
@@ -34,7 +34,7 @@ blocked: 0
 - gap_id: G-01-1
   truth: "Construction remains non-fatal when the eager identity lookup fails, the warning describes retry behavior, successful eager lookup caches AuthenticatedUser.Id, and subsequent approval can recover through the retained provider."
   status: failed
-  reason: "User reported: it did not open when I turned off wifi"
+  reason: "User reported: With Wi-Fi disabled, ./adoBizInt exits before opening because Azure DevOps OPTIONS service discovery cannot resolve dev.azure.com"
   severity: blocker
   test: 1
   root_cause: ""
