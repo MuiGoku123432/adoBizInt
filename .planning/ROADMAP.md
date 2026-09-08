@@ -87,7 +87,7 @@ Plans:
 - [x] 02-02-expand-aggregate-reads-PLAN.md — Wave 2: expand the envelope across work items, both pipeline reads, both release reads, and branches
 - [x] 02-03-dashboard-partial-counts-PLAN.md — Wave 2: dashboard partial counts reported per sub-query without discarding the projects that answered
 - [x] 02-04-json-field-contract-PLAN.md — Wave 3: json tags on the eleven serializable structs and retirement of the Phase 1 characterization test names
-- [ ] 02-05-tui-failure-surfacing-PLAN.md — Wave 3: the remaining five views render auth banners, partial warnings, and stale markers
+- [x] 02-05-tui-failure-surfacing-PLAN.md — Wave 3: the remaining five views render auth banners, partial warnings, and stale markers
 
 ### Phase 3: Read CLI
 
