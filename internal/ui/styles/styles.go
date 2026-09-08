@@ -109,12 +109,14 @@ func RenderStaleMarker() string {
 	return MutedStyle.Render("(stale — last successful refresh shown)")
 }
 
-// RenderUnderstatedWarning is the dashboard's variant of the partial warning. It
-// exists because the dashboard's payload is a small set of totals with no
-// visible seam: naming what failed is not enough, the effect on the number has
-// to be stated in words or the user is left to infer it (D-03, threat T-02-07).
+// RenderUnderstatedWarning is the dashboard's variant of the partial warning.
+// Unlike RenderPartialWarning it adds no prefix of its own: the dashboard's
+// payload is a small set of totals with no visible seam, so the effect on the
+// number has to be stated in the message itself rather than implied by a
+// generic banner (D-03, threat T-02-07). This renderer only styles and bounds
+// the text it is given.
 func RenderUnderstatedWarning(summary string) string {
-	return WarningStyle.Render("Totals understated — " + utils.Truncate(summary, maxFailureMessage))
+	return WarningStyle.Render(utils.Truncate(summary, maxFailureMessage))
 }
 
 // SummarizeFailures renders a failure list as a single line naming each project,

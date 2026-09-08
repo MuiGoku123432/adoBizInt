@@ -1,7 +1,6 @@
 package dashboard
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -10,10 +9,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 )
 
-// CountsMsg is sent when dashboard counts are fetched
+// CountsMsg is sent when dashboard counts are fetched. Result carries the
+// aggregate as a one-element Items slice plus whatever failed and whether the
+// totals are the whole picture; Err is reserved for a transport failure that
+// produced no envelope at all.
 type CountsMsg struct {
 	Result ado.Result[ado.DashboardCounts]
 	Err    error
@@ -74,6 +77,16 @@ type Model struct {
 	err              error
 	width            int
 	height           int
+
+	// The dashboard is the view where honesty is hardest to render: three
+	// integers have no visible seam, so a partial sum looks exactly like a
+	// correct one. authBlocked suppresses the cards entirely for a rejected
+	// credential; partialWarning states in words that the totals are
+	// understated rather than leaving the user to infer it (D-03, D-14).
+	authBlocked    bool
+	authBanner     string
+	partialWarning string
+	complete       bool
 }
 
 func New(client *ado.Client, orgURL string, projects []string) Model {
@@ -93,10 +106,72 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) fetchCounts() tea.Cmd {
 	selected := m.selectedProjects
+	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := m.client.GetDashboardCounts(context.Background(), selected)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetDashboardCounts(ctx, selected)
 		return CountsMsg{Result: result, Err: err}
 	}
+}
+
+// opDashboardIterations is 02-03's label for the iteration lookup. A failure
+// here is not a project that went silent: the WIQL query below it loses its
+// iteration filter and runs unfiltered, so the work-item total comes back
+// larger than it should. Wording it identically to a dead project would train
+// the user to ignore a line that means something different.
+const opDashboardIterations = "get dashboard iterations"
+
+// applyResult folds the counts envelope into render state. An auth-kind failure
+// blocks the cards (D-14); any other failure renders the counts alongside a
+// warning that states they are understated (D-03, D-13).
+func (m *Model) applyResult(result ado.Result[ado.DashboardCounts]) {
+	if len(result.Items) > 0 {
+		counts := result.Items[0]
+		m.workItemCount = counts.WorkItems
+		m.prCount = counts.PRs
+		m.pipelineCount = counts.Pipelines
+	}
+	m.complete = result.Complete
+	m.authBlocked = false
+	m.authBanner = ""
+	m.partialWarning = ""
+
+	if len(result.Failures) == 0 {
+		return
+	}
+
+	if failure := styles.FirstAuthFailure(result.Failures); failure != nil {
+		m.authBlocked = true
+		m.authBanner = styles.AuthBannerFor(*failure)
+		return
+	}
+
+	m.partialWarning = summarizeCountFailures(result.Failures)
+}
+
+// summarizeCountFailures states the effect on the number first and the cause
+// second. Degraded iteration lookups are separated out because they skew the
+// total upward, not downward, and a user cannot act on the two the same way.
+func summarizeCountFailures(failures []ado.Failure) string {
+	var degraded, unanswered []ado.Failure
+	for _, failure := range failures {
+		if failure.Operation == opDashboardIterations {
+			degraded = append(degraded, failure)
+		} else {
+			unanswered = append(unanswered, failure)
+		}
+	}
+
+	parts := []string{"totals understated"}
+	if len(unanswered) > 0 {
+		parts = append(parts, "did not answer: "+styles.SummarizeFailures(unanswered))
+	}
+	if len(degraded) > 0 {
+		parts = append(parts, "counted unfiltered by iteration: "+styles.SummarizeFailures(degraded))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -129,16 +204,9 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.loading = false
 		if msg.Err != nil {
 			m.err = msg.Err
-		} else if len(msg.Result.Items) > 0 {
-			// Compile fix only. The envelope's Failures and Complete are
-			// deliberately not read here: rendering the auth banner, the
-			// understated-total warning and the completeness gate (D-03, D-13,
-			// D-14) belongs to plan 02-05. Until then this view still presents a
-			// partial total as if it were whole.
-			counts := msg.Result.Items[0]
-			m.workItemCount = counts.WorkItems
-			m.prCount = counts.PRs
-			m.pipelineCount = counts.Pipelines
+		} else {
+			m.err = nil
+			m.applyResult(msg.Result)
 		}
 	}
 	return m, nil
@@ -239,6 +307,19 @@ func (m Model) View() string {
 	// Show error if any
 	if m.err != nil {
 		b.WriteString(styles.ErrorStyle.Render("Error: " + m.err.Error()))
+		b.WriteString("\n\n")
+	}
+
+	// A rejected credential replaces the cards rather than annotating them: with
+	// no data read, a zero total would assert something the tool does not know.
+	if m.authBlocked {
+		b.WriteString(m.authBanner)
+		b.WriteString("\n\n")
+		b.WriteString(styles.HelpStyle.Render("Press 'f' to filter projects, ? for help, q to quit"))
+		return b.String()
+	}
+	if m.partialWarning != "" {
+		b.WriteString(styles.RenderUnderstatedWarning(m.partialWarning))
 		b.WriteString("\n\n")
 	}
 
