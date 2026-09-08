@@ -1,7 +1,6 @@
 package branches
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
@@ -51,6 +51,17 @@ type Model struct {
 	filterFocused int // 0 = table, 1 = search
 	statusMsg     string
 	statusErr     bool
+
+	// authBlocked suppresses the table entirely: a rejected credential is not
+	// partial data. partialWarning is persistent because the status line is
+	// already used for action feedback. Branches is not a polling view, so
+	// D-15's stale marker does not apply here — D-15 names the three polling
+	// views specifically, and a marker on a manually refreshed table would
+	// assert a staleness the view has no timer to measure.
+	authBlocked    bool
+	authBanner     string
+	partialWarning string
+	complete       bool
 }
 
 func New(client *ado.Client, orgURL string, projects []string, repositories []string) Model {
@@ -96,10 +107,38 @@ func (m Model) fetchBranches() tea.Cmd {
 	client := m.client
 	projects := m.projects
 	repositories := m.repositories
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := client.GetBranches(context.Background(), projects, repositories)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetBranches(ctx, projects, repositories)
 		return BranchesMsg{Result: result, Err: err}
 	}
+}
+
+// applyResult folds the read envelope into render state. An auth-kind failure
+// blocks the table (D-14); any other failure keeps the rows and raises a
+// persistent warning (D-13). The warning carries the operation label because
+// 02-02 encodes the repository name there.
+func (m *Model) applyResult(result ado.Result[ado.Branch]) {
+	m.items = result.Items
+	m.table = m.table.WithRows(m.buildRows())
+	m.complete = result.Complete
+	m.authBlocked = false
+	m.authBanner = ""
+	m.partialWarning = ""
+
+	if len(result.Failures) == 0 {
+		return
+	}
+
+	if failure := styles.FirstAuthFailure(result.Failures); failure != nil {
+		m.authBlocked = true
+		m.authBanner = styles.AuthBannerFor(*failure)
+		return
+	}
+
+	m.partialWarning = "could not read: " + styles.SummarizeFailures(result.Failures)
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
@@ -116,8 +155,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
-			m.items = msg.Result.Items
-			m.table = m.table.WithRows(m.buildRows())
+			m.err = nil
+			m.applyResult(msg.Result)
 		}
 
 	case link.ActionMsg:
@@ -234,11 +273,26 @@ func (m Model) View() string {
 		b.WriteString("\n\n")
 	}
 
+	// A rejected credential replaces the table rather than annotating it: with no
+	// data read, an empty table would assert something the tool does not know.
+	if m.authBlocked {
+		b.WriteString(m.authBanner)
+		b.WriteString("\n")
+	} else if m.partialWarning != "" {
+		b.WriteString(styles.RenderPartialWarning(m.partialWarning))
+		b.WriteString("\n")
+	}
+
 	// Show loading or table
-	if m.loading {
+	if m.authBlocked {
+		// Nothing further: the banner above is the whole answer.
+	} else if m.loading {
 		b.WriteString(styles.SubtitleStyle.Render("Loading branches..."))
 	} else if len(m.items) == 0 {
-		b.WriteString(styles.SubtitleStyle.Render("No branches found"))
+		// Only a completed read may assert an absence of work.
+		if m.complete {
+			b.WriteString(styles.SubtitleStyle.Render("No branches found"))
+		}
 	} else {
 		// Show filtered count
 		filteredCount := len(m.buildRows())

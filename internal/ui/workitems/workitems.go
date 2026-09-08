@@ -14,6 +14,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/config"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -75,6 +76,14 @@ type Model struct {
 	stateTransitions   map[string]map[string]string
 	statusMsg          string
 	statusErr          bool
+	// authBlocked suppresses the table entirely: a rejected credential is not
+	// partial data. partialWarning is persistent because the status line is
+	// already used for action feedback. Work items is not a polling view, so
+	// D-15's stale marker does not apply — D-15 names the three polling views.
+	authBlocked    bool
+	authBanner     string
+	partialWarning string
+	complete       bool
 	// Priority ordering for work items
 	priorities *config.Priorities
 	// Detail modal
@@ -111,6 +120,15 @@ func New(client *ado.Client, orgURL string, projects []string, stateTransitions 
 		Focused(true).
 		WithPageSize(15)
 
+	// The identity fields are read off the client here rather than in every
+	// render. Guarding the nil case keeps the constructor total, which is what
+	// lets the reducer be exercised without a live client.
+	var currentUser, currentUserEmail string
+	if client != nil {
+		currentUser = client.CurrentUser()
+		currentUserEmail = client.CurrentUserEmail()
+	}
+
 	return Model{
 		client:             client,
 		orgURL:             orgURL,
@@ -120,8 +138,8 @@ func New(client *ado.Client, orgURL string, projects []string, stateTransitions 
 		loading:            true,
 		assignedToMeFilter: true,
 		hideDoneFilter:     true,
-		currentUser:        client.CurrentUser(),
-		currentUserEmail:   client.CurrentUserEmail(),
+		currentUser:        currentUser,
+		currentUserEmail:   currentUserEmail,
 		filterFocused:      0,
 		stateTransitions:   stateTransitions,
 		priorities:         priorities,
@@ -134,10 +152,47 @@ func (m Model) Init() tea.Cmd {
 
 func (m Model) fetchWorkItems() tea.Cmd {
 	projects := m.projects
+	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := m.client.GetWorkItems(context.Background(), projects)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetWorkItems(ctx, projects)
 		return WorkItemsMsg{Result: result, Err: err}
 	}
+}
+
+// applyResult folds the read envelope into render state. An auth-kind failure
+// blocks the table (D-14); any other failure keeps the rows and raises a
+// persistent warning (D-13).
+func (m *Model) applyResult(result ado.Result[ado.WorkItem]) {
+	m.items = result.Items
+	// Clean up priorities for items that no longer exist
+	if m.priorities != nil {
+		validIDs := make(map[int]bool)
+		for _, item := range m.items {
+			validIDs[item.ID] = true
+		}
+		m.priorities.Clean(validIDs)
+		m.priorities.Save() // Only saves if changed
+	}
+	m.table = m.table.WithRows(m.buildRows())
+	m.complete = result.Complete
+	m.authBlocked = false
+	m.authBanner = ""
+	m.partialWarning = ""
+
+	if len(result.Failures) == 0 {
+		return
+	}
+
+	if failure := styles.FirstAuthFailure(result.Failures); failure != nil {
+		m.authBlocked = true
+		m.authBanner = styles.AuthBannerFor(*failure)
+		return
+	}
+
+	m.partialWarning = "could not read: " + styles.SummarizeFailures(result.Failures)
 }
 
 func (m *Model) updateSelectedItemState() tea.Cmd {
@@ -360,17 +415,8 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		if msg.Err != nil {
 			m.err = msg.Err
 		} else {
-			m.items = msg.Result.Items
-			// Clean up priorities for items that no longer exist
-			if m.priorities != nil {
-				validIDs := make(map[int]bool)
-				for _, item := range m.items {
-					validIDs[item.ID] = true
-				}
-				m.priorities.Clean(validIDs)
-				m.priorities.Save() // Only saves if changed
-			}
-			m.table = m.table.WithRows(m.buildRows())
+			m.err = nil
+			m.applyResult(msg.Result)
 		}
 
 	case link.ActionMsg:
@@ -686,11 +732,26 @@ func (m Model) renderTableView() string {
 		b.WriteString("\n\n")
 	}
 
+	// A rejected credential replaces the table rather than annotating it: with no
+	// data read, an empty table would assert something the tool does not know.
+	if m.authBlocked {
+		b.WriteString(m.authBanner)
+		b.WriteString("\n")
+	} else if m.partialWarning != "" {
+		b.WriteString(styles.RenderPartialWarning(m.partialWarning))
+		b.WriteString("\n")
+	}
+
 	// Show loading or table
-	if m.loading {
+	if m.authBlocked {
+		// Nothing further: the banner above is the whole answer.
+	} else if m.loading {
 		b.WriteString(styles.SubtitleStyle.Render("Loading work items..."))
 	} else if len(m.items) == 0 {
-		b.WriteString(styles.SubtitleStyle.Render("No work items found"))
+		// Only a completed read may assert an absence of work.
+		if m.complete {
+			b.WriteString(styles.SubtitleStyle.Render("No work items found"))
+		}
 	} else {
 		// Show filtered count
 		filteredCount := len(m.buildRows())
