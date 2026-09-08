@@ -258,13 +258,14 @@ func dashboardTotal(t *testing.T, result Result[DashboardCounts]) DashboardCount
 	return result.Items[0]
 }
 
-// TestGetDashboardCountsSwallowsProjectFailure now asserts the inverted
-// contract: the failing project's work-item query is reported by name, its PRs
-// still count, and the total is explicitly labelled incomplete.
+// Regression: a failing sub-query used to be swallowed in place inside
+// getProjectCounts, so the dashboard rendered an understated total that looked
+// exactly like a real one. The failing project's work-item query is now
+// reported by name, its PRs still count, and the total is labelled incomplete.
 //
 // Dashboard swallowing is structurally different from the other seven reads: it
-// happens per call inside getProjectCounts, not at the aggregate loop's continue.
-func TestGetDashboardCountsSwallowsProjectFailure(t *testing.T) {
+// happened per call inside getProjectCounts, not at the aggregate loop's continue.
+func TestGetDashboardCountsReportsProjectFailure(t *testing.T) {
 	const (
 		failingProject   = "project-query-fails"
 		survivingProject = "project-query-succeeds"

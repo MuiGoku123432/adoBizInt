@@ -103,9 +103,10 @@ func TestApproveAndRejectReleaseSendDifferentStatuses(t *testing.T) {
 	}
 }
 
-// TestGetReleasesSwallowsProjectFailure now pins the inverted TRUST-01
-// behavior. The name is retained until the phase-wide rename sweep.
-func TestGetReleasesSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose release definition listing failed used to be
+// dropped silently, so a caller could not tell a failed read from a project
+// with no releases. The failure is now named and the result is incomplete.
+func TestGetReleasesReportsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-release-definitions-fail"
 		survivingProject = "project-release-definitions-succeed"
@@ -152,9 +153,10 @@ func TestGetReleasesSwallowsProjectFailure(t *testing.T) {
 	}
 }
 
-// TestGetPendingApprovalsSwallowsProjectFailure now pins the inverted TRUST-01
-// behavior. The name is retained until the phase-wide rename sweep.
-func TestGetPendingApprovalsSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose approval lookup failed used to be skipped
+// silently, so a pending approval that could not be read looked exactly like no
+// approval pending. The failure is now named and the result is incomplete.
+func TestGetPendingApprovalsReportsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-approvals-fail"
 		survivingProject = "project-approvals-succeed"

@@ -11,9 +11,11 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 )
 
-// TestGetBranchesSwallowsProjectFailure now pins the inverted TRUST-01
-// behavior. The name is retained until the phase-wide rename sweep.
-func TestGetBranchesSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose repository listing failed used to be skipped
+// silently, so a caller could not tell a failed read from a project with no
+// branches. The failure is now named in the envelope and the result is marked
+// incomplete.
+func TestGetBranchesReportsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-repositories-fail"
 		survivingProject = "project-repositories-succeed"

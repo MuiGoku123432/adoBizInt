@@ -11,10 +11,10 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
 )
 
-// TestGetWorkItemsSwallowsProjectFailure now pins the inverted TRUST-01
-// behavior: the project query failure reaches the caller instead of being
-// swallowed. The name is retained until the phase-wide rename sweep.
-func TestGetWorkItemsSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose WIQL query failed used to be skipped silently, so
+// a caller could not tell a broken query from a project with no work items. The
+// failure is now attributed to the project and the result is marked incomplete.
+func TestGetWorkItemsReportsProjectFailure(t *testing.T) {
 	const (
 		failingProject   = "project-query-fails"
 		survivingProject = "project-query-succeeds"

@@ -45,9 +45,10 @@ func TestQueuePipelineIssuesExactQueueCall(t *testing.T) {
 	}
 }
 
-// TestGetPipelineRunsSwallowsProjectFailure now pins the inverted TRUST-01
-// behavior. The name is retained until the phase-wide rename sweep.
-func TestGetPipelineRunsSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose build listing failed used to be dropped silently,
+// so a caller could not tell a failed read from a project with no runs. The
+// failure is now named in the envelope and the result is marked incomplete.
+func TestGetPipelineRunsReportsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-definitions-fail"
 		survivingProject = "project-definitions-succeed"
@@ -94,9 +95,10 @@ func TestGetPipelineRunsSwallowsProjectFailure(t *testing.T) {
 	}
 }
 
-// TestGetPipelineDefinitionsSwallowsProjectFailure now pins the inverted
-// TRUST-01 behavior. The name is retained until the phase-wide rename sweep.
-func TestGetPipelineDefinitionsSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose definition listing failed used to be skipped
+// silently, so a caller could not tell a failed read from a project with no
+// pipelines configured. The failure now reaches the caller by name.
+func TestGetPipelineDefinitionsReportsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-definitions-fail"
 		survivingProject = "project-definitions-succeed"

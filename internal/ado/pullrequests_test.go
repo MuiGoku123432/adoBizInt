@@ -251,11 +251,10 @@ func TestCompletePullRequestWithNilMergeCommitReturnsError(t *testing.T) {
 	}
 }
 
-// TestGetPullRequestsSwallowsProjectFailure now pins the inverted TRUST-01
-// behavior: the project failure reaches the caller instead of being swallowed.
-// The name is retained until the phase-wide rename sweep, because the anchored
-// Phase 1 gate that counts these names is the phase's completion signal.
-func TestGetPullRequestsSwallowsProjectFailure(t *testing.T) {
+// Regression: a project whose pull request query failed used to be dropped
+// silently, so an expired token was indistinguishable from an empty backlog.
+// The failure now reaches the caller by name and the result is incomplete.
+func TestGetPullRequestsReportsProjectFailure(t *testing.T) {
 	const (
 		failedProject    = "project-pull-requests-fail"
 		survivingProject = "project-pull-requests-succeed"
