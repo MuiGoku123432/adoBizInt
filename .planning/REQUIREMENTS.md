@@ -219,7 +219,10 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SEAM-01 .. SEAM-04 | Phase 1 | Pending |
-| TRUST-01 .. TRUST-04 | Phase 2 | Pending |
+| TRUST-01 | Phase 2 | Complete |
+| TRUST-02 | Phase 2 | Complete |
+| TRUST-03 | Phase 2 | Complete |
+| TRUST-04 | Phase 2 | Complete |
 | OUT-02 | Phase 2 | Complete |
 | CLI-01, CLI-02, CLI-04, CLI-05, CLI-06 | Phase 3 | Pending |
 | OUT-01, OUT-03, OUT-04, OUT-05 | Phase 3 | Pending |
