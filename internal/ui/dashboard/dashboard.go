@@ -81,8 +81,8 @@ type Model struct {
 	// The dashboard is the view where honesty is hardest to render: three
 	// integers have no visible seam, so a partial sum looks exactly like a
 	// correct one. authBlocked suppresses the cards entirely for a rejected
-	// credential; partialWarning states in words that the totals are
-	// understated rather than leaving the user to infer it (D-03, D-14).
+	// credential; partialWarning states in words which way the totals are
+	// wrong rather than leaving the user to infer it (D-03, D-14).
 	authBlocked    bool
 	authBanner     string
 	partialWarning string
@@ -154,6 +154,12 @@ func (m *Model) applyResult(result ado.Result[ado.DashboardCounts]) {
 // summarizeCountFailures states the effect on the number first and the cause
 // second. Degraded iteration lookups are separated out because they skew the
 // total upward, not downward, and a user cannot act on the two the same way.
+//
+// The headline is derived from that split rather than fixed, because naming the
+// wrong direction is worse than naming none: it presents a wrong number as a
+// verified one and moves the user's correction the wrong way. When both classes
+// are present the net direction is genuinely unknown, so the headline claims
+// neither instead of guessing (D-03, D-13).
 func summarizeCountFailures(failures []ado.Failure) string {
 	var degraded, unanswered []ado.Failure
 	for _, failure := range failures {
@@ -164,7 +170,18 @@ func summarizeCountFailures(failures []ado.Failure) string {
 		}
 	}
 
-	parts := []string{"totals understated"}
+	headline := "totals unreliable, direction unknown"
+	switch {
+	case len(degraded) == 0:
+		// Only silent projects: their items are missing from the sum.
+		headline = "totals understated"
+	case len(unanswered) == 0:
+		// Only dropped iteration filters: the WIQL query ran unfiltered and
+		// counted items outside the requested iteration.
+		headline = "totals overstated"
+	}
+
+	parts := []string{headline}
 	if len(unanswered) > 0 {
 		parts = append(parts, "did not answer: "+styles.SummarizeFailures(unanswered))
 	}
