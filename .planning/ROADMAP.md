@@ -104,14 +104,26 @@ Plans:
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
 
-**Plans**: TBD
+**Plans**: 5 plans
 
 Plans:
 
-- [ ] 03-01: Add subcommand dispatch before TUI construction in main
-- [ ] 03-02: Promote filtering out of the view packages so CLI and TUI share it
-- [ ] 03-03: Read subcommands with JSON output
-- [ ] 03-04: Exit code contract, panic handler, timeout and signal handling
+**Wave 1**
+
+- [ ] 03-01-PLAN.md — Tracer: `run() int`, dispatch seam, `prs list --json` end to end, exit-code contract
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 03-02-PLAN.md — Remaining seven read verbs, shared global flags, three-level help, plain-text renderer
+- [ ] 03-03-PLAN.md — Promote hide-done, hide-tasks, assigned-to-me, by-project and by-repo into `internal/ado`; rewire workitems and prs
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 03-04-PLAN.md — Promote free-text search across all five filtering views; expose filter flags defaulting to off
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 03-05-PLAN.md — `--timeout`, `fetchctx.NewWithParent`, SIGINT handling, and the structured panic record
 
 ### Phase 4: Guarded writes
 
