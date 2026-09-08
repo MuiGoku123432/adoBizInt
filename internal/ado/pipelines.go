@@ -13,34 +13,46 @@ import (
 )
 
 // PipelineRun represents a single pipeline/build run for display
+//
+// Duration marshals as the encoding/json default for time.Duration: an integer
+// nanosecond count, so a one-hour run emits 3600000000000. The key carries the
+// _ns suffix because the unit is not otherwise discoverable from the JSON. This
+// is a locked contract decision (D-04, Task 1 of plan 02-04) — Phase 3's --json
+// makes the value type a one-way door, and a later switch to a string or to
+// seconds would fail silently for any consumer doing arithmetic on it.
+//
+// The time.Time fields are values, not pointers: a zero timestamp therefore
+// marshals as the year-one RFC 3339 sentinel rather than being omitted. That is
+// an accepted, recorded cost, not an oversight — ,omitempty cannot suppress a
+// struct, so omission would require pointers or a custom marshaller.
 type PipelineRun struct {
-	ID            int
-	BuildNumber   string
-	PipelineName  string
-	PipelineID    int
-	Project       string
-	Status        string // "inProgress", "completed", "cancelling", "postponed", "notStarted", "none"
-	Result        string // "succeeded", "partiallySucceeded", "failed", "canceled", "none"
-	SourceBranch  string
-	SourceVersion string
-	RequestedBy   string
-	RequestedFor  string
-	StartTime     time.Time
-	FinishTime    time.Time
-	QueueTime     time.Time
-	Duration      time.Duration
-	RepositoryID  string
+	ID            int           `json:"id"`
+	BuildNumber   string        `json:"build_number"`
+	PipelineName  string        `json:"pipeline_name"`
+	PipelineID    int           `json:"pipeline_id"`
+	Project       string        `json:"project"`
+	Status        string        `json:"status"` // "inProgress", "completed", "cancelling", "postponed", "notStarted", "none"
+	Result        string        `json:"result"` // "succeeded", "partiallySucceeded", "failed", "canceled", "none"
+	SourceBranch  string        `json:"source_branch"`
+	SourceVersion string        `json:"source_version"`
+	RequestedBy   string        `json:"requested_by"`
+	RequestedFor  string        `json:"requested_for"`
+	StartTime     time.Time     `json:"start_time"`
+	FinishTime    time.Time     `json:"finish_time"`
+	QueueTime     time.Time     `json:"queue_time"`
+	Duration      time.Duration `json:"duration_ns"`
+	RepositoryID  string        `json:"repository_id"`
 }
 
 // PipelineDefinition represents a pipeline definition for triggering new runs
 type PipelineDefinition struct {
-	ID            int
-	Name          string
-	Path          string
-	Project       string
-	RepositoryID  string
-	DefaultBranch string
-	QueueStatus   string // "enabled", "paused", "disabled"
+	ID            int    `json:"id"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	Project       string `json:"project"`
+	RepositoryID  string `json:"repository_id"`
+	DefaultBranch string `json:"default_branch"`
+	QueueStatus   string `json:"queue_status"` // "enabled", "paused", "disabled"
 }
 
 // normalizePipelineName normalizes a pipeline name for comparison

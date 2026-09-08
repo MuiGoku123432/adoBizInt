@@ -13,9 +13,9 @@ import (
 
 // DashboardCounts holds summary counts for the dashboard
 type DashboardCounts struct {
-	WorkItems int
-	PRs       int
-	Pipelines int
+	WorkItems int `json:"work_items"`
+	PRs       int `json:"prs"`
+	Pipelines int `json:"pipelines"`
 }
 
 // opDashboard* label the SDK calls in any Failure this read records. The

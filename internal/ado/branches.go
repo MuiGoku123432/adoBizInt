@@ -13,17 +13,17 @@ import (
 
 // Branch represents a repository branch for display
 type Branch struct {
-	Name           string
-	Project        string
-	RepositoryID   string
-	RepositoryName string
-	DefaultBranch  string // Repository default branch, used as the PR target
-	IsDefault      bool
-	AheadCount     int
-	BehindCount    int
-	LastCommitDate time.Time
-	LastCommitBy   string
-	CommitID       string
+	Name           string    `json:"name"`
+	Project        string    `json:"project"`
+	RepositoryID   string    `json:"repository_id"`
+	RepositoryName string    `json:"repository_name"`
+	DefaultBranch  string    `json:"default_branch"` // Repository default branch, used as the PR target
+	IsDefault      bool      `json:"is_default"`
+	AheadCount     int       `json:"ahead_count"`
+	BehindCount    int       `json:"behind_count"`
+	LastCommitDate time.Time `json:"last_commit_date"`
+	LastCommitBy   string    `json:"last_commit_by"`
+	CommitID       string    `json:"commit_id"`
 }
 
 // opGetRepositories labels the per-project repository listing in any Failure

@@ -11,45 +11,45 @@ import (
 
 // Release represents a classic release for display
 type Release struct {
-	ID               int
-	Name             string
-	DefinitionID     int
-	DefinitionName   string
-	Project          string
-	Status           string // "draft", "active", "abandoned"
-	CreatedOn        time.Time
-	ModifiedOn       time.Time
-	Environments     []ReleaseEnvironment
-	PendingApprovals int
+	ID               int                  `json:"id"`
+	Name             string               `json:"name"`
+	DefinitionID     int                  `json:"definition_id"`
+	DefinitionName   string               `json:"definition_name"`
+	Project          string               `json:"project"`
+	Status           string               `json:"status"` // "draft", "active", "abandoned"
+	CreatedOn        time.Time            `json:"created_on"`
+	ModifiedOn       time.Time            `json:"modified_on"`
+	Environments     []ReleaseEnvironment `json:"environments"`
+	PendingApprovals int                  `json:"pending_approvals"`
 }
 
 // ReleaseEnvironment represents an environment within a release
 type ReleaseEnvironment struct {
-	ID               int
-	Name             string
-	Status           string // "notStarted", "inProgress", "succeeded", "canceled", "rejected", "queued", "partiallySucceeded"
-	DeploymentStatus string // "notDeployed", "inProgress", "succeeded", "partiallySucceeded", "failed"
-	ReleaseID        int
-	ReleaseName      string
-	DefinitionID     int
-	DefinitionName   string
-	Project          string
+	ID               int    `json:"id"`
+	Name             string `json:"name"`
+	Status           string `json:"status"`            // "notStarted", "inProgress", "succeeded", "canceled", "rejected", "queued", "partiallySucceeded"
+	DeploymentStatus string `json:"deployment_status"` // "notDeployed", "inProgress", "succeeded", "partiallySucceeded", "failed"
+	ReleaseID        int    `json:"release_id"`
+	ReleaseName      string `json:"release_name"`
+	DefinitionID     int    `json:"definition_id"`
+	DefinitionName   string `json:"definition_name"`
+	Project          string `json:"project"`
 }
 
 // ReleaseApproval represents a pending approval
 type ReleaseApproval struct {
-	ID              int
-	ReleaseID       int
-	ReleaseName     string
-	EnvironmentID   int
-	EnvironmentName string
-	Project         string
-	Status          string // "pending", "approved", "rejected", "reassigned", "canceled", "skipped"
-	ApprovalType    string // "preDeploy", "postDeploy"
-	Approver        string
-	ApproverID      string
-	CreatedOn       time.Time
-	Comments        string
+	ID              int       `json:"id"`
+	ReleaseID       int       `json:"release_id"`
+	ReleaseName     string    `json:"release_name"`
+	EnvironmentID   int       `json:"environment_id"`
+	EnvironmentName string    `json:"environment_name"`
+	Project         string    `json:"project"`
+	Status          string    `json:"status"`        // "pending", "approved", "rejected", "reassigned", "canceled", "skipped"
+	ApprovalType    string    `json:"approval_type"` // "preDeploy", "postDeploy"
+	Approver        string    `json:"approver"`
+	ApproverID      string    `json:"approver_id"`
+	CreatedOn       time.Time `json:"created_on"`
+	Comments        string    `json:"comments"`
 }
 
 // opGetReleases and opGetPendingApprovals label the SDK calls in any Failure

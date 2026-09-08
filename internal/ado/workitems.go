@@ -19,37 +19,46 @@ import (
 
 // WorkItem represents a work item for display
 type WorkItem struct {
-	ID              int
-	Title           string
-	Summary         string
-	StoryPoints     int
-	Project         string
-	Type            string
-	State           string
-	AssignedTo      string
-	AssignedToEmail string
+	ID              int    `json:"id"`
+	Title           string `json:"title"`
+	Summary         string `json:"summary"`
+	StoryPoints     int    `json:"story_points"`
+	Project         string `json:"project"`
+	Type            string `json:"type"`
+	State           string `json:"state"`
+	AssignedTo      string `json:"assigned_to"`
+	AssignedToEmail string `json:"assigned_to_email"`
 }
 
 // WorkItemDetail represents a work item with full details
+//
+// The embedded WorkItem is deliberately left untagged so encoding/json inlines
+// its fields into the same JSON object rather than nesting them under a
+// "WorkItem" key. A consumer therefore reads a detail record as one flat object
+// whose key set is a superset of the list record's. This is a decision, not a
+// default — pinned by TestJSONFieldNames/WorkItemDetail_embeds_flat.
 type WorkItemDetail struct {
 	WorkItem
-	Description        string
-	AcceptanceCriteria string
-	ReproSteps         string // For bugs
-	Attachments        []Attachment
-	CreatedDate        time.Time
-	ModifiedDate       time.Time
-	CreatedBy          string
-	ModifiedBy         string
-	IterationPath      string
-	AreaPath           string
+	Description        string       `json:"description"`
+	AcceptanceCriteria string       `json:"acceptance_criteria"`
+	ReproSteps         string       `json:"repro_steps"` // For bugs
+	Attachments        []Attachment `json:"attachments"`
+	CreatedDate        time.Time    `json:"created_date"`
+	ModifiedDate       time.Time    `json:"modified_date"`
+	CreatedBy          string       `json:"created_by"`
+	ModifiedBy         string       `json:"modified_by"`
+	IterationPath      string       `json:"iteration_path"`
+	AreaPath           string       `json:"area_path"`
 }
 
 // Attachment represents a work item attachment
+//
+// URL is a single lower-case word, not a letter-split "u_r_l": initialisms are
+// mapped deliberately rather than by mechanical camel-to-snake conversion.
 type Attachment struct {
-	Name string
-	URL  string
-	Size int64
+	Name string `json:"name"`
+	URL  string `json:"url"`
+	Size int64  `json:"size"`
 }
 
 // opGetWorkItems and opGetWorkItemsBatch label the SDK calls in any Failure the

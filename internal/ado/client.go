@@ -17,6 +17,12 @@ import (
 	"sentinovo.ai/bizInt/internal/logging"
 )
 
+// Client is the twelfth exported struct in this package and the one that is
+// deliberately NOT given JSON struct tags (OUT-02, D-04). It is not
+// serializable: every field is unexported, and it holds live SDK sub-clients
+// plus a live connection. The omission is intentional, not an oversight — do
+// not "fix" it by adding tags. Plan 02-04 asserts that this file contains zero
+// encoding/json struct tags, so adding one here fails an acceptance criterion.
 type Client struct {
 	connection     *azuredevops.Connection
 	workitemClient workItemAPI

@@ -2,6 +2,7 @@ package ado
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 
@@ -42,20 +43,62 @@ const (
 // Failures are logged and rendered into a terminal; anything stored here is
 // assumed to reach both. Project, operation and kind are the whole vocabulary,
 // with the underlying error carried for the caller to inspect via errors.Is.
+//
+// From Phase 3 onward these four field names are a machine-readable public
+// contract. Adding a fifth field REQUIRES updating the exact-key-set assertion
+// in json_test.go in the same change; that test exists to make a silent
+// addition impossible.
+//
+// Err is tagged json:"-" and re-emitted as a plain string by MarshalJSON below.
+// Letting encoding/json marshal the interface directly would serialise the
+// dynamic value's exported fields — an azuredevops.WrappedError can carry
+// server-controlled response detail — which is precisely the structural leak
+// T-02-01 forbids. The message text itself is emitted untruncated: the
+// terminal-rendering truncation from 02-01 is a display concern, and a
+// machine-readable failure record is more useful at full fidelity. Keeping that
+// text out of parseable output when it should be is Phase 3's OUT-03
+// stdout/stderr split, not this struct's job.
 type Failure struct {
-	Project   string      // the configured project whose read failed
-	Operation string      // short label for the call being made, e.g. "get pull requests"
-	Kind      FailureKind // "auth", "timeout", "rate_limit", "other"
-	Err       error       // the underlying error, preserved for errors.Is / errors.As
+	Project   string      `json:"project"`   // the configured project whose read failed
+	Operation string      `json:"operation"` // short label for the call being made, e.g. "get pull requests"
+	Kind      FailureKind `json:"kind"`      // "auth", "timeout", "rate_limit", "other"
+	Err       error       `json:"-"`         // the underlying error, preserved for errors.Is / errors.As
+}
+
+// MarshalJSON emits the four-key failure record, flattening Err to its message
+// string (or null) so no error implementation's internal fields can reach the
+// output. See the T-02-01 note on Failure.
+func (f Failure) MarshalJSON() ([]byte, error) {
+	var msg *string
+	if f.Err != nil {
+		s := f.Err.Error()
+		msg = &s
+	}
+	return json.Marshal(struct {
+		Project   string      `json:"project"`
+		Operation string      `json:"operation"`
+		Kind      FailureKind `json:"kind"`
+		Err       *string     `json:"err"`
+	}{
+		Project:   f.Project,
+		Operation: f.Operation,
+		Kind:      f.Kind,
+		Err:       msg,
+	})
 }
 
 // Result is the envelope every aggregate read returns. Items holds whatever was
 // successfully fetched, Failures names every project that did not answer, and
 // Complete reports whether the items are the whole picture (TRUST-03).
+//
+// The json tags use the same snake_case convention as the payload types (D-04),
+// so Phase 3 serialises the whole read response under one contract rather than
+// wrapping snake_case payloads in Go-cased keys. This holds uniformly for all
+// eight reads, including the dashboard's single-element Items slice.
 type Result[T any] struct {
-	Items    []T
-	Failures []Failure
-	Complete bool
+	Items    []T       `json:"items"`
+	Failures []Failure `json:"failures"`
+	Complete bool      `json:"complete"`
 }
 
 // newResult derives Complete from the failure slice so no call site has to

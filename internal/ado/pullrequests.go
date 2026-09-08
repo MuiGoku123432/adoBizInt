@@ -14,21 +14,21 @@ import (
 
 // PullRequest represents a pull request for display
 type PullRequest struct {
-	ID             int
-	Title          string
-	Description    string
-	Project        string
-	RepositoryID   string
-	RepositoryName string
-	SourceBranch   string
-	TargetBranch   string
-	CreatedBy      string
-	CreatedByID    string
-	CreationDate   time.Time
-	Status         string
-	IsDraft        bool
-	ReviewerCount  int
-	ApprovalStatus string
+	ID             int       `json:"id"`
+	Title          string    `json:"title"`
+	Description    string    `json:"description"`
+	Project        string    `json:"project"`
+	RepositoryID   string    `json:"repository_id"`
+	RepositoryName string    `json:"repository_name"`
+	SourceBranch   string    `json:"source_branch"`
+	TargetBranch   string    `json:"target_branch"`
+	CreatedBy      string    `json:"created_by"`
+	CreatedByID    string    `json:"created_by_id"`
+	CreationDate   time.Time `json:"creation_date"`
+	Status         string    `json:"status"`
+	IsDraft        bool      `json:"is_draft"`
+	ReviewerCount  int       `json:"reviewer_count"`
+	ApprovalStatus string    `json:"approval_status"`
 }
 
 // opGetPullRequests labels the SDK call in any Failure this read records.
