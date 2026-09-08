@@ -734,18 +734,34 @@ No testify, no mock generator, no gomock in `go.mod`. [VERIFIED: go.mod:5-41, no
 | A3 | `os.Exit` does not run deferred functions | §8 | The entire panic handler is dead code. Treat as hard constraint. |
 | A4 | Go panic output includes function arguments (D-24's premise) | §8 | D-24's security rationale weakens, but the decision to exclude the stack is still correct on other grounds. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four were closed during planning. Resolutions and their landing sites:
 
 1. **Should `--help` work without a valid PAT?** `cfg.Validate()` at `main.go:37` aborts when
    `ADO_PAT` is unset. Today that is fine (TUI needs it). A CLI where `--help` fails for lack of
    credentials is hostile. Recommendation: parse args and handle `--help`/unknown-subcommand
    *before* `config.Load`.
+   **RESOLVED — yes.** Plan 03-02 Task 2 handles `--help`, `-h` and the bare-noun case before
+   `config.Load` and `cfg.Validate` in `run()`, with an acceptance criterion asserting `--help`
+   succeeds with `ADO_PAT` unset and no config file present.
 2. **Does `GetBranches` already filter by repository internally, and with what matching rule?**
    The promoted by-repo predicate must not double-filter with different semantics.
    `branches.go:52` takes the slice; its body was not read this session.
+   **RESOLVED — yes, and the rule is byte-identical to `prs.go`'s.** `branches.go:92` does
+   lowercase exact-match set membership, skipped when the set is empty. Recorded in plan 03-03
+   `<source_corrections>`; one promoted predicate serves both. Plan 03-04 Task 2 consequently has
+   `branches list` pass `--repo` into `GetBranches`' `repositories` argument rather than
+   post-filtering.
 3. **Is `hideTasksFilter` promoted or explicitly deferred?** Not addressed by D-17. Must be
    decided, not skipped.
+   **RESOLVED — promoted.** Plan 03-03 `<source_corrections>` records the planner decision: it is
+   the same shape as hide-done, costs one function, and leaving it inline would keep workitems
+   filtering in two places, which is what CLI-06 forbids.
 4. **What is the uniform dispatch signature given `GetBranches`' extra parameter?**
+   **RESOLVED — there is none, by design.** Plan 03-01 D-P2 makes each dispatch entry its own
+   closure, so `GetBranches`' third parameter is absorbed at the call site with no adapter and no
+   uniform method type.
 
 ## Sources
 
