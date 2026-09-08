@@ -38,7 +38,7 @@ Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 ### Structured Output
 
 - [ ] **OUT-01**: `--json` emits machine-readable JSON on stdout
-- [ ] **OUT-02**: Exported `ado` structs carry explicit `json:` tags so field names are stable and not Go-cased
+- [x] **OUT-02**: Exported `ado` structs carry explicit `json:` tags so field names are stable and not Go-cased
 - [ ] **OUT-03**: stdout carries only parseable output; all logging and diagnostics go to stderr or the log file
 - [ ] **OUT-04**: Exit codes distinguish success, partial result, authentication failure, and outcome-unknown
 - [ ] **OUT-05**: A panic emits structured JSON rather than dying silently and looking like an empty result
@@ -220,7 +220,7 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 |-------------|-------|--------|
 | SEAM-01 .. SEAM-04 | Phase 1 | Pending |
 | TRUST-01 .. TRUST-04 | Phase 2 | Pending |
-| OUT-02 | Phase 2 | Pending |
+| OUT-02 | Phase 2 | Complete |
 | CLI-01, CLI-02, CLI-04, CLI-05, CLI-06 | Phase 3 | Pending |
 | OUT-01, OUT-03, OUT-04, OUT-05 | Phase 3 | Pending |
 | CLI-03 | Phase 4 | Pending |

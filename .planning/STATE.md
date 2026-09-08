@@ -5,8 +5,8 @@ milestone_name: milestone
 current_phase: 02
 current_phase_name: honest-reads
 status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-09-07T22:07:43.274Z"
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-09-08T03:27:29.324Z"
 last_activity: 2026-09-07
 last_activity_desc: Phase 02 execution started
 progress:
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 02 (honest-reads) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-09-07 — Phase 02 execution started
 
@@ -67,6 +67,7 @@ Progress: [██████░░░░] 55%
 | Phase 02 P01 | 41 min | 4 tasks | 12 files |
 | Phase 02 P02 | 34 min | 3 tasks | 12 files |
 | Phase 02 P03 | 22 min | 2 tasks | 3 files |
+| Phase 02 P04 | 16 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -110,6 +111,13 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 02]: getProjectWorkItems returns ([]WorkItem, []Failure, error) so batch failures are attributed without double-wrapping the envelope
 - [Phase 02]: Dashboard aggregate rides a one-element Items slice in Result[DashboardCounts] rather than a bespoke struct — D-01's purpose is that Phase 3 writes failure/completeness JSON handling once; a second envelope shape would be a permanent tax on every downstream consumer
 - [Phase 02]: The failed dashboard iteration lookup is recorded as a failure, not a silent fallback — It silently drops the WIQL iteration clause, so the count is taken under a different query and renders overstated with no visible seam (T-02-05)
+- [Phase 02]: [Phase 02]: PipelineRun.Duration serializes as integer nanoseconds under the key duration_ns — agents and jq handle integers trivially; a Go duration string is not natively parseable outside Go. Locked one-way door at Phase 3 --json.
+- [Phase 02]: [Phase 02]: Timestamps stay value semantics; a zero time.Time emits the year-one RFC 3339 sentinel rather than being omitted — omitempty cannot suppress a struct, so omission would need pointers or a custom marshaller
+- [Phase 02]: [Phase 02]: Failure.Err is json:"-" and re-emitted as a plain string by a custom MarshalJSON — marshalling the interface would serialize the SDK error's exported fields, the exact structural leak T-02-01 forbids
+- [Phase 02]: [Phase 02]: The machine-readable failure message is intentionally untruncated, unlike the terminal rendering from 02-01; OUT-03's stdout/stderr split is what gates it, not the struct
+- [Phase 02]: [Phase 02]: The embedded WorkItem in WorkItemDetail is left untagged so its fields inline into one flat object rather than nesting
+- [Phase 02]: [Phase 02]: ado.Client is the one exported struct deliberately left untagged — unexported fields and live SDK clients; the exclusion is stated in a comment on the declaration
+- [Phase 02]: [Phase 02]: Assumption A3 confirmed — a zero time.Time value field marshals to 0001-01-01T00:00:00Z and is not omitted
 
 ### Pending Todos
 
@@ -145,6 +153,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-07T22:07:43.269Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-09-08T03:27:18.689Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
