@@ -19,7 +19,7 @@ shipping no flag at all, which is why the test seam comes first.
 ## Phases
 
 - [ ] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable (awaiting human verification)
-- [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline
+- [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline (awaiting human verification)
 - [ ] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters
 - [ ] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record
 - [ ] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL escaping, CI
@@ -79,7 +79,7 @@ Plans:
   5. Exported `ado` structs carry `json:` tags with stable lower-cased names
   6. The TUI renders failures rather than silently showing an empty table
 
-**Plans**: 0/5 plans executed
+**Plans**: 5/5 plans executed (awaiting human verification)
 
 Plans:
 
