@@ -12,6 +12,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -76,6 +77,16 @@ type Model struct {
 	filterFocused int // 0 = table, 1 = search
 	statusMsg     string
 	statusErr     bool
+
+	// authBlocked suppresses the table entirely: a rejected credential is not
+	// partial data. partialWarning is persistent because the status line is
+	// already used for action feedback and is too easy to miss across a
+	// 30-second refresh. stale marks rows that survived a failed refresh.
+	authBlocked    bool
+	authBanner     string
+	partialWarning string
+	stale          bool
+	complete       bool
 
 	// Trigger modal
 	triggerModal *TriggerModal
@@ -142,8 +153,11 @@ func (m Model) tickCmd() tea.Cmd {
 func (m Model) fetchPipelineRuns() tea.Cmd {
 	projects := m.projects
 	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := client.GetPipelineRuns(context.Background(), projects)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetPipelineRuns(ctx, projects)
 		return PipelinesMsg{Result: result, Err: err}
 	}
 }
@@ -151,10 +165,38 @@ func (m Model) fetchPipelineRuns() tea.Cmd {
 func (m Model) fetchDefinitions() tea.Cmd {
 	projects := m.projects
 	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := client.GetPipelineDefinitions(context.Background(), projects)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetPipelineDefinitions(ctx, projects)
 		return DefinitionsMsg{Result: result, Err: err}
 	}
+}
+
+// applyResult folds the primary read envelope into render state. An auth-kind
+// failure blocks the table (D-14); any other failure keeps the rows and raises a
+// persistent warning (D-13). Only the primary message reaches here: a secondary
+// definitions failure must not blank a table the primary fetch populated.
+func (m *Model) applyResult(result ado.Result[ado.PipelineRun]) {
+	m.runs = result.Items
+	m.table = m.table.WithRows(m.buildRows())
+	m.complete = result.Complete
+	m.authBlocked = false
+	m.authBanner = ""
+	m.partialWarning = ""
+
+	if len(result.Failures) == 0 {
+		return
+	}
+
+	if failure := styles.FirstAuthFailure(result.Failures); failure != nil {
+		m.authBlocked = true
+		m.authBanner = styles.AuthBannerFor(*failure)
+		return
+	}
+
+	m.partialWarning = "could not read: " + styles.SummarizeFailures(result.Failures)
 }
 
 func (m Model) queuePipeline(definitionID int, branch, project, pipelineName string) tea.Cmd {
@@ -225,23 +267,32 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case PipelinesMsg:
 		m.loading = false
 		if msg.Err != nil {
+			// The previously loaded rows stay on screen; they are simply no
+			// longer known to be current.
 			m.err = msg.Err
+			m.stale = len(m.runs) > 0
 		} else {
-			m.runs = msg.Result.Items
-			m.table = m.table.WithRows(m.buildRows())
-			// Warn if no pipeline runs found (could indicate config issue)
-			if len(m.runs) == 0 {
+			m.err = nil
+			m.stale = false
+			m.applyResult(msg.Result)
+			// Only a completed read may point at the user's configuration. On an
+			// incomplete read this message misdirects: nothing was successfully
+			// fetched, so config.yaml is not the likely cause.
+			if m.complete && len(m.runs) == 0 {
 				m.statusMsg = "No pipeline runs found. Check configured pipeline names in config.yaml"
 				m.statusErr = true
 			}
 		}
 
 	case DefinitionsMsg:
-		if msg.Err != nil {
-			// Surface error so users know triggering won't work
+		// Secondary fetch: it warns on the status line and never drives the
+		// blocking banner, or an auth failure here would blank a table the
+		// primary fetch populated correctly.
+		if msg.Err != nil || len(msg.Result.Failures) > 0 {
 			m.statusMsg = "Warning: Could not load pipeline definitions - trigger may not work"
 			m.statusErr = true
-		} else {
+		}
+		if msg.Err == nil {
 			m.definitions = msg.Result.Items
 		}
 
@@ -393,11 +444,31 @@ func (m Model) renderTableView() string {
 		b.WriteString("\n\n")
 	}
 
+	// A rejected credential replaces the table rather than annotating it: with no
+	// data read, an empty table would assert something the tool does not know.
+	if m.authBlocked {
+		b.WriteString(m.authBanner)
+		b.WriteString("\n")
+	} else if m.partialWarning != "" {
+		b.WriteString(styles.RenderPartialWarning(m.partialWarning))
+		b.WriteString("\n")
+	}
+	if m.stale {
+		b.WriteString(styles.RenderStaleMarker())
+		b.WriteString("\n")
+	}
+
 	// Show loading or table
-	if m.loading && len(m.runs) == 0 {
+	if m.authBlocked {
+		// Nothing further: the banner above is the whole answer.
+	} else if m.loading && len(m.runs) == 0 {
 		b.WriteString(styles.SubtitleStyle.Render("Loading pipeline runs..."))
 	} else if len(m.runs) == 0 {
-		b.WriteString(styles.SubtitleStyle.Render("No pipeline runs found. Configure pipelines in config.yaml"))
+		// Only a completed read may assert an absence of work — and only a
+		// completed read may blame the user's configuration for it.
+		if m.complete {
+			b.WriteString(styles.SubtitleStyle.Render("No pipeline runs found. Configure pipelines in config.yaml"))
+		}
 	} else {
 		filteredCount := len(m.buildRows())
 		totalCount := len(m.runs)

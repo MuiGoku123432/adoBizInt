@@ -2,9 +2,11 @@ package styles
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
+	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/utils"
 )
 
@@ -105,4 +107,52 @@ func RenderPartialWarning(summary string) string {
 // no longer known to be current.
 func RenderStaleMarker() string {
 	return MutedStyle.Render("(stale — last successful refresh shown)")
+}
+
+// RenderUnderstatedWarning is the dashboard's variant of the partial warning. It
+// exists because the dashboard's payload is a small set of totals with no
+// visible seam: naming what failed is not enough, the effect on the number has
+// to be stated in words or the user is left to infer it (D-03, threat T-02-07).
+func RenderUnderstatedWarning(summary string) string {
+	return WarningStyle.Render("Totals understated — " + utils.Truncate(summary, maxFailureMessage))
+}
+
+// SummarizeFailures renders a failure list as a single line naming each project,
+// its classified kind and — when present — the operation that failed. The
+// operation is included because the branches read encodes the repository name in
+// its label, so dropping it would leave a user with many repositories unable to
+// act on the warning (threat T-02-01: the label is server-sourced text and is
+// truncated by the renderers above before it reaches the terminal).
+func SummarizeFailures(failures []ado.Failure) string {
+	parts := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		if failure.Operation != "" {
+			parts = append(parts, fmt.Sprintf("%s (%s: %s)", failure.Project, failure.Kind, failure.Operation))
+		} else {
+			parts = append(parts, fmt.Sprintf("%s (%s)", failure.Project, failure.Kind))
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+// FirstAuthFailure returns the first auth-kind failure in the list, or nil. An
+// auth failure is not partial data, so every view branches on it before it
+// considers building a partial warning (D-14).
+func FirstAuthFailure(failures []ado.Failure) *ado.Failure {
+	for i := range failures {
+		if failures[i].Kind == ado.FailureAuth {
+			return &failures[i]
+		}
+	}
+	return nil
+}
+
+// AuthBannerFor renders the blocking banner for an auth failure, flattening the
+// nil-error case so no view has to repeat the guard.
+func AuthBannerFor(failure ado.Failure) string {
+	message := ""
+	if failure.Err != nil {
+		message = failure.Err.Error()
+	}
+	return RenderAuthBanner(string(failure.Kind), failure.Project, message)
 }

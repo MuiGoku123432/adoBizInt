@@ -13,6 +13,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
@@ -140,12 +141,8 @@ func (m Model) fetchPRs() tea.Cmd {
 	client := m.client
 	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		ctx := context.Background()
-		if budget > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, budget)
-			defer cancel()
-		}
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
 		result, err := client.GetPullRequests(ctx, projects)
 		return PRsMsg{Result: result, Err: err}
 	}

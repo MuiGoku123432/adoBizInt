@@ -12,6 +12,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -80,6 +81,16 @@ type Model struct {
 	statusMsg     string
 	statusErr     bool
 
+	// authBlocked suppresses the table entirely: a rejected credential is not
+	// partial data. partialWarning is persistent because the status line is
+	// already used for action feedback and is too easy to miss across a
+	// 30-second refresh. stale marks rows that survived a failed refresh.
+	authBlocked    bool
+	authBanner     string
+	partialWarning string
+	stale          bool
+	complete       bool
+
 	// Approval modal
 	approvalModal *ApprovalModal
 	showApproval  bool
@@ -143,8 +154,11 @@ func (m Model) tickCmd() tea.Cmd {
 func (m Model) fetchReleases() tea.Cmd {
 	projects := m.projects
 	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := client.GetReleases(context.Background(), projects)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetReleases(ctx, projects)
 		return ReleasesMsg{Result: result, Err: err}
 	}
 }
@@ -152,10 +166,38 @@ func (m Model) fetchReleases() tea.Cmd {
 func (m Model) fetchApprovals() tea.Cmd {
 	projects := m.projects
 	client := m.client
+	budget := client.FetchTimeout()
 	return func() tea.Msg {
-		result, err := client.GetPendingApprovals(context.Background(), projects)
+		ctx, cancel := fetchctx.New(budget)
+		defer cancel()
+		result, err := client.GetPendingApprovals(ctx, projects)
 		return ApprovalsMsg{Result: result, Err: err}
 	}
+}
+
+// applyResult folds the primary read envelope into render state. An auth-kind
+// failure blocks the table (D-14); any other failure keeps the rows and raises a
+// persistent warning (D-13). The secondary approvals fetch never reaches here.
+func (m *Model) applyResult(result ado.Result[ado.Release]) {
+	m.releases = result.Items
+	m.updatePendingCounts()
+	m.table = m.table.WithRows(m.buildRows())
+	m.complete = result.Complete
+	m.authBlocked = false
+	m.authBanner = ""
+	m.partialWarning = ""
+
+	if len(result.Failures) == 0 {
+		return
+	}
+
+	if failure := styles.FirstAuthFailure(result.Failures); failure != nil {
+		m.authBlocked = true
+		m.authBanner = styles.AuthBannerFor(*failure)
+		return
+	}
+
+	m.partialWarning = "could not read: " + styles.SummarizeFailures(result.Failures)
 }
 
 func (m Model) approveRelease(approvalID int, project, comment string) tea.Cmd {
@@ -237,19 +279,25 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	case ReleasesMsg:
 		m.loading = false
 		if msg.Err != nil {
+			// The previously loaded rows stay on screen; they are simply no
+			// longer known to be current.
 			m.err = msg.Err
+			m.stale = len(m.releases) > 0
 		} else {
 			m.err = nil
-			m.releases = msg.Result.Items
-			m.table = m.table.WithRows(m.buildRows())
+			m.stale = false
+			m.applyResult(msg.Result)
 		}
 
 	case ApprovalsMsg:
-		if msg.Err != nil {
-			// Surface error so users know approvals won't work
+		// Secondary fetch: it warns on the status line and never drives the
+		// blocking banner, or an auth failure here would blank a table the
+		// primary fetch populated correctly.
+		if msg.Err != nil || len(msg.Result.Failures) > 0 {
 			m.statusMsg = "Warning: Could not load pending approvals"
 			m.statusErr = true
-		} else {
+		}
+		if msg.Err == nil {
 			m.approvals = msg.Result.Items
 			// Update pending approval counts in releases
 			m.updatePendingCounts()
@@ -422,11 +470,31 @@ func (m Model) renderTableView() string {
 		b.WriteString("\n\n")
 	}
 
+	// A rejected credential replaces the table rather than annotating it: with no
+	// data read, an empty table would assert something the tool does not know.
+	if m.authBlocked {
+		b.WriteString(m.authBanner)
+		b.WriteString("\n")
+	} else if m.partialWarning != "" {
+		b.WriteString(styles.RenderPartialWarning(m.partialWarning))
+		b.WriteString("\n")
+	}
+	if m.stale {
+		b.WriteString(styles.RenderStaleMarker())
+		b.WriteString("\n")
+	}
+
 	// Show loading or table
-	if m.loading && len(m.releases) == 0 {
+	if m.authBlocked {
+		// Nothing further: the banner above is the whole answer.
+	} else if m.loading && len(m.releases) == 0 {
 		b.WriteString(styles.SubtitleStyle.Render("Loading releases..."))
 	} else if len(m.releases) == 0 {
-		b.WriteString(styles.SubtitleStyle.Render("No releases found. Configure pipelines in config.yaml"))
+		// Only a completed read may assert an absence of work — and only a
+		// completed read may blame the user's configuration for it.
+		if m.complete {
+			b.WriteString(styles.SubtitleStyle.Render("No releases found. Configure pipelines in config.yaml"))
+		}
 	} else {
 		filteredCount := len(m.buildRows())
 		totalCount := len(m.releases)
