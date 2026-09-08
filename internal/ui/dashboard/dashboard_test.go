@@ -110,6 +110,72 @@ func TestUpdateDegradedIterationFilterIsWordedDistinctly(t *testing.T) {
 	}
 }
 
+// The headline states the direction of the error, so it must be derived from
+// the failure mix rather than hardcoded. Asserting the wrong direction is worse
+// than asserting none: it launders a wrong number as a verified one, which is
+// the C1 failure mode this phase exists to remove.
+func TestSummarizeCountFailuresHeadlineMatchesSkewDirection(t *testing.T) {
+	degraded := ado.Failure{
+		Project:   "project-one",
+		Operation: opDashboardIterations,
+		Kind:      ado.FailureOther,
+		Err:       errors.New("classification node not found"),
+	}
+	unanswered := ado.Failure{
+		Project:   "project-two",
+		Operation: "get dashboard pull request count",
+		Kind:      ado.FailureTimeout,
+		Err:       errors.New("deadline exceeded"),
+	}
+
+	// Regression pin: a dropped iteration filter runs the WIQL query
+	// unfiltered, returning MORE items. Calling that "understated" points the
+	// user's correction in exactly the wrong direction.
+	t.Run("degraded iteration lookups alone are overstated", func(t *testing.T) {
+		got := strings.ToLower(summarizeCountFailures([]ado.Failure{degraded}))
+
+		if strings.Contains(got, "understated") {
+			t.Errorf("summarizeCountFailures(degraded-only) = %q, must not claim the totals are understated: a dropped iteration filter inflates the count", got)
+		}
+		if !strings.Contains(got, "overstated") {
+			t.Errorf("summarizeCountFailures(degraded-only) = %q, want it to state the totals are overstated", got)
+		}
+		if !strings.Contains(got, "unfiltered") {
+			t.Errorf("summarizeCountFailures(degraded-only) = %q, want the unfiltered cause retained", got)
+		}
+	})
+
+	t.Run("projects that did not answer are understated", func(t *testing.T) {
+		got := strings.ToLower(summarizeCountFailures([]ado.Failure{unanswered}))
+
+		if !strings.Contains(got, "understated") {
+			t.Errorf("summarizeCountFailures(unanswered-only) = %q, want it to state the totals are understated", got)
+		}
+		if strings.Contains(got, "overstated") {
+			t.Errorf("summarizeCountFailures(unanswered-only) = %q, must not claim the totals are overstated", got)
+		}
+		if !strings.Contains(got, "did not answer") {
+			t.Errorf("summarizeCountFailures(unanswered-only) = %q, want the unanswered cause retained", got)
+		}
+	})
+
+	// Both directions are in play and they do not cancel to a knowable net.
+	// Picking either one asserts a fact the tool does not have.
+	t.Run("a mixed failure set asserts no direction", func(t *testing.T) {
+		got := strings.ToLower(summarizeCountFailures([]ado.Failure{unanswered, degraded}))
+
+		if strings.Contains(got, "understated") {
+			t.Errorf("summarizeCountFailures(mixed) = %q, must not assert understated: degraded lookups skew the other way", got)
+		}
+		if strings.Contains(got, "overstated") {
+			t.Errorf("summarizeCountFailures(mixed) = %q, must not assert overstated: unanswered projects skew the other way", got)
+		}
+		if !strings.Contains(got, "did not answer") || !strings.Contains(got, "unfiltered") {
+			t.Errorf("summarizeCountFailures(mixed) = %q, want both causes retained", got)
+		}
+	})
+}
+
 // Regression: a zero count under an incomplete read rendered with exactly the
 // authority of a correct one.
 func TestZeroCountsDistinguishEmptyFromIncomplete(t *testing.T) {
