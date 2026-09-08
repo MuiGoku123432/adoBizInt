@@ -157,3 +157,30 @@ The phase goal â€” a caller can distinguish an empty result from a failed one â€
 ---
 
 _Verified by gsd-verifier. Read-only apart from this file._
+
+---
+
+## Gap Closure
+
+Both blocking gaps closed on 2026-09-07, on `dev`, TDD with atomic commits.
+
+| Gap | Commits | Outcome |
+|-----|---------|---------|
+| Dashboard headline asserted the wrong skew direction (`dashboard.go:166`) | `93acdf2` (RED tests), `6f8a98b` (fix) | Headline now derived from the degraded/unanswered split |
+| REQUIREMENTS.md:222 range row contradicted its checkboxes | `762f03e` | Range split into four per-ID rows, all `Complete` |
+
+**Headline wording now produced by `summarizeCountFailures`:**
+
+| Failure mix | Headline |
+|-------------|----------|
+| Unanswered projects only | `totals understated` |
+| Degraded iteration lookups only | `totals overstated` |
+| Both present | `totals unreliable, direction unknown` |
+
+The existing cause clauses (`did not answer: ...`, `counted unfiltered by iteration: ...`) are unchanged. `TestSummarizeCountFailuresHeadlineMatchesSkewDirection/degraded_iteration_lookups_alone_are_overstated` asserts the string does NOT contain `understated`, pinning the inversion so it cannot be reintroduced silently.
+
+**`m.complete`:** left in place. It is unread by production code, but `dashboard_test.go:137` reads it, so removal ripples outside `dashboard.go`. Deferred rather than widened into this gap-closure scope.
+
+**Suite:** `go build ./...`, `go vet ./...`, `gofmt -l .` (clean), `go test ./... -count=1` all pass. `internal/ado/result.go` untouched.
+
+**Still open:** the human visual check of the six views against an invalid PAT (behavior-unverified item above) remains the subject for `/gsd-verify-work`.
