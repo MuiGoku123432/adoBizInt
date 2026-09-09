@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 02
-current_phase_name: honest-reads
-status: verified
-stopped_at: Phase 03 context gathered
-last_updated: "2026-09-08T20:33:35.850Z"
-last_activity: 2026-09-07
-last_activity_desc: Phase 02 verified PASS-WITH-GAPS; both yellow findings closed
+current_phase: 03
+current_phase_name: read-cli
+status: executing
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-09-09T13:08:04.829Z"
+last_activity: 2026-09-09
+last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 11
-  completed_plans: 6
+  total_plans: 16
+  completed_plans: 7
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -24,16 +24,16 @@ state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 See: .planning/PROJECT.md (updated 2026-09-03)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 02 — honest-reads
+**Current focus:** Phase 03 — read-cli
 
 ## Current Position
 
-Phase: 02 (honest-reads) — VERIFIED (PASS-WITH-GAPS)
-Plan: 5 of 5
-Status: All plans complete, 02-VERIFICATION.md written, gap closure applied — awaiting human verification of rendered TUI output
-Last activity: 2026-09-07 — Phase 02 verified PASS-WITH-GAPS; dashboard headline direction and REQUIREMENTS.md traceability rows fixed
+Phase: 03 (read-cli) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-09-09 — Phase 03 execution started
 
-Progress: [██████████] 100% of planned plans (11/11)
+Progress: [████░░░░░░] 44% of planned plans (11/11)
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [██████████] 100% of planned plans (11/11)
 | Phase 02 P03 | 22 min | 2 tasks | 3 files |
 | Phase 02 P04 | 16 min | 3 tasks | 15 files |
 | Phase 02 P05 | 41 min | 4 tasks | 13 files |
+| Phase 03 P01 | 34 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 02]: [Phase 02]: The embedded WorkItem in WorkItemDetail is left untagged so its fields inline into one flat object rather than nesting
 - [Phase 02]: [Phase 02]: ado.Client is the one exported struct deliberately left untagged — unexported fields and live SDK clients; the exclusion is stated in a comment on the declaration
 - [Phase 02]: [Phase 02]: Assumption A3 confirmed — a zero time.Time value field marshals to 0001-01-01T00:00:00Z and is not omitted
+- [Phase 03]: The dispatch table is keyed on the two-token noun verb string, storing one closure per command over an unexported readClient interface in package main — Consumer-side interface is Go convention and *ado.Client satisfies it structurally; the Phase 1 fake seam uses unexported fields and cannot be built from cmd/
+- [Phase 03]: The exit mapper scans for FailureAuth before consulting the completeness flag — A caller that retries a 1 eventually succeeds; a caller that retries a 2 loops forever against a rejected credential, so a co-occurring timeout must never mask auth (D-07)
+- [Phase 03]: Startup failures return 3 rather than 1 — A config, validation or client-construction failure means the read never ran, which is a different fact from an incomplete read (D-08)
+- [Phase 03]: newResult pre-allocates Items and Failures — failures was nil on every successful read, so failures:null was the happy-path output and an agent evaluating .failures | length errored on ordinary success
 
 ### Pending Todos
 
@@ -154,6 +159,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-08T20:33:35.837Z
-Stopped at: Phase 03 context gathered
-Resume file: .planning/phases/03-read-cli/03-CONTEXT.md
+Last session: 2026-09-09T13:07:55.731Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None

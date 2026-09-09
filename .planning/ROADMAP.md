@@ -104,13 +104,13 @@ Plans:
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 03-01-PLAN.md — Tracer: `run() int`, dispatch seam, `prs list --json` end to end, exit-code contract
+- [x] 03-01-PLAN.md — Tracer: `run() int`, dispatch seam, `prs list --json` end to end, exit-code contract
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
