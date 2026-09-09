@@ -411,3 +411,42 @@ func bytesContain(haystack []byte, needle string) bool {
 	}
 	return false
 }
+
+// TestNewResultEmitsEmptyArraysNotNull pins the wire shape of an empty read.
+//
+// Regression: newResult passed the caller's possibly-nil slices straight
+// through, so "failures":null was the normal successful-read output and an
+// agent evaluating `.failures | length` errored on the happy path. Both keys
+// must now be [] regardless of what the caller passed.
+func TestNewResultEmitsEmptyArraysNotNull(t *testing.T) {
+	result := newResult[PullRequest](nil, nil)
+
+	if result.Items == nil {
+		t.Errorf("newResult(nil, nil).Items is nil, want an empty slice")
+	}
+	if result.Failures == nil {
+		t.Errorf("newResult(nil, nil).Failures is nil, want an empty slice")
+	}
+	if !result.Complete {
+		t.Errorf("newResult(nil, nil).Complete = false, want true")
+	}
+
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal Result[PullRequest]: %v", err)
+	}
+
+	var envelope struct {
+		Items    json.RawMessage `json:"items"`
+		Failures json.RawMessage `json:"failures"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	if string(envelope.Items) != "[]" {
+		t.Errorf("items = %s, want [] (raw: %s)", envelope.Items, raw)
+	}
+	if string(envelope.Failures) != "[]" {
+		t.Errorf("failures = %s, want [] (raw: %s)", envelope.Failures, raw)
+	}
+}
