@@ -33,14 +33,6 @@ const (
 	columnKeyActions  = "actions"
 )
 
-// States considered "done" or "resolved" for filtering
-var doneStates = map[string]bool{
-	"Done":     true,
-	"Closed":   true,
-	"Resolved": true,
-	"Removed":  true,
-}
-
 // WorkItemsMsg is sent when work items are fetched. Result carries the items
 // plus whatever failed and whether the read is the whole picture; Err is
 // reserved for a transport failure that produced no envelope at all.
@@ -439,7 +431,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.statusMsg = fmt.Sprintf("Updated #%d to %s", msg.ItemID, msg.NewState)
 			m.statusErr = false
 			// Auto-remove from priorities if transitioning to a "done" state
-			if doneStates[msg.NewState] && m.priorities != nil {
+			if ado.IsDoneState(msg.NewState) && m.priorities != nil {
 				m.priorities.Remove(msg.ItemID)
 				m.priorities.Save()
 			}
@@ -616,16 +608,18 @@ func (m Model) buildRows() []table.Row {
 	// First, filter items
 	var filteredItems []ado.WorkItem
 	for _, item := range m.items {
-		// Apply "Assigned to Me" filter (compare emails, case-insensitive)
-		if m.assignedToMeFilter && m.currentUserEmail != "" && !strings.EqualFold(item.AssignedToEmail, m.currentUserEmail) {
+		// Apply "Assigned to Me" filter. ado.MatchesIdentity carries the
+		// empty-identity no-op that used to live in the m.currentUserEmail != ""
+		// guard here (CLI-06).
+		if m.assignedToMeFilter && !ado.MatchesIdentity(item.AssignedToEmail, m.currentUserEmail) {
 			continue
 		}
 		// Apply "Hide Done/Resolved" filter
-		if m.hideDoneFilter && doneStates[item.State] {
+		if m.hideDoneFilter && ado.IsDoneState(item.State) {
 			continue
 		}
 		// Apply "Hide Tasks" filter
-		if m.hideTasksFilter && item.Type == "Task" {
+		if m.hideTasksFilter && ado.IsTaskType(item.Type) {
 			continue
 		}
 		// Apply search filter (ID or Title)

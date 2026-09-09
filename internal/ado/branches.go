@@ -57,11 +57,6 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 		targetProjects = c.projects
 	}
 
-	validRepos := make(map[string]bool, len(repositories))
-	for _, r := range repositories {
-		validRepos[strings.ToLower(r)] = true
-	}
-
 	var allBranches []Branch
 	var failures []Failure
 
@@ -89,7 +84,7 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 			if repo.Name == nil || repo.Id == nil {
 				continue
 			}
-			if len(validRepos) > 0 && !validRepos[strings.ToLower(*repo.Name)] {
+			if !MatchesRepository(*repo.Name, repositories) {
 				continue
 			}
 

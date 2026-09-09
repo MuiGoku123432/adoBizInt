@@ -498,26 +498,15 @@ func (m Model) buildRows() []table.Row {
 	var rows []table.Row
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
-	// Create a set of valid projects for quick lookup
-	validProjects := make(map[string]bool)
-	for _, p := range m.projects {
-		validProjects[strings.ToLower(p)] = true
-	}
-
-	// Create a set of valid repositories for quick lookup
-	validRepos := make(map[string]bool)
-	for _, r := range m.repositories {
-		validRepos[strings.ToLower(r)] = true
-	}
-
 	for _, item := range m.items {
-		// Filter by configured projects
-		if len(validProjects) > 0 && !validProjects[strings.ToLower(item.Project)] {
+		// Filter by configured projects. An empty configured slice disables the
+		// filter; that rule now lives in ado.MatchesProject (CLI-06, D-18).
+		if !ado.MatchesProject(item.Project, m.projects) {
 			continue
 		}
 
 		// Filter by configured repositories (if any are defined)
-		if len(validRepos) > 0 && !validRepos[strings.ToLower(item.RepositoryName)] {
+		if !ado.MatchesRepository(item.RepositoryName, m.repositories) {
 			continue
 		}
 
