@@ -28,12 +28,12 @@ Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 
 ### CLI Surface
 
-- [ ] **CLI-01**: `adoBizInt` with no subcommand launches the existing TUI with no behavior change
+- [x] **CLI-01**: `adoBizInt` with no subcommand launches the existing TUI with no behavior change
 - [x] **CLI-02**: Read subcommands exist for work items, PRs, pipelines, releases, branches and dashboard
 - [ ] **CLI-03**: Write subcommands exist for the seven existing mutations
 - [ ] **CLI-04**: `--timeout` sets a per-invocation deadline; the process handles interrupt signals
 - [x] **CLI-05**: Every command responds to `--help` with its flags and arguments
-- [ ] **CLI-06**: Filtering an agent would want (assigned-to-me, hide-done, by project, by repo) is available as flags, promoted out of the view packages where it currently lives
+- [x] **CLI-06**: Filtering an agent would want (assigned-to-me, hide-done, by project, by repo) is available as flags, promoted out of the view packages where it currently lives
 
 ### Structured Output
 

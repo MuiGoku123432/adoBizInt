@@ -104,7 +104,7 @@ Plans:
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
 
-**Plans**: 2/5 plans executed
+**Plans**: 3/5 plans executed
 
 Plans:
 
@@ -115,7 +115,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 03-02-PLAN.md — Remaining seven read verbs, shared global flags, three-level help, plain-text renderer
-- [ ] 03-03-PLAN.md — Promote hide-done, hide-tasks, assigned-to-me, by-project and by-repo into `internal/ado`; rewire workitems and prs
+- [x] 03-03-PLAN.md — Promote hide-done, hide-tasks, assigned-to-me, by-project and by-repo into `internal/ado`; rewire workitems and prs
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

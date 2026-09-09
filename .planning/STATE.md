@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: read-cli
 status: executing
-stopped_at: Completed 03-02-PLAN.md
-last_updated: "2026-09-09T13:18:01.633Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-09-09T13:24:38.359Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 16
-  completed_plans: 8
+  completed_plans: 9
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 03 (read-cli) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-09-09 — Phase 03 execution started
 
-Progress: [█████░░░░░] 50% of planned plans (11/11)
+Progress: [██████░░░░] 56% of planned plans (11/11)
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [█████░░░░░] 50% of planned plans (11/11)
 | Phase 02 P05 | 41 min | 4 tasks | 13 files |
 | Phase 03 P01 | 34 min | 3 tasks | 7 files |
 | Phase 03 P02 | 41 min | 3 tasks | 8 files |
+| Phase 03 P03 | 26 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 03]: runRead is generic over the payload type so the eight read verbs differ only in fetch func and renderer
 - [Phase 03]: newFlagSet is the only flag.NewFlagSet site, making D-20 mechanically checkable
 - [Phase 03]: handleUsage runs before config.Load so --help never requires a PAT
+- [Phase 03]: Promoted five filter predicates into internal/ado; doneStates has exactly one definition repo-wide
+- [Phase 03]: MatchesRepository also replaced the inline GetBranches filter, making the promotion a three-way deduplication
+- [Phase 03]: Row-equivalence tests compare ordered table.RowData, not table.Row, because NewRow stamps a global incrementing id
 
 ### Pending Todos
 
@@ -163,6 +167,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-09T13:17:54.822Z
-Stopped at: Completed 03-02-PLAN.md
+Last session: 2026-09-09T13:24:38.353Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
