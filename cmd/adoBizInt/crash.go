@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"runtime/debug"
 
 	"sentinovo.ai/bizInt/internal/logging"
 )
@@ -63,4 +65,35 @@ func writeCrashRecord(kind, message string) {
 	}
 	payload = append(payload, '\n')
 	_, _ = stdoutWriter.Write(payload)
+}
+
+// loggingReady records whether logging initialisation succeeded. It gates the
+// stack write, and its zero value is the safe one: a panic before initialisation
+// ran writes no stack anywhere.
+var loggingReady bool
+
+// handlePanic turns a recovered value into the published crash record and the
+// outcome-unknown exit code.
+//
+// The full stack goes to the log file and nowhere else, and only when logging
+// initialisation succeeded. The fallback logger writes to stderr, so an
+// unconditional write would put the credential-bearing frames on the terminal --
+// the same disclosure the record itself is shaped to avoid. When init failed the
+// stack is omitted entirely and nothing extra is written to stderr; the
+// structured document on stdout is byte-identical on both branches.
+//
+// Do not make the stack write unconditional for debuggability. The log path is
+// already in the record, which is where a caller is meant to look.
+func handlePanic(r any) int {
+	message := fmt.Sprint(r)
+
+	if loggingReady {
+		logging.Logger().Error("panic recovered",
+			"message", message,
+			"stack", string(debug.Stack()),
+		)
+	}
+
+	writeCrashRecord(crashKindPanic, message)
+	return exitUnknown
 }

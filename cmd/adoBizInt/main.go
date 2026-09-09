@@ -20,16 +20,43 @@ import (
 // deferred functions and the panic handler this entry point will carry is a
 // defer inside run().
 func main() {
-	os.Exit(run())
+	os.Exit(guard(run))
+}
+
+// guard runs the whole program with a deferred recover, so a panic anywhere
+// inside it becomes a structured crash record and the outcome-unknown exit code
+// rather than the runtime's own dump and status (D-23, OUT-05).
+//
+// It wraps run rather than living inside it so a test can drive a real panic
+// through the real handler; run itself loads configuration and constructs a
+// live client, which no test can reach. The coverage is identical either way:
+// every path in run is inside this call. It works at all only because 03-01
+// moved every exit path to a return -- a surviving process exit inside run
+// would skip this deferred function for that path.
+func guard(body func() int) (code int) {
+	defer func() {
+		if r := recover(); r != nil {
+			code = handlePanic(r)
+		}
+	}()
+	return body()
 }
 
 // initLogging brings up file logging. A failure is deliberately non-fatal and
-// deliberately not skipped: the crash record references logging.LogPath(), so a
+// deliberately not skipped: the crash record references the log path, so a
 // skipped init would leave that path dangling (D-24).
+//
+// The outcome is recorded because the panic handler needs it. When init failed,
+// the package logger falls back to the default one, which writes to stderr --
+// so writing a stack unconditionally would print credential-bearing frames to
+// the terminal.
 func initLogging() {
 	if err := logging.Init(); err != nil {
+		loggingReady = false
 		fmt.Fprintf(stderrWriter, "Warning: Could not initialize logging: %v\n", err)
+		return
 	}
+	loggingReady = true
 }
 
 // run performs the whole program and returns the process exit code. Startup
