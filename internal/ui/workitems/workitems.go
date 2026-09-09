@@ -622,13 +622,11 @@ func (m Model) buildRows() []table.Row {
 		if m.hideTasksFilter && ado.IsTaskType(item.Type) {
 			continue
 		}
-		// Apply search filter (ID or Title)
-		if searchQuery != "" {
-			idStr := fmt.Sprintf("%d", item.ID)
-			titleLower := strings.ToLower(item.Title)
-			if !strings.Contains(idStr, searchQuery) && !strings.Contains(titleLower, searchQuery) {
-				continue
-			}
+		// Apply search filter (ID or Title). The comparison lives in
+		// ado.MatchesSearch (CLI-06); the ID is formatted here because the
+		// matcher takes strings only.
+		if !ado.MatchesSearch(searchQuery, fmt.Sprintf("%d", item.ID), item.Title) {
+			continue
 		}
 		filteredItems = append(filteredItems, item)
 	}

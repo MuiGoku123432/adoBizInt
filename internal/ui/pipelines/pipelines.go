@@ -507,18 +507,16 @@ func (m Model) buildRows() []table.Row {
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
 	for _, run := range m.runs {
-		// Apply search filter
-		if searchQuery != "" {
-			pipelineLower := strings.ToLower(run.PipelineName)
-			branchLower := strings.ToLower(run.SourceBranch)
-			requestedByLower := strings.ToLower(run.RequestedBy)
-			buildNumLower := strings.ToLower(run.BuildNumber)
-			if !strings.Contains(pipelineLower, searchQuery) &&
-				!strings.Contains(branchLower, searchQuery) &&
-				!strings.Contains(requestedByLower, searchQuery) &&
-				!strings.Contains(buildNumLower, searchQuery) {
-				continue
-			}
+		// Apply search filter. The comparison lives in ado.MatchesSearch
+		// (CLI-06). The field set is unchanged: pipeline, branch, requester,
+		// build number.
+		if !ado.MatchesSearch(searchQuery,
+			run.PipelineName,
+			run.SourceBranch,
+			run.RequestedBy,
+			run.BuildNumber,
+		) {
+			continue
 		}
 
 		// Format status with color

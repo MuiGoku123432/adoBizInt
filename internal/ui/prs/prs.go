@@ -510,18 +510,16 @@ func (m Model) buildRows() []table.Row {
 			continue
 		}
 
-		// Apply search filter
-		if searchQuery != "" {
-			idStr := fmt.Sprintf("%d", item.ID)
-			titleLower := strings.ToLower(item.Title)
-			repoLower := strings.ToLower(item.RepositoryName)
-			authorLower := strings.ToLower(item.CreatedBy)
-			if !strings.Contains(idStr, searchQuery) &&
-				!strings.Contains(titleLower, searchQuery) &&
-				!strings.Contains(repoLower, searchQuery) &&
-				!strings.Contains(authorLower, searchQuery) {
-				continue
-			}
+		// Apply search filter. The comparison lives in ado.MatchesSearch
+		// (CLI-06); the ID is formatted here because the matcher takes strings
+		// only. The field set is unchanged: ID, title, repository, author.
+		if !ado.MatchesSearch(searchQuery,
+			fmt.Sprintf("%d", item.ID),
+			item.Title,
+			item.RepositoryName,
+			item.CreatedBy,
+		) {
+			continue
 		}
 
 		// Style draft PRs differently. The "[Draft] " prefix is 8 chars, so the

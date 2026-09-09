@@ -328,14 +328,13 @@ func (m Model) buildRows() []table.Row {
 	var rows []table.Row
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
+	// The loop index is consumed downstream by the row-selection bookkeeping, so
+	// this stays `for i, item :=` where the other four views use `for _, x :=`.
 	for i, item := range m.items {
-		// Apply search filter
-		if searchQuery != "" {
-			if !strings.Contains(strings.ToLower(item.Name), searchQuery) &&
-				!strings.Contains(strings.ToLower(item.RepositoryName), searchQuery) &&
-				!strings.Contains(strings.ToLower(item.LastCommitBy), searchQuery) {
-				continue
-			}
+		// Apply search filter. The comparison lives in ado.MatchesSearch
+		// (CLI-06). The field set is unchanged: name, repository, last committer.
+		if !ado.MatchesSearch(searchQuery, item.Name, item.RepositoryName, item.LastCommitBy) {
+			continue
 		}
 
 		lastCommit := "-"

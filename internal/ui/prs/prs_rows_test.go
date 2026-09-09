@@ -123,3 +123,74 @@ func TestBuildRowsFilterEquivalence(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildRowsSearchEquivalence pins the ordered row output of buildRows()
+// across the promotion of the free-text search comparison into
+// ado.MatchesSearch. The field set is unchanged: the formatted ID, the title,
+// the repository and the author — four fields, more than any other view.
+func TestBuildRowsSearchEquivalence(t *testing.T) {
+	items := prsFixture()
+
+	tests := []struct {
+		name   string
+		search string
+		want   []table.RowData
+	}{
+		{
+			name: "no search keeps everything in order",
+			want: []table.RowData{wantRow(items[0]), wantRow(items[1]), wantRow(items[2])},
+		},
+		{
+			name:   "a whitespace-only search keeps everything",
+			search: "  \t",
+			want:   []table.RowData{wantRow(items[0]), wantRow(items[1]), wantRow(items[2])},
+		},
+		{
+			name:   "search matches the title",
+			search: "gamma",
+			want:   []table.RowData{wantRow(items[2])},
+		},
+		{
+			name:   "search matches the repository name case-insensitively",
+			search: "web",
+			want:   []table.RowData{wantRow(items[1])},
+		},
+		{
+			name:   "search matches the author",
+			search: "ann",
+			want:   []table.RowData{wantRow(items[0])},
+		},
+		{
+			name:   "search matches the formatted numeric ID",
+			search: "3",
+			want:   []table.RowData{wantRow(items[2])},
+		},
+		{
+			name:   "an upper-case query matches a lower-case field",
+			search: "DOCS",
+			want:   []table.RowData{wantRow(items[2])},
+		},
+		{
+			name:   "the source branch is not a searchable field",
+			search: "f/a",
+			want:   []table.RowData{},
+		},
+		{
+			name:   "a non-matching search keeps nothing",
+			search: "zzz",
+			want:   []table.RowData{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ti := textinput.New()
+			ti.SetValue(tt.search)
+			m := Model{items: prsFixture(), searchInput: ti}
+			got := rowData(m.buildRows())
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("buildRows() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

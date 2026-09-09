@@ -198,3 +198,77 @@ func TestBuildRowsPriorityColumnGate(t *testing.T) {
 		t.Errorf("priority column with assignedToMeFilter off = %q, want empty", got)
 	}
 }
+
+// searchModel is rowsModel with the search box populated. It sets searchInput
+// after rowsModel because rowsModel installs a fresh, empty textinput.
+func searchModel(m Model, query string) Model {
+	m = rowsModel(m)
+	ti := textinput.New()
+	ti.SetValue(query)
+	m.searchInput = ti
+	return m
+}
+
+// TestBuildRowsSearchEquivalence pins the ordered row output of buildRows()
+// across the promotion of the free-text search comparison into
+// ado.MatchesSearch. The field set is unchanged: the formatted ID and the
+// title, and nothing else.
+func TestBuildRowsSearchEquivalence(t *testing.T) {
+	items := rowsFixture()
+
+	tests := []struct {
+		name   string
+		search string
+		want   []table.RowData
+	}{
+		{
+			name: "no search keeps every item in fixture order",
+			want: []table.RowData{
+				wantRow(items[0], ""), wantRow(items[1], ""),
+				wantRow(items[2], ""), wantRow(items[3], ""),
+			},
+		},
+		{
+			name:   "a whitespace-only search keeps everything",
+			search: "   ",
+			want: []table.RowData{
+				wantRow(items[0], ""), wantRow(items[1], ""),
+				wantRow(items[2], ""), wantRow(items[3], ""),
+			},
+		},
+		{
+			name:   "search matches the title case-insensitively",
+			search: "gamma",
+			want:   []table.RowData{wantRow(items[2], "")},
+		},
+		{
+			name:   "an upper-case query matches a lower-case title",
+			search: "DELT",
+			want:   []table.RowData{wantRow(items[3], "")},
+		},
+		{
+			name:   "search matches the formatted numeric ID",
+			search: "2",
+			want:   []table.RowData{wantRow(items[1], "")},
+		},
+		{
+			name:   "the assignee is not a searchable field",
+			search: "other",
+			want:   []table.RowData{},
+		},
+		{
+			name:   "a non-matching search keeps nothing",
+			search: "zzz",
+			want:   []table.RowData{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rowData(searchModel(Model{}, tt.search).buildRows())
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("buildRows() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

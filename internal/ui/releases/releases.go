@@ -534,14 +534,10 @@ func (m Model) buildRows() []table.Row {
 	searchQuery := strings.ToLower(strings.TrimSpace(m.searchInput.Value()))
 
 	for _, rel := range m.releases {
-		// Apply search filter
-		if searchQuery != "" {
-			releaseLower := strings.ToLower(rel.Name)
-			defLower := strings.ToLower(rel.DefinitionName)
-			if !strings.Contains(releaseLower, searchQuery) &&
-				!strings.Contains(defLower, searchQuery) {
-				continue
-			}
+		// Apply search filter. The comparison lives in ado.MatchesSearch
+		// (CLI-06). The field set is unchanged: release name, definition name.
+		if !ado.MatchesSearch(searchQuery, rel.Name, rel.DefinitionName) {
+			continue
 		}
 
 		// Format status with color
