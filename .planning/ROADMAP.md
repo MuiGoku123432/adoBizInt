@@ -104,7 +104,7 @@ Plans:
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
 
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 
 Plans:
 
@@ -119,7 +119,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 03-04-PLAN.md — Promote free-text search across all five filtering views; expose filter flags defaulting to off
+- [x] 03-04-PLAN.md — Promote free-text search across all five filtering views; expose filter flags defaulting to off
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
