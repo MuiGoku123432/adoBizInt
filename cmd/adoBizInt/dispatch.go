@@ -148,12 +148,3 @@ func emitPlain(result ado.Result[ado.PullRequest]) {
 		_, _ = io.WriteString(stdoutWriter, b.String())
 	}
 }
-
-// exitCodeFor maps a read outcome to a process code. Provisional body: the
-// auth-precedence rule and its tests land in exit.go in the next task.
-func exitCodeFor(_ []ado.Failure, complete bool) int {
-	if !complete {
-		return exitPartial
-	}
-	return exitOK
-}
