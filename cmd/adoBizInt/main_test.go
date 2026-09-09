@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"sentinovo.ai/bizInt/internal/ado"
@@ -238,5 +239,140 @@ func TestLoggingInitFailureKeepsStdoutClean(t *testing.T) {
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(captured, &envelope); err != nil {
 		t.Errorf("stdout %q is not a single JSON document: %v", captured, err)
+	}
+}
+
+// wantCommands is the D-02 command list written out longhand rather than
+// derived from the table under test. Deriving it would make the assertion
+// tautological: the point is that the registered keys match the published
+// surface, which is a one-way door once agents invoke these paths.
+var wantCommands = []string{
+	"branches list",
+	"dashboard counts",
+	"pipelines definitions",
+	"pipelines runs",
+	"prs list",
+	"releases approvals",
+	"releases list",
+	"workitems list",
+}
+
+// TestDispatchTableMatchesD02 pins the eight registered `noun verb` keys.
+func TestDispatchTableMatchesD02(t *testing.T) {
+	got := commandKeys()
+	if len(got) != len(wantCommands) {
+		t.Fatalf("commands has %d entries (%v), want %d", len(got), got, len(wantCommands))
+	}
+	for i, want := range wantCommands {
+		if got[i] != want {
+			t.Errorf("commandKeys()[%d] = %q, want %q", i, got[i], want)
+		}
+	}
+}
+
+// TestDispatchResolvesEveryVerb runs each registered command against a fake
+// whose every read succeeds, proving each key resolves to a distinct method
+// that is actually reached. An unknown key must not reach any read at all.
+func TestDispatchResolvesEveryVerb(t *testing.T) {
+	for _, key := range wantCommands {
+		t.Run(key, func(t *testing.T) {
+			_, stderr := captureOutput(t)
+
+			args := append(strings.Split(key, " "), "--json")
+			if code := dispatch(context.Background(), allReadsFake(t), args); code != exitOK {
+				t.Fatalf("dispatch(%q) = %d, want %d (stderr: %q)", args, code, exitOK, stderr.String())
+			}
+		})
+	}
+
+	t.Run("unknown key reaches no read", func(t *testing.T) {
+		stdout, _ := captureOutput(t)
+		// The fake has no closures set: any read call fails the subtest.
+		if code := dispatch(context.Background(), &fakeReadClient{t: t}, []string{"widgets", "list"}); code != exitUnknown {
+			t.Errorf("dispatch(widgets list) = %d, want %d", code, exitUnknown)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout = %q, want nothing", stdout.String())
+		}
+	})
+}
+
+// TestDispatchEachVerbCallsItsOwnMethod proves the 1:1 mapping of D-02: a fake
+// with exactly one closure set must succeed for its own verb, and the seven
+// other verbs must not reach it.
+func TestDispatchEachVerbCallsItsOwnMethod(t *testing.T) {
+	for _, key := range wantCommands {
+		t.Run(key, func(t *testing.T) {
+			called := 0
+			client := allReadsFake(t)
+			wrapOne(t, client, key, &called)
+
+			_, stderr := captureOutput(t)
+			args := append(strings.Split(key, " "), "--json")
+			if code := dispatch(context.Background(), client, args); code != exitOK {
+				t.Fatalf("dispatch(%q) = %d, want %d (stderr: %q)", args, code, exitOK, stderr.String())
+			}
+			if called != 1 {
+				t.Errorf("dispatch(%q) called its mapped method %d times, want exactly 1", key, called)
+			}
+		})
+	}
+}
+
+// wrapOne increments counter each time the method mapped to key is called,
+// leaving the other seven closures untouched.
+func wrapOne(t *testing.T, f *fakeReadClient, key string, counter *int) {
+	t.Helper()
+	switch key {
+	case "workitems list":
+		inner := f.GetWorkItemsFunc
+		f.GetWorkItemsFunc = func(ctx context.Context, p []string) (ado.Result[ado.WorkItem], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "prs list":
+		inner := f.GetPullRequestsFunc
+		f.GetPullRequestsFunc = func(ctx context.Context, p []string) (ado.Result[ado.PullRequest], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "pipelines runs":
+		inner := f.GetPipelineRunsFunc
+		f.GetPipelineRunsFunc = func(ctx context.Context, p []string) (ado.Result[ado.PipelineRun], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "pipelines definitions":
+		inner := f.GetPipelineDefinitionsFunc
+		f.GetPipelineDefinitionsFunc = func(ctx context.Context, p []string) (ado.Result[ado.PipelineDefinition], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "releases list":
+		inner := f.GetReleasesFunc
+		f.GetReleasesFunc = func(ctx context.Context, p []string) (ado.Result[ado.Release], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "releases approvals":
+		inner := f.GetPendingApprovalsFunc
+		f.GetPendingApprovalsFunc = func(ctx context.Context, p []string) (ado.Result[ado.ReleaseApproval], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "branches list":
+		inner := f.GetBranchesFunc
+		f.GetBranchesFunc = func(ctx context.Context, p, r []string) (ado.Result[ado.Branch], error) {
+			*counter++
+			return inner(ctx, p, r)
+		}
+	case "dashboard counts":
+		inner := f.GetDashboardCountsFunc
+		f.GetDashboardCountsFunc = func(ctx context.Context, p []string) (ado.Result[ado.DashboardCounts], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	default:
+		t.Fatalf("wrapOne has no case for %q", key)
 	}
 }
