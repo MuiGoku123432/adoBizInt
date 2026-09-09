@@ -59,6 +59,7 @@ Source: CONCERNS.md C2.
 - [ ] **HARD-03**: Nil-dereference guards on the ADO SDK pointer fields identified in CONCERNS.md MED4
 - [ ] **HARD-04**: WIQL project interpolation is escaped and validated against the configured project list
 - [ ] **HARD-05**: CI runs build, vet, test with race detection, and gofmt on every push
+- [ ] **HARD-06**: The log file is opened `0600` and its directory `0700`, and a regression test asserts the PAT string never appears in captured log output (CONCERNS.md MED2; raised by Phase 3 threat T-03-15, which writes a panic stack that may render the PAT into a world-readable file)
 
 ## v2 Requirements
 
@@ -218,20 +219,38 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEAM-01 .. SEAM-04 | Phase 1 | Pending |
+| SEAM-01 | Phase 1 | Pending |
+| SEAM-02 | Phase 1 | Pending |
+| SEAM-03 | Phase 1 | Pending |
+| SEAM-04 | Phase 1 | Pending |
 | TRUST-01 | Phase 2 | Complete |
 | TRUST-02 | Phase 2 | Complete |
 | TRUST-03 | Phase 2 | Complete |
 | TRUST-04 | Phase 2 | Complete |
 | OUT-02 | Phase 2 | Complete |
-| CLI-01, CLI-02, CLI-04, CLI-05, CLI-06 | Phase 3 | Pending |
-| OUT-01, OUT-03, OUT-04, OUT-05 | Phase 3 | Pending |
+| CLI-01 | Phase 3 | Complete |
+| CLI-02 | Phase 3 | Complete |
+| CLI-04 | Phase 3 | Complete |
+| CLI-05 | Phase 3 | Complete |
+| CLI-06 | Phase 3 | Complete |
+| OUT-01 | Phase 3 | Complete |
+| OUT-03 | Phase 3 | Complete |
+| OUT-04 | Phase 3 | Complete |
+| OUT-05 | Phase 3 | Complete |
 | CLI-03 | Phase 4 | Pending |
-| SAFE-01 .. SAFE-04 | Phase 4 | Pending |
-| HARD-01 .. HARD-05 | Phase 5 | Pending |
+| SAFE-01 | Phase 4 | Pending |
+| SAFE-02 | Phase 4 | Pending |
+| SAFE-03 | Phase 4 | Pending |
+| SAFE-04 | Phase 4 | Pending |
+| HARD-01 | Phase 5 | Pending |
+| HARD-02 | Phase 5 | Pending |
+| HARD-03 | Phase 5 | Pending |
+| HARD-04 | Phase 5 | Pending |
+| HARD-05 | Phase 5 | Pending |
+| HARD-06 | Phase 5 | Pending |
 
 **Coverage:**
 
-- v1 requirements: 27 total
-- Covered by phases: 27
+- v1 requirements: 28 total
+- Covered by phases: 28
 - Uncovered: 0

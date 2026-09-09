@@ -20,7 +20,7 @@ shipping no flag at all, which is why the test seam comes first.
 
 - [ ] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable (awaiting human verification)
 - [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline (awaiting human verification)
-- [ ] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters
+- [x] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters (verified 2026-09-09)
 - [ ] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record
 - [ ] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL escaping, CI
 
@@ -93,7 +93,7 @@ Plans:
 
 **Goal**: An AI agent can query every existing read operation and parse the result
 **Depends on**: Phase 2
-**Requirements**: CLI-01, CLI-02, CLI-04, CLI-05, CLI-06, OUT-01, OUT-03, OUT-04, OUT-05
+**Requirements**: CLI-01, CLI-02, CLI-04, CLI-05, CLI-06, OUT-01, OUT-03, OUT-04, OUT-05 (all complete)
 **Success Criteria** (what must be TRUE):
 
   1. `adoBizInt` with no arguments launches the TUI exactly as before
@@ -104,7 +104,7 @@ Plans:
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
 
-**Plans**: 5/5 plans executed
+**Plans**: 5/5 plans executed — VERIFIED 2026-09-09, 9/9 requirements, human UAT closed
 
 Plans:
 
@@ -152,7 +152,7 @@ Plans:
 
 **Goal**: The security findings that a CLI makes reachable are closed
 **Depends on**: Phase 4
-**Requirements**: HARD-01, HARD-02, HARD-03, HARD-04, HARD-05
+**Requirements**: HARD-01, HARD-02, HARD-03, HARD-04, HARD-05, HARD-06
 **Success Criteria** (what must be TRUE):
 
   1. Attachment download takes an identifier, not a URL, and the PAT cannot reach an arbitrary host
@@ -160,6 +160,7 @@ Plans:
   3. The nil-dereference sites in CONCERNS.md MED4 are guarded
   4. WIQL project interpolation is escaped and validated against configured projects
   5. CI runs build, vet, race tests and gofmt on every push and fails on regression
+  6. The log file is opened 0600 with a 0700 directory, and a test asserts the PAT never appears in log output (HARD-06, raised by Phase 3 T-03-15)
 
 **Plans**: TBD
 
@@ -169,6 +170,7 @@ Plans:
 - [ ] 05-02: Path containment and nil guards
 - [ ] 05-03: WIQL escaping and project validation
 - [ ] 05-04: CI workflow and linter config
+- [ ] 05-05: Log file permissions and PAT-redaction regression test (HARD-06)
 
 ## Deferred
 

@@ -1,5 +1,28 @@
 {
   "workflow": {
     "_auto_chain_active": false
+  },
+  "runtime": "opencode",
+  "model_profile": "balanced",
+  "model_profile_overrides": {
+    "opencode": {
+      "opus": {
+        "model": "github-copilot/claude-opus-5"
+      },
+      "sonnet": {
+        "model": "github-copilot/gpt-5.6-sol"
+      },
+      "haiku": {
+        "model": "github-copilot/gpt-5.6-luna"
+      }
+    }
+  },
+  "models": {
+    "planning": "opus",
+    "discuss": "opus",
+    "research": "sonnet",
+    "execution": "sonnet",
+    "verification": "sonnet",
+    "completion": "sonnet"
   }
 }

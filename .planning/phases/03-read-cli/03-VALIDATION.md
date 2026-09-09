@@ -3,7 +3,7 @@ phase: 03
 slug: read-cli
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
+status: validated
 nyquist_compliant: false
 wave_0_complete: false
 created: 2026-09-08
@@ -59,7 +59,7 @@ No testify, no mock generator, no gomock in `go.mod`. [VERIFIED: go.mod:5-41]
 | 03-03-T2 | 03-03 | 2 | CLI-01 | T-03-08 | `buildRows()` ordered-row equivalence; both priority gates survive | unit | `go test ./internal/ui/... ./internal/ado/...` | ❌ W0 | ⬜ pending |
 | 03-04-T1 | 03-04 | 3 | CLI-06 | T-03-13 | one search matcher, five views, original field sets | unit | `go test ./internal/ui/... ./internal/ado/...` | ❌ W0 | ⬜ pending |
 | 03-04-T2 | 03-04 | 3 | CLI-06 | T-03-11, T-03-12 | filter flags default off; `--project`/`--repo` narrow the read | unit | `go test ./cmd/... -run 'TestFilterFlags\|TestDefaults'` | ❌ W0 | ⬜ pending |
-| 03-04-T3 | 03-04 | 3 | CLI-01 | — | TUI renders and filters identically post-refactor | manual | checkpoint:human-verify | n/a | ⬜ pending |
+| 03-04-T3 | 03-04 | 3 | CLI-01 | — | TUI renders and filters identically post-refactor | manual | checkpoint:human-verify | n/a | ✅ passed (human, 2026-09-09) |
 | 03-05-T1 | 03-05 | 4 | CLI-04 | T-03-17 | `--timeout` bounds the read, survives a sub-`poll_interval` value | unit | `go test ./internal/ui/fetchctx/... ./cmd/...` | ❌ W0 | ⬜ pending |
 | 03-05-T2 | 03-05 | 4 | CLI-04 | T-03-16 | SIGINT cancels; interrupt record, exit 3 | unit | `go test ./cmd/... -run TestInterrupt` | ❌ W0 | ⬜ pending |
 | 03-05-T3 | 03-05 | 4 | OUT-05 | T-03-14, T-03-18 | panic → `{"error":{...}}` + exit 3, no stack, no PAT | unit | `go test ./cmd/... -run TestPanic` | ❌ W0 | ⬜ pending |
@@ -83,10 +83,11 @@ No testify, no mock generator, no gomock in `go.mod`. [VERIFIED: go.mod:5-41]
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| TUI renders identically to pre-phase | CLI-01 | Terminal rendering has no assertion harness in this repo | Run `adoBizInt` with no args, confirm dashboard, tab navigation, and each view render unchanged |
-| SIGINT during a live network fetch | CLI-04 | Requires a real in-flight ADO request to interrupt | Run a read subcommand against a slow query, press Ctrl-C, confirm exit code and no partial JSON on stdout |
+| Behavior | Requirement | Why Manual | Test Instructions | Status |
+|----------|-------------|------------|-------------------|--------|
+| Zero-argument TUI launch (coverage entry D7) | CLI-01 | The TUI path needs a live PAT, a real ADO organisation and an interactive terminal; no test constructs a bubbletea program against a real client | Run `adoBizInt` with no args, confirm the TUI opens | ✅ passed (human, 2026-09-09) |
+| TUI renders identically to pre-phase | CLI-01 | Terminal rendering has no assertion harness in this repo | Run `adoBizInt` with no args, confirm dashboard, tab navigation, and each view render unchanged | ✅ passed (human, 2026-09-09) |
+| SIGINT during a live network fetch | CLI-04 | Requires a real in-flight ADO request to interrupt | Run a read subcommand against a slow query, press Ctrl-C, confirm exit code and no partial JSON on stdout | ⬜ not required — closed by `TestInterrupt*` against the real signal-cancelled parent context |
 
 ---
 
@@ -99,4 +100,4 @@ No testify, no mock generator, no gomock in `go.mod`. [VERIFIED: go.mod:5-41]
 - [ ] Feedback latency < 15s
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-09-09 — all manual verifications closed by human UAT

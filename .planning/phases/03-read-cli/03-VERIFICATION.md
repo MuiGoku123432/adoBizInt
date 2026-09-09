@@ -1,20 +1,25 @@
 ---
 phase: 03-read-cli
 verified: 2026-09-09T14:20:00Z
-status: human_needed
-verdict: PASS-WITH-CONCERNS
-score: 8/9 requirements verified in code
-behavior_unverified: 1
+human_verified: 2026-09-09T15:05:00Z
+status: passed
+verdict: PASS
+score: 9/9 requirements verified
+behavior_unverified: 0
 overrides_applied: 0
-behavior_unverified_items:
-  - truth: "CLI-01 — `adoBizInt` with no arguments launches the TUI exactly as before"
-    test: "Build the binary with a live PAT configured and run `adoBizInt` with zero arguments"
-    expected: "The interactive TUI launches, alt-screen, all six views present and behaving as pre-Phase-3"
-    why_human: "run() constructs a live ado.Client and calls tea.NewProgram before the TUI branch; no in-process test can reach it. Code inspection confirms the branch guard `if len(os.Args) > 1` is correct, but the launch itself is unexercised."
-human_verification:
-  - test: "Zero-argument TUI launch (03-01 coverage entry D7)"
+behavior_unverified_items: []
+human_verification: []
+human_verification_closed:
+  - id: D7
+    test: "Zero-argument TUI launch (03-01 coverage entry D7, human_judgment: true)"
     expected: "TUI starts unchanged; no CLI output on stdout"
-    why_human: "Requires a live PAT and an interactive terminal"
+    result: "PASSED — human launched ./adoBizInt with no arguments; the TUI opened and rendered correctly"
+    closed: 2026-09-09
+  - id: 03-04-T3
+    test: "TUI behavioral equivalence after the filter promotion"
+    expected: "TUI renders and filters identically post-refactor"
+    result: "PASSED — human-approved earlier in the same session"
+    closed: 2026-09-09
 concerns:
   - id: C-03-A
     severity: warning
@@ -31,15 +36,28 @@ concerns:
 deferred:
   - truth: "Log file opened 0600 rather than 0644; PAT-redaction regression test"
     addressed_in: "Phase 5"
-    evidence: "CONCERNS.md MED2 remediation: 'Open the log 0600 and the directory 0700 ... PAT-redaction test'; Phase 5 goal is 'The security findings that a CLI makes reachable are closed'"
+    evidence: "Filed as HARD-06 in REQUIREMENTS.md at phase closure; remediation text from CONCERNS.md MED2:437"
+follow_ups:
+  - id: F-03-1
+    title: "Packed traceability rows cannot be machine-updated"
+    status: resolved_at_closure
+    detail: "REQUIREMENTS.md traceability rows were split one-per-ID for Phases 3, 4 and 5, so requirements.mark-complete can match them. Phase 3 rows set to Complete."
+  - id: F-03-2
+    title: "T-03-15 world-readable log may contain the PAT"
+    status: filed
+    detail: "Filed as HARD-06 under Phase 5 in REQUIREMENTS.md and added to the Phase 5 traceability rows. No longer a CONCERNS.md-only note."
+  - id: F-03-3
+    title: "grep-negative acceptance criteria are unsound in this repo"
+    status: open
+    detail: "Recorded as a phase learning. Prefer structural assertions over textual absence; where a textual check is unavoidable, strip comments first. Carried into Phase 4 planning."
 ---
 
 # Phase 03: Read CLI Verification Report
 
 **Phase Goal:** An AI agent can query every existing read operation and parse the result
-**Verified:** 2026-09-09
-**Verdict:** PASS-WITH-CONCERNS
-**Status:** human_needed (one open UAT item)
+**Verified:** 2026-09-09 (code), 2026-09-09 (human UAT)
+**Verdict:** PASS
+**Status:** passed — no open UAT items
 
 ## Build Gate
 
@@ -60,7 +78,7 @@ Each requirement judged against code, not against SUMMARY claims.
 
 | Req | Verdict | Evidence |
 | --- | ------- | -------- |
-| **CLI-01** — no subcommand launches the TUI unchanged | ⚠️ PRESENT, BEHAVIOR UNVERIFIED | `main.go` gates the CLI on `if len(os.Args) > 1`; zero args falls through to `ui.NewModel` + `tea.NewProgram` with the original argument list and the original `return 1` on TUI error. Branch placement is deliberate and correct (it precedes `ui.NewModel` so a read does not pay TUI construction). No automated test reaches it — `run()` builds a live client first. 03-04 Task 3 (TUI render/filter equivalence after the filter promotion) was human-approved this session; the zero-argument launch itself (D7) is still open. |
+| **CLI-01** — no subcommand launches the TUI unchanged | ✓ VERIFIED (code + human UAT) | `main.go` gates the CLI on `if len(os.Args) > 1`; zero args falls through to `ui.NewModel` + `tea.NewProgram` with the original argument list and the original `return 1` on TUI error. Branch placement is deliberate and correct (it precedes `ui.NewModel` so a read does not pay TUI construction). No automated test reaches it — `run()` builds a live client first — so the behavioral half was closed by human UAT on 2026-09-09: the human launched `./adoBizInt` with no arguments and confirmed the TUI opened and rendered correctly. That closes coverage entry D7. 03-04 Task 3 (TUI render/filter equivalence after the filter promotion) was human-approved separately in the same session. |
 | **CLI-02** — read subcommands for all six nouns | ✓ VERIFIED | `dispatch.go` `commands` map holds eight `noun verb` keys: `workitems list`, `prs list`, `pipelines runs`, `pipelines definitions`, `releases list`, `releases approvals`, `branches list`, `dashboard counts`. `TestDispatchTableMatchesD02`, `TestDispatchResolvesEveryVerb` and `TestDispatchEachVerbCallsItsOwnMethod` pin the table to the eight `readClient` methods 1:1. |
 | **CLI-04** — `--timeout` bounds the invocation; interrupts handled | ✓ VERIFIED | `--timeout` registered in the single `newFlagSet`; `runRead` overrides `readBudget` and derives via `fetchctx.NewWithParent(ctx, budget)`. `main.go` wraps the dispatch in `signal.NotifyContext(..., os.Interrupt, syscall.SIGTERM)`. `runRead` checks `ctx.Err()` *before any stdout write*, so an interrupt yields exactly one document. Five timeout tests plus four interrupt tests pass, including `TestTimeoutEqualToPollIntervalIsAccepted` (proves the D-P6 post-validation assignment) and `TestTimeoutZeroFallsBackToDefaultBudget`. |
 | **CLI-05** — every command responds to `--help` | ✓ VERIFIED | `usage.go` provides three levels; `handleUsage` runs *before* `config.Load`, so `--help` needs no PAT. `TestHelpNeedsNoCredentials`, `TestHelpIsDeterministic`, `TestHandleUsagePassesValidSubcommandsThrough` pass. Live smoke: `go run ./cmd/adoBizInt --help` exits 0 with usage on stderr and stdout empty. |
@@ -70,13 +88,14 @@ Each requirement judged against code, not against SUMMARY claims.
 | **OUT-04** — four distinct exit codes | ✓ VERIFIED | `exit.go` `exitCodeFor` scans `FailureAuth` *before* consulting `Complete`, so a co-occurring timeout cannot mask a rejected credential (D-07). Matches on `FailureKind` only, never on server-controlled error text. Startup failures return `exitUnknown` (3), not `exitPartial` (1) — a read that never ran is a different fact from an incomplete one. `TestExitCodeFor` covers the matrix. |
 | **OUT-05** — a panic emits structured JSON | ✓ VERIFIED | `main()` is `os.Exit(guard(run))`. `guard` recovers and calls `handlePanic`, which returns `exitUnknown` and writes `{"error":{kind,message,log_path}}` — nested under `error` so a crash is *not representable* as a normal result envelope. Deliberately carries no stack: Go renders frames with arguments and the client constructor takes the credential-bearing config. `TestPanicExitsThree`, `TestPanicEmitsDistinctErrorObject`, `TestPanicRecordCarriesNoStackOrCredential`, `TestPanicWithFailedLoggingWritesNoStackToStderr`, `TestGuardPassesThroughWhenNothingPanics` all pass. |
 
-**Score: 8/9 verified in code, 1 present-but-behavior-unverified.**
+**Score: 9/9 verified.** Eight closed by code and tests, CLI-01 closed by code
+inspection plus human UAT.
 
 ## Success Criteria (ROADMAP)
 
 | # | Criterion | Status |
 | - | --------- | ------ |
-| 1 | No-argument launch starts the TUI as before | ⚠️ present, human check open |
+| 1 | No-argument launch starts the TUI as before | ✓ (human UAT) |
 | 2 | Read subcommands for all six nouns | ✓ |
 | 3 | `--json` parseable, stdout pure | ✓ |
 | 4 | Exit codes distinguish success/partial/auth/unknown | ✓ |
@@ -138,18 +157,23 @@ PAT string never appears in captured log output" — the remediation text alread
 exists verbatim in CONCERNS.md:437. Without that, "track it as Phase 5 hardening"
 is an intention, not a plan.
 
-### 3. Open UAT items
+### 3. Open UAT items — ALL CLOSED
 
-- **03-01 coverage entry D7 — zero-argument TUI launch:** OPEN. Requires a live
-  PAT and an interactive terminal. Code inspection is favorable (the branch guard
-  is correct and the TUI path is byte-identical to pre-Phase-3, including the
-  `return 1` on `p.Run()` error), but the launch is unexercised. This is the one
-  item holding the phase at `human_needed` rather than `passed`.
+- **03-01 coverage entry D7 — zero-argument TUI launch:** **CLOSED 2026-09-09.**
+  The human launched `./adoBizInt` with no arguments; the TUI opened and
+  everything rendered correctly. This satisfies CLI-01's behavioral half, which
+  code inspection alone could not reach — `run()` constructs a live client and
+  calls `tea.NewProgram` before the TUI branch. Code inspection had already
+  confirmed the branch guard and that the TUI path is byte-identical to
+  pre-Phase-3, including the `return 1` on `p.Run()` error; the launch is now
+  observed rather than inferred.
 - **03-04 Task 3 — TUI behavioral equivalence after the filter promotion:**
-  CLOSED. Human-approved this session; the user built the binary and verified.
-  Treated as passed. Note this is a *different* check from D7: it covers whether
-  the promoted predicates changed TUI rendering, not whether the zero-argument
-  entry point still reaches the TUI.
+  CLOSED. Human-approved earlier in the same session; the user built the binary
+  and verified. Note this is a *different* check from D7: it covers whether the
+  promoted predicates changed TUI rendering, not whether the zero-argument entry
+  point still reaches the TUI. Both halves of CLI-01 are now closed.
+
+No UAT items remain open for this phase.
 
 ### 4. `grep returns nothing` acceptance criteria — INFO, record as a learning
 
@@ -204,28 +228,33 @@ dispatch entries is proven to call its own distinct client method by
 
 ## Verdict
 
-**PASS-WITH-CONCERNS.**
+**PASS.**
 
 The phase goal — "an AI agent can query every existing read operation and parse
-the result" — is achieved. Eight read verbs dispatch to eight distinct methods,
-`--json` emits one parseable document on a stdout no other writer can touch, four
-exit codes discriminate the outcomes an agent must distinguish, and both the
-panic and interrupt paths produce a structured record rather than an ambiguous
-empty result. That last property is the project's stated core value, and it holds
-under every failure mode this phase introduced.
+the result" — is achieved, and all nine declared requirements are now closed.
+Eight read verbs dispatch to eight distinct methods, `--json` emits one parseable
+document on a stdout no other writer can touch, four exit codes discriminate the
+outcomes an agent must distinguish, and both the panic and interrupt paths
+produce a structured record rather than an ambiguous empty result. That last
+property is the project's stated core value, and it holds under every failure
+mode this phase introduced. CLI-01's behavioral half was closed by human UAT on
+2026-09-09.
 
-Three items travel with it:
+Phase 03 is complete. Phase 4 may proceed.
 
-1. One open UAT check (zero-argument TUI launch) — needs a human with a live PAT.
-2. Split the packed Phase 3 traceability rows in REQUIREMENTS.md so the summary
-   table stops lying, and so Phases 4 and 5 do not inherit the same failure.
-3. File the 0644 log finding as HARD-06 before Phase 5 planning starts, or it
-   will not be picked up.
+### Follow-ups carried out of this phase
 
-None of the three blocks proceeding to Phase 4. Item 3 must be filed before
-Phase 5 is planned.
+Two of the three concerns were resolved at closure rather than left in this
+report, because a finding buried in a closed verification file does not get
+acted on:
+
+| ID | Item | Disposition |
+| -- | ---- | ----------- |
+| F-03-1 | Packed traceability rows | **Resolved.** REQUIREMENTS.md rows split one-per-ID for Phases 3, 4 and 5; Phase 3 rows set to Complete. `requirements.mark-complete` can now match them, and Phases 4 and 5 will no longer inherit the failure. |
+| F-03-2 | T-03-15 world-readable log may contain the PAT | **Filed as HARD-06** under Phase 5 in REQUIREMENTS.md, with a traceability row. It is now on the list Phase 5 planning reads from, not only in CONCERNS.md. |
+| F-03-3 | grep-negative acceptance criteria | **Open, recorded as a learning.** Carried into Phase 4 planning via STATE.md. Prefer structural assertions; where a textual check is unavoidable, exclude comment lines. |
 
 ---
 
-_Verified: 2026-09-09_
+_Verified: 2026-09-09 (code) · 2026-09-09 (human UAT)_
 _Verifier: gsd-verifier_

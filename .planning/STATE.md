@@ -4,16 +4,16 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 03
 current_phase_name: read-cli
-status: verifying
-stopped_at: Completed 03-05-PLAN.md
-last_updated: "2026-09-09T13:50:45.419Z"
+status: verified
+stopped_at: Phase 03 verified — PASS, 9/9 requirements, human UAT closed
+last_updated: "2026-09-09T15:05:00.000Z"
 last_activity: 2026-09-09
-last_activity_desc: Phase 03 execution started
+last_activity_desc: Phase 03 verified and closed
 progress:
-  total_phases: 3
-  completed_phases: 2
+  total_phases: 5
+  completed_phases: 3
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 16
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -24,16 +24,17 @@ state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 See: .planning/PROJECT.md (updated 2026-09-03)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 03 — read-cli
+**Current focus:** Phase 04 — guarded writes
 
 ## Current Position
 
-Phase: 03 (read-cli) — EXECUTING
+Phase: 03 (read-cli) — COMPLETE
 Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-09-09 — Phase 03 execution started
+Status: VERIFIED 2026-09-09 — PASS, 9/9 requirements, all UAT closed
+Next: Phase 04 (guarded writes)
+Last activity: 2026-09-09 — Phase 03 verified and closed
 
-Progress: [███████░░░] 69% of planned plans (11/11)
+Progress: [██████░░░░] 3 of 5 phases complete (16/16 planned plans executed)
 
 ## Performance Metrics
 
@@ -137,7 +138,13 @@ Full log in PROJECT.md Key Decisions.
 
 ### Pending Todos
 
-None yet.
+- **[Phase 4 planning] Acceptance criteria style.** Three incidents in Phase 3 where a
+  `grep returns nothing` criterion was satisfied then defeated by a prose comment
+  explaining the forbidden thing. The failure mode gets worse as documentation
+  improves, which is at odds with this repo's comment-heavy house style. Prefer a
+  structural assertion (the `newFlagSet` + `TestFlagsRegisteredOnEverySubcommand`
+  shape); where a textual check is unavoidable, scope it with `--include` and strip
+  comment lines first. (Verification F-03-3, open.)
 
 ### Blockers/Concerns
 
@@ -162,6 +169,7 @@ Affecting the v2 scrum milestone, not v1:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
+| Hardening | Log opened 0600 / dir 0700 + PAT-redaction test — filed as HARD-06, Phase 5 plan 05-05 | Phase 5 | 2026-09-09 |
 | Scrum master | Sprint CRUD, capacity, velocity, burndown, backlog rank | v2 | 2026-09-03 |
 | Story management | Work item creation, comments, links | v2 | 2026-09-03 |
 | Platform | Native MCP server | v2 | 2026-09-03 |
