@@ -28,7 +28,7 @@ func TestFlagsRegisteredOnEverySubcommand(t *testing.T) {
 func TestProjectListAccumulates(t *testing.T) {
 	_, _ = captureOutput(t)
 
-	fs, gf := newFlagSet("prs list")
+	fs, gf, _ := newFlagSet("prs list")
 	if err := fs.Parse([]string{"--project", "alpha, beta", "--project", "gamma"}); err != nil {
 		t.Fatalf("parse: %v", err)
 	}

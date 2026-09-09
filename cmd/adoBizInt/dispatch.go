@@ -51,6 +51,11 @@ type readClient interface {
 	GetPendingApprovals(ctx context.Context, projects []string) (ado.Result[ado.ReleaseApproval], error)
 	GetBranches(ctx context.Context, projects, repositories []string) (ado.Result[ado.Branch], error)
 	GetDashboardCounts(ctx context.Context, projects []string) (ado.Result[ado.DashboardCounts], error)
+
+	// CurrentUserEmail is the cached identity --assigned-to-me filters on. It
+	// is a read of an already-resolved field, not a network call: Phase 1 D-12
+	// makes identity resolution non-fatal, so it can legitimately return "".
+	CurrentUserEmail() string
 }
 
 // commandFunc runs one `noun verb` command over the remaining arguments and
@@ -66,36 +71,54 @@ type commandFunc func(ctx context.Context, client readClient, args []string) int
 // Each verb maps 1:1 to exactly one read method. There is deliberately no flag
 // that swaps a command's payload type — a boolean that changes the output
 // schema is hostile to an agent parsing it (D-02).
+// ignoreRepos adapts a read method that takes only projects to the uniform
+// fetch signature runRead uses. Seven of the eight reads have no repositories
+// parameter; only GetBranches does, and it is the one verb where --repo narrows
+// the read rather than post-filtering it.
+func ignoreRepos[T any](
+	f func(context.Context, []string) (ado.Result[T], error),
+) func(context.Context, []string, []string) (ado.Result[T], error) {
+	return func(ctx context.Context, projects, _ []string) (ado.Result[T], error) {
+		return f(ctx, projects)
+	}
+}
+
 var commands = map[string]commandFunc{
 	"workitems list": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "workitems list", args, c.GetWorkItems, renderWorkItems)
+		return runRead(ctx, "workitems list", args, c.CurrentUserEmail(),
+			ignoreRepos(c.GetWorkItems), filterWorkItems, renderWorkItems)
 	},
 	"prs list": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "prs list", args, c.GetPullRequests, renderPullRequests)
+		return runRead(ctx, "prs list", args, "",
+			ignoreRepos(c.GetPullRequests), filterPullRequests, renderPullRequests)
 	},
 	"pipelines runs": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "pipelines runs", args, c.GetPipelineRuns, renderPipelineRuns)
+		return runRead(ctx, "pipelines runs", args, "",
+			ignoreRepos(c.GetPipelineRuns), filterPipelineRuns, renderPipelineRuns)
 	},
 	"pipelines definitions": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "pipelines definitions", args, c.GetPipelineDefinitions, renderPipelineDefinitions)
+		return runRead[ado.PipelineDefinition](ctx, "pipelines definitions", args, "",
+			ignoreRepos(c.GetPipelineDefinitions), nil, renderPipelineDefinitions)
 	},
 	"releases list": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "releases list", args, c.GetReleases, renderReleases)
+		return runRead(ctx, "releases list", args, "",
+			ignoreRepos(c.GetReleases), filterReleases, renderReleases)
 	},
 	"releases approvals": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "releases approvals", args, c.GetPendingApprovals, renderReleaseApprovals)
+		return runRead[ado.ReleaseApproval](ctx, "releases approvals", args, "",
+			ignoreRepos(c.GetPendingApprovals), nil, renderReleaseApprovals)
 	},
 	"branches list": func(ctx context.Context, c readClient, args []string) int {
-		// The extra repositories parameter is absorbed here rather than by a
-		// uniform method type (D-P2). Passing nil is the unfiltered set: a read
-		// verb applies no filter the caller did not request (D-18).
-		fetch := func(ctx context.Context, projects []string) (ado.Result[ado.Branch], error) {
-			return c.GetBranches(ctx, projects, nil)
-		}
-		return runRead(ctx, "branches list", args, fetch, renderBranches)
+		// GetBranches is the only read with a repositories parameter, so --repo
+		// narrows the read here rather than post-filtering the result
+		// (branches.go:92 does the filtering inside). filterBranches therefore
+		// applies search only, never repository, or the rule would run twice.
+		return runRead(ctx, "branches list", args, "",
+			c.GetBranches, filterBranches, renderBranches)
 	},
 	"dashboard counts": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "dashboard counts", args, c.GetDashboardCounts, renderDashboardCounts)
+		return runRead[ado.DashboardCounts](ctx, "dashboard counts", args, "",
+			ignoreRepos(c.GetDashboardCounts), nil, renderDashboardCounts)
 	},
 }
 
@@ -113,17 +136,22 @@ func dispatch(ctx context.Context, client readClient, args []string) int {
 	return exitUnknown
 }
 
-// runRead is the single body every read verb shares: parse, fetch, emit, map to
-// an exit code. It is generic over the payload type, so the eight commands
-// differ only in their fetch function and their renderer.
+// runRead is the single body every read verb shares: parse, fetch, filter,
+// emit, map to an exit code. It is generic over the payload type, so the eight
+// commands differ only in their fetch function, their post-filter and their
+// renderer.
+//
+// postFilter may be nil for a payload with no filterable fields.
 func runRead[T any](
 	ctx context.Context,
 	name string,
 	args []string,
-	fetch func(context.Context, []string) (ado.Result[T], error),
+	identity string,
+	fetch func(context.Context, []string, []string) (ado.Result[T], error),
+	postFilter func([]T, *filterFlags, io.Writer) []T,
 	render func(io.Writer, []T),
 ) int {
-	fs, gf := newFlagSet(name)
+	fs, gf, ff := newFlagSet(name)
 	if err := fs.Parse(args); err != nil {
 		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
 		// been written and the request succeeded rather than failed.
@@ -132,22 +160,38 @@ func runRead[T any](
 		}
 		return exitUnknown
 	}
+	ff.identity = identity
 
 	log := logging.Logger()
 
-	// --project is parsed and carried but not yet applied: plan 03-04 Task 2
-	// owns passing it as the projects argument and settling what an unset flag
-	// means. Until then no filter the caller did not request is applied, so the
-	// read returns the unfiltered set even where the TUI defaults to filtering
-	// (D-18).
-	_ = gf.projects
-	result, err := fetch(ctx, nil)
+	// --project narrows the read: its values become the projects argument. An
+	// omitted flag passes an empty slice rather than the configured project
+	// list, because every read method already falls back to its own configured
+	// list on an empty slice (branches.go:56-59). Restating that default here
+	// would put it in two places and let the two drift.
+	//
+	// --repo is passed as GetBranches' repositories argument for the one verb
+	// that has one; an omitted flag is likewise an empty slice, never
+	// the configured repository list. Handing a caller who asked for no filter a
+	// config-filtered subset is the over-filtering D-18 forbids.
+	projects := emptyIfNil(gf.projects)
+	repositories := emptyIfNil(ff.repos)
+
+	result, err := fetch(ctx, projects, repositories)
 	if err != nil {
 		log.Error("Read failed", "command", name, "error", err)
 		fmt.Fprintf(stderrWriter, "Error running %s: %v\n", name, err)
 		return exitUnknown
 	}
 	log.Info("Read complete", "command", name, "items", len(result.Items), "failures", len(result.Failures))
+
+	// Filtering runs after the read, on the returned Items only. The failure
+	// list and the Complete flag continue to describe the read itself, which is
+	// what the exit-code mapping keys on: a search that matched nothing is a
+	// complete read of zero interesting rows, not a partial one.
+	if postFilter != nil {
+		result.Items = postFilter(result.Items, ff, stderrWriter)
+	}
 
 	if gf.asJSON {
 		if err := emitJSON(result); err != nil {
@@ -165,6 +209,16 @@ func runRead[T any](
 	}
 
 	return exitCodeFor(result.Failures, result.Complete)
+}
+
+// emptyIfNil normalises an unset repeatable flag to a non-nil empty slice, so
+// a read method receives "no filter requested" as an empty set rather than nil
+// and the two are never distinguishable at the call site.
+func emptyIfNil(v stringList) []string {
+	if v == nil {
+		return []string{}
+	}
+	return v
 }
 
 // emitJSON serialises the raw envelope — no wrapper, no invocation metadata

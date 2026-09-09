@@ -12,24 +12,71 @@ import (
 type globalFlags struct {
 	asJSON   bool
 	timeout  time.Duration
-	projects projectList
+	projects stringList
+}
+
+// filterFlags holds the per-verb filter flags. Unlike globalFlags these are
+// registered only on the verbs whose payload supports them, because a flag that
+// parses but cannot mean anything is worse than a flag that does not exist: an
+// agent reading --help would believe `releases list --hide-done` filters.
+//
+// Every field's zero value is "off" (CLI-06, D-18). This is not incidental — a
+// read verb must never apply a filter the caller did not request. The work
+// items TUI defaults assigned-to-me and hide-done to on because that is the
+// useful human view, but a CLI that hides data the caller did not ask to hide
+// hands an agent a filtered subset carrying complete:true, which is exactly the
+// failure this project exists to prevent.
+//
+// identity is not a flag. It is resolved from the client's cached identity by
+// the command closure and carried here so the post-filter has one input struct.
+type filterFlags struct {
+	search       string
+	assignedToMe bool
+	hideDone     bool
+	hideTasks    bool
+	repos        stringList
+	identity     string
+}
+
+// filterSupport records which filter flags a verb registers. It is keyed on the
+// same `noun verb` string as the dispatch table so the two cannot disagree
+// about which verbs exist, and a verb absent from this map simply registers no
+// filter flags.
+//
+// Deliberately not read from config: the same command must return the same data
+// on two machines, and config-driven filter defaults are hostile to agent
+// reproducibility.
+type filterSupport struct {
+	search       bool
+	assignedToMe bool
+	hideDone     bool
+	hideTasks    bool
+	repo         bool
+}
+
+var filterSupportByCommand = map[string]filterSupport{
+	"workitems list": {search: true, assignedToMe: true, hideDone: true, hideTasks: true},
+	"prs list":       {search: true, repo: true},
+	"branches list":  {search: true, repo: true},
+	"releases list":  {search: true},
+	"pipelines runs": {search: true},
 }
 
 // defaultTimeout is the zero value meaning "no CLI-imposed deadline"; plan
 // 03-05 owns turning a non-zero value into a context deadline. The override
-// must land after cfg.Validate(), because config.go:159 rejects a FetchTimeout
+// must land after config validation, because config.go:159 rejects a FetchTimeout
 // at or below PollInterval and a CLI flag must not trip a config-file check.
 const defaultTimeout time.Duration = 0
 
-// projectList collects a repeatable, also comma-separated, --project flag.
-// Both spellings are accepted because an agent composing a command line and a
-// human typing one reach for different ones, and rejecting either would be a
-// gratuitous failure mode.
-type projectList []string
+// stringList collects a repeatable, also comma-separated, flag value. It backs
+// both --project and --repo. Both spellings are accepted because an agent
+// composing a command line and a human typing one reach for different ones, and
+// rejecting either would be a gratuitous failure mode.
+type stringList []string
 
-func (p *projectList) String() string { return strings.Join(*p, ",") }
+func (p *stringList) String() string { return strings.Join(*p, ",") }
 
-func (p *projectList) Set(value string) error {
+func (p *stringList) Set(value string) error {
 	for _, part := range strings.Split(value, ",") {
 		if part = strings.TrimSpace(part); part != "" {
 			*p = append(*p, part)
@@ -39,10 +86,11 @@ func (p *projectList) Set(value string) error {
 }
 
 // newFlagSet builds the FlagSet for one subcommand and registers the global
-// flags into it. Registering through a single function is the whole point of
-// D-20: stdlib gives no compile-time check against eight independent
-// declarations, and the drift it prevents is `prs list` accepting --timeout
-// while `releases approvals` silently does not.
+// flags into it, plus whichever filter flags that verb supports. Registering
+// through a single function is the whole point of D-20: stdlib gives no
+// compile-time check against eight independent declarations, and the drift it
+// prevents is `prs list` accepting --timeout while `releases approvals`
+// silently does not.
 //
 // ContinueOnError rather than the default ExitOnError (D-22): stdlib's default
 // prints usage and exits 2, which is now `auth failure` and would be a lie.
@@ -51,7 +99,7 @@ func (p *projectList) Set(value string) error {
 // change cannot silently redirect flag errors to stdout and break OUT-03. This
 // is RESEARCH assumption A2 closed by construction and pinned by a test rather
 // than trusted.
-func newFlagSet(name string) (*flag.FlagSet, *globalFlags) {
+func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderrWriter)
 
@@ -63,7 +111,30 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags) {
 	fs.Var(&gf.projects, "project",
 		"restrict the read to a project; repeatable or comma-separated")
 
+	ff := &filterFlags{}
+	sup := filterSupportByCommand[name]
+	if sup.search {
+		fs.StringVar(&ff.search, "search", "",
+			"keep only items matching this free-text query; empty disables the filter")
+	}
+	if sup.assignedToMe {
+		fs.BoolVar(&ff.assignedToMe, "assigned-to-me", false,
+			"keep only items assigned to the authenticated identity (off by default)")
+	}
+	if sup.hideDone {
+		fs.BoolVar(&ff.hideDone, "hide-done", false,
+			"drop items in a done or resolved state (off by default)")
+	}
+	if sup.hideTasks {
+		fs.BoolVar(&ff.hideTasks, "hide-tasks", false,
+			"drop work items of type Task (off by default)")
+	}
+	if sup.repo {
+		fs.Var(&ff.repos, "repo",
+			"restrict the read to a repository; repeatable or comma-separated")
+	}
+
 	fs.Usage = func() { usageVerb(name, fs) }
 
-	return fs, gf
+	return fs, gf, ff
 }

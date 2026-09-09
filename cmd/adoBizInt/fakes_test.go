@@ -22,7 +22,15 @@ type fakeReadClient struct {
 	GetPendingApprovalsFunc    func(ctx context.Context, projects []string) (ado.Result[ado.ReleaseApproval], error)
 	GetBranchesFunc            func(ctx context.Context, projects, repositories []string) (ado.Result[ado.Branch], error)
 	GetDashboardCountsFunc     func(ctx context.Context, projects []string) (ado.Result[ado.DashboardCounts], error)
+
+	// currentUserEmail is a plain field rather than a closure: it stands in for
+	// a cached value the real client resolved at construction, and its empty
+	// zero value is the legitimate unresolved-identity case (Phase 1 D-12) that
+	// --assigned-to-me must warn about rather than silently no-op on.
+	currentUserEmail string
 }
+
+func (f *fakeReadClient) CurrentUserEmail() string { return f.currentUserEmail }
 
 func (f *fakeReadClient) GetWorkItems(ctx context.Context, projects []string) (ado.Result[ado.WorkItem], error) {
 	if f.GetWorkItemsFunc == nil {
