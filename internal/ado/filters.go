@@ -82,8 +82,34 @@ func matchesAny(value string, set []string) bool {
 }
 
 // MatchesSearch reports whether any of fields contains the free-text query.
+// It is the single definition of the free-text search rule that used to be an
+// inline strings.Contains chain in five view packages, each over a different
+// field set (CLI-06).
 //
-// RED stub — implemented in the GREEN commit.
+// The fields are variadic strings rather than an item value because the five
+// views search five different field sets. A single MatchesSearch(item any, q)
+// would have to type-switch over five payload types to recover those sets,
+// putting knowledge of every view back into one function — the duplication in a
+// new shape. The caller names its own fields; only the comparison is shared.
+// Callers with a numeric ID (work items, pull requests) format it into the
+// field list themselves; this matcher takes strings only.
+//
+// An empty or whitespace-only query keeps every item rather than matching
+// nothing, preserving the strings.TrimSpace behavior all five call sites
+// already had: an empty search box means "no filter", not "no results".
+//
+// The query is trimmed and case-folded here as well as at the call sites, so
+// the matcher is idempotent over the normalization the views perform and there
+// is no second rule that can drift from this one. Implements D-16 and D-18.
 func MatchesSearch(query string, fields ...string) bool {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return true
+	}
+	for _, f := range fields {
+		if strings.Contains(strings.ToLower(f), q) {
+			return true
+		}
+	}
 	return false
 }
