@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 03
 current_phase_name: read-cli
 status: executing
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-09-09T13:08:04.829Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-09-09T13:18:01.633Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 03 execution started
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 16
-  completed_plans: 7
+  completed_plans: 8
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 03 (read-cli) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-09 — Phase 03 execution started
 
-Progress: [████░░░░░░] 44% of planned plans (11/11)
+Progress: [█████░░░░░] 50% of planned plans (11/11)
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [████░░░░░░] 44% of planned plans (11/11)
 | Phase 02 P04 | 16 min | 3 tasks | 15 files |
 | Phase 02 P05 | 41 min | 4 tasks | 13 files |
 | Phase 03 P01 | 34 min | 3 tasks | 7 files |
+| Phase 03 P02 | 41 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 03]: The exit mapper scans for FailureAuth before consulting the completeness flag — A caller that retries a 1 eventually succeeds; a caller that retries a 2 loops forever against a rejected credential, so a co-occurring timeout must never mask auth (D-07)
 - [Phase 03]: Startup failures return 3 rather than 1 — A config, validation or client-construction failure means the read never ran, which is a different fact from an incomplete read (D-08)
 - [Phase 03]: newResult pre-allocates Items and Failures — failures was nil on every successful read, so failures:null was the happy-path output and an agent evaluating .failures | length errored on ordinary success
+- [Phase 03]: runRead is generic over the payload type so the eight read verbs differ only in fetch func and renderer
+- [Phase 03]: newFlagSet is the only flag.NewFlagSet site, making D-20 mechanically checkable
+- [Phase 03]: handleUsage runs before config.Load so --help never requires a PAT
 
 ### Pending Todos
 
@@ -159,6 +163,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-09T13:07:55.731Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-09-09T13:17:54.822Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
