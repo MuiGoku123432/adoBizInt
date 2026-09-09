@@ -593,7 +593,7 @@ func TestRenderFailuresToStderrOnly(t *testing.T) {
 	}
 }
 
-// TestRenderHasNoANSI pins the plain-text choice. lipgloss escapes in a
+// TestRenderHasNoANSI pins the plain-text choice. Styled escapes in a
 // redirected stdout are hostile to the agent this CLI exists for.
 func TestRenderHasNoANSI(t *testing.T) {
 	for _, tc := range renderCases() {
