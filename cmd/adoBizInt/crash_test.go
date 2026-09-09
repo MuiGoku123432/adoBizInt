@@ -1,13 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/config"
 )
 
 // cancelledParent returns a context that is already done, standing in for a
@@ -150,4 +156,175 @@ func keysOf(m map[string]json.RawMessage) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// patFixture stands in for a real credential. Assertions search stdout and
+// stderr for it, so a stack trace rendering a config argument would be caught
+// rather than merely forbidden by comment.
+const patFixture = "pat-fixture-do-not-disclose-9f3c1a"
+
+// panickingClient closes over a configuration value carrying the credential and
+// panics inside the read. The closure matters: a Go stack trace prints function
+// arguments, so if the recovery handler ever put a stack on stdout this fixture
+// is what it would disclose.
+func panickingClient(t *testing.T) *fakeReadClient {
+	t.Helper()
+	cfg := &config.Config{PAT: patFixture, OrgURL: "https://dev.azure.com/fixture"}
+	return &fakeReadClient{
+		t: t,
+		GetPullRequestsFunc: func(context.Context, []string) (ado.Result[ado.PullRequest], error) {
+			panic("deliberate panic reading " + cfg.OrgURL)
+		},
+	}
+}
+
+// TestPanicExitsThree pins that a panic anywhere inside the guarded body is
+// recovered and mapped to the outcome-unknown code, rather than killing the
+// process with the runtime's own exit status and an unstructured dump.
+func TestPanicExitsThree(t *testing.T) {
+	withReadBudget(t, 2*time.Minute)
+	captureOutput(t)
+
+	code := guard(func() int {
+		return dispatch(context.Background(), panickingClient(t), []string{"prs", "list", "--json"})
+	})
+	if code != exitUnknown {
+		t.Errorf("guarded panic = %d, want %d", code, exitUnknown)
+	}
+}
+
+// TestPanicEmitsDistinctErrorObject is OUT-05 stated as an assertion: a panic
+// must not look like an empty result.
+func TestPanicEmitsDistinctErrorObject(t *testing.T) {
+	withReadBudget(t, 2*time.Minute)
+	stdout, _ := captureOutput(t)
+
+	guard(func() int {
+		return dispatch(context.Background(), panickingClient(t), []string{"prs", "list", "--json"})
+	})
+
+	top := decodeCrash(t, stdout.Bytes())
+	if len(top) != 1 {
+		t.Fatalf("top-level keys = %v, want exactly [error]", keysOf(top))
+	}
+	if _, ok := top["error"]; !ok {
+		t.Fatalf("top-level keys = %v, want exactly [error]", keysOf(top))
+	}
+	if _, ok := top["items"]; ok {
+		t.Errorf("panic produced an items key; a crash must never be readable as data")
+	}
+
+	var env crashEnvelope
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		t.Fatalf("stdout does not decode: %v", err)
+	}
+	if env.Error.Kind != "panic" {
+		t.Errorf("kind = %q, want %q", env.Error.Kind, "panic")
+	}
+	if !strings.Contains(env.Error.Message, "deliberate panic") {
+		t.Errorf("message = %q, want the panic value rendered as a string", env.Error.Message)
+	}
+	if env.Error.LogPath == "" {
+		t.Errorf("log_path is empty; the record must name where the stack went")
+	}
+}
+
+// TestPanicRecordCarriesNoStackOrCredential is the T-03-14 assertion.
+func TestPanicRecordCarriesNoStackOrCredential(t *testing.T) {
+	withReadBudget(t, 2*time.Minute)
+	stdout, _ := captureOutput(t)
+
+	guard(func() int {
+		return dispatch(context.Background(), panickingClient(t), []string{"prs", "list", "--json"})
+	})
+
+	out := stdout.String()
+	if strings.Contains(out, patFixture) {
+		t.Errorf("stdout discloses the credential fixture: %s", out)
+	}
+	for _, marker := range []string{"goroutine ", ".go:", "runtime."} {
+		if strings.Contains(out, marker) {
+			t.Errorf("stdout looks like it carries a stack (%q): %s", marker, out)
+		}
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(decodeCrash(t, stdout.Bytes())["error"], &fields); err != nil {
+		t.Fatalf("error object does not decode: %v", err)
+	}
+	if _, ok := fields["stack"]; ok {
+		t.Errorf("record carries a stack field")
+	}
+	if len(fields) != 3 {
+		t.Errorf("record fields = %v, want exactly kind, message and log_path", keysOf(fields))
+	}
+}
+
+// TestPanicWithFailedLoggingWritesNoStackToStderr closes the residual path in
+// T-03-14. When logging init fails the package logger falls back to the default
+// one, which writes to stderr — so an unconditional stack write would print the
+// credential-bearing frames to the terminal. The stack write is gated on a
+// successful init; the JSON record on stdout is identical either way.
+func TestPanicWithFailedLoggingWritesNoStackToStderr(t *testing.T) {
+	notADir := filepath.Join(t.TempDir(), "home-is-a-file")
+	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	t.Setenv("HOME", notADir)
+
+	withReadBudget(t, 2*time.Minute)
+	stdout, _ := captureOutput(t)
+
+	// slog's fallback writes to the process stream, not the injected writer, so
+	// only a process-level capture can prove nothing reached it.
+	readEnd, writeEnd, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	prevStderr := os.Stderr
+	os.Stderr = writeEnd
+	stderrWriter = writeEnd
+
+	initLogging()
+	code := guard(func() int {
+		return dispatch(context.Background(), panickingClient(t), []string{"prs", "list", "--json"})
+	})
+
+	os.Stderr = prevStderr
+	if err := writeEnd.Close(); err != nil {
+		t.Fatalf("close pipe: %v", err)
+	}
+	captured, err := io.ReadAll(readEnd)
+	if err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+
+	if code != exitUnknown {
+		t.Errorf("guarded panic = %d, want %d", code, exitUnknown)
+	}
+	if bytes.Contains(captured, []byte(patFixture)) {
+		t.Errorf("stderr discloses the credential fixture: %s", captured)
+	}
+	for _, marker := range []string{"goroutine ", "runtime.gopanic"} {
+		if bytes.Contains(captured, []byte(marker)) {
+			t.Errorf("stderr carries a stack (%q): %s", marker, captured)
+		}
+	}
+
+	// The structured record is unchanged by the logging failure.
+	var env crashEnvelope
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		t.Fatalf("stdout %q does not decode: %v", stdout.String(), err)
+	}
+	if env.Error.Kind != "panic" {
+		t.Errorf("kind = %q, want %q", env.Error.Kind, "panic")
+	}
+}
+
+// TestGuardPassesThroughWhenNothingPanics keeps the guard honest: it must not
+// alter the return value of an ordinary run.
+func TestGuardPassesThroughWhenNothingPanics(t *testing.T) {
+	if got := guard(func() int { return exitPartial }); got != exitPartial {
+		t.Errorf("guard(returns %d) = %d, want %d", exitPartial, got, exitPartial)
+	}
 }
