@@ -376,3 +376,290 @@ func wrapOne(t *testing.T, f *fakeReadClient, key string, counter *int) {
 		t.Fatalf("wrapOne has no case for %q", key)
 	}
 }
+
+// --- Task 3: human-mode renderer -------------------------------------------
+
+// twoFailures is the failure list the human-mode tests assert against. Both
+// entries carry distinct project, operation and kind values, so a renderer that
+// prints only one of the three fields is caught.
+func twoFailures() []ado.Failure {
+	return []ado.Failure{
+		{Project: "alpha", Operation: "get pull requests", Kind: ado.FailureAuth},
+		{Project: "beta", Operation: "get work items", Kind: ado.FailureTimeout},
+	}
+}
+
+// renderCase drives one payload type through dispatch in human mode.
+type renderCase struct {
+	command string
+	client  func(t *testing.T, failures []ado.Failure) *fakeReadClient
+	// wantRows are substrings that must each appear on exactly one stdout line.
+	wantRows []string
+}
+
+func renderCases() []renderCase {
+	return []renderCase{
+		{
+			command:  "workitems list",
+			wantRows: []string{"Bug", "Fix the thing"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetWorkItemsFunc = func(context.Context, []string) (ado.Result[ado.WorkItem], error) {
+					return ado.Result[ado.WorkItem]{
+						Items: []ado.WorkItem{
+							{ID: 1, Title: "Fix the thing", Type: "Bug", State: "Active", Project: "alpha"},
+							{ID: 2, Title: "Ship the other thing", Type: "Task", State: "New", Project: "beta"},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "prs list",
+			wantRows: []string{"Add a feature", "repo-a"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetPullRequestsFunc = func(context.Context, []string) (ado.Result[ado.PullRequest], error) {
+					return ado.Result[ado.PullRequest]{
+						Items: []ado.PullRequest{
+							{ID: 10, Title: "Add a feature", RepositoryName: "repo-a", Project: "alpha"},
+							{ID: 11, Title: "Remove a feature", RepositoryName: "repo-b", Project: "beta"},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "pipelines runs",
+			wantRows: []string{"20240101.1", "succeeded"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetPipelineRunsFunc = func(context.Context, []string) (ado.Result[ado.PipelineRun], error) {
+					return ado.Result[ado.PipelineRun]{
+						Items: []ado.PipelineRun{
+							{ID: 1, BuildNumber: "20240101.1", PipelineName: "build", Status: "completed", Result: "succeeded", Project: "alpha"},
+							{ID: 2, BuildNumber: "20240101.2", PipelineName: "build", Status: "inProgress", Result: "none", Project: "alpha"},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "pipelines definitions",
+			wantRows: []string{"nightly", "enabled"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetPipelineDefinitionsFunc = func(context.Context, []string) (ado.Result[ado.PipelineDefinition], error) {
+					return ado.Result[ado.PipelineDefinition]{
+						Items: []ado.PipelineDefinition{
+							{ID: 1, Name: "nightly", QueueStatus: "enabled", Project: "alpha"},
+							{ID: 2, Name: "release", QueueStatus: "paused", Project: "beta"},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "releases list",
+			wantRows: []string{"Release-1", "active"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetReleasesFunc = func(context.Context, []string) (ado.Result[ado.Release], error) {
+					return ado.Result[ado.Release]{
+						Items: []ado.Release{
+							{ID: 1, Name: "Release-1", DefinitionName: "prod", Status: "active", Project: "alpha"},
+							{ID: 2, Name: "Release-2", DefinitionName: "prod", Status: "draft", Project: "alpha"},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "releases approvals",
+			wantRows: []string{"preDeploy", "staging"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetPendingApprovalsFunc = func(context.Context, []string) (ado.Result[ado.ReleaseApproval], error) {
+					return ado.Result[ado.ReleaseApproval]{
+						Items: []ado.ReleaseApproval{
+							{ID: 1, ReleaseName: "Release-1", EnvironmentName: "staging", ApprovalType: "preDeploy", Status: "pending", Project: "alpha"},
+							{ID: 2, ReleaseName: "Release-2", EnvironmentName: "prod", ApprovalType: "postDeploy", Status: "pending", Project: "alpha"},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "branches list",
+			wantRows: []string{"feature/x", "repo-a"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetBranchesFunc = func(context.Context, []string, []string) (ado.Result[ado.Branch], error) {
+					return ado.Result[ado.Branch]{
+						Items: []ado.Branch{
+							{Name: "feature/x", RepositoryName: "repo-a", Project: "alpha", AheadCount: 2, BehindCount: 1},
+							{Name: "main", RepositoryName: "repo-a", Project: "alpha", IsDefault: true},
+						},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+		{
+			command:  "dashboard counts",
+			wantRows: []string{"7"},
+			client: func(t *testing.T, f []ado.Failure) *fakeReadClient {
+				c := allReadsFake(t)
+				c.GetDashboardCountsFunc = func(context.Context, []string) (ado.Result[ado.DashboardCounts], error) {
+					return ado.Result[ado.DashboardCounts]{
+						Items:    []ado.DashboardCounts{{WorkItems: 7, PRs: 3, Pipelines: 5}},
+						Failures: f, Complete: len(f) == 0,
+					}, nil
+				}
+				return c
+			},
+		},
+	}
+}
+
+// TestRenderRowsToStdout pins the first human-mode behaviour: rows land on
+// stdout, and a clean read writes nothing at all to stderr.
+func TestRenderRowsToStdout(t *testing.T) {
+	for _, tc := range renderCases() {
+		t.Run(tc.command, func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+
+			code := dispatch(context.Background(), tc.client(t, nil), strings.Split(tc.command, " "))
+			if code != exitOK {
+				t.Fatalf("dispatch(%q) = %d, want %d (stderr: %q)", tc.command, code, exitOK, stderr.String())
+			}
+
+			lines := nonEmptyLines(stdout.String())
+			wantLines := 1
+			if tc.command != "dashboard counts" {
+				wantLines = 2
+			}
+			if len(lines) != wantLines {
+				t.Errorf("stdout had %d row lines (%q), want %d", len(lines), stdout.String(), wantLines)
+			}
+			for _, want := range tc.wantRows {
+				if !strings.Contains(stdout.String(), want) {
+					t.Errorf("stdout %q does not contain %q", stdout.String(), want)
+				}
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("clean read wrote %q to stderr, want nothing", stderr.String())
+			}
+		})
+	}
+}
+
+// TestRenderFailuresToStderrOnly pins D-13 and threat T-03-07: failure detail
+// is a diagnostic and must never appear on the parseable channel.
+func TestRenderFailuresToStderrOnly(t *testing.T) {
+	for _, tc := range renderCases() {
+		t.Run(tc.command, func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+
+			code := dispatch(context.Background(), tc.client(t, twoFailures()), strings.Split(tc.command, " "))
+			if code != exitAuth {
+				t.Fatalf("dispatch(%q) = %d, want %d (an auth failure is present)", tc.command, code, exitAuth)
+			}
+
+			for _, want := range []string{"alpha", "get pull requests", string(ado.FailureAuth), "beta", "get work items", string(ado.FailureTimeout)} {
+				if !strings.Contains(stderr.String(), want) {
+					t.Errorf("stderr %q does not name %q", stderr.String(), want)
+				}
+			}
+			for _, forbidden := range []string{"get pull requests", "get work items", string(ado.FailureAuth)} {
+				if strings.Contains(stdout.String(), forbidden) {
+					t.Errorf("stdout %q leaked failure text %q", stdout.String(), forbidden)
+				}
+			}
+		})
+	}
+}
+
+// TestRenderHasNoANSI pins the plain-text choice. lipgloss escapes in a
+// redirected stdout are hostile to the agent this CLI exists for.
+func TestRenderHasNoANSI(t *testing.T) {
+	for _, tc := range renderCases() {
+		t.Run(tc.command, func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+
+			dispatch(context.Background(), tc.client(t, twoFailures()), strings.Split(tc.command, " "))
+
+			if bytes.Contains(stdout.Bytes(), []byte("\x1b[")) {
+				t.Errorf("stdout %q contains an ANSI escape sequence", stdout.String())
+			}
+			if bytes.Contains(stderr.Bytes(), []byte("\x1b[")) {
+				t.Errorf("stderr %q contains an ANSI escape sequence", stderr.String())
+			}
+		})
+	}
+}
+
+// TestRenderEmptyWritesNothing pins the zero-item case: no rows and no
+// placeholder. A caller counting lines must get zero, not one line saying
+// "empty" that a naive parser would count as a result.
+func TestRenderEmptyWritesNothing(t *testing.T) {
+	for _, key := range wantCommands {
+		t.Run(key, func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+
+			if code := dispatch(context.Background(), allReadsFake(t), strings.Split(key, " ")); code != exitOK {
+				t.Fatalf("dispatch(%q) = %d, want %d", key, code, exitOK)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("empty read wrote %q to stdout, want nothing", stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Errorf("empty read wrote %q to stderr, want nothing", stderr.String())
+			}
+		})
+	}
+}
+
+// TestRenderNotInvokedUnderJSON pins that --json bypasses the human renderer
+// entirely and the failures ride inside the stdout envelope instead.
+func TestRenderNotInvokedUnderJSON(t *testing.T) {
+	stdout, stderr := captureOutput(t)
+
+	client := renderCases()[1].client(t, twoFailures()) // prs list
+	if code := dispatch(context.Background(), client, []string{"prs", "list", "--json"}); code != exitAuth {
+		t.Fatalf("dispatch(prs list --json) = %d, want %d", code, exitAuth)
+	}
+
+	if bytes.Count(stdout.Bytes(), []byte("\n")) != 1 {
+		t.Errorf("stdout = %q, want exactly one JSON document", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), `"failures"`) {
+		t.Errorf("stdout = %q, want the failures inside the envelope", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("--json wrote %q to stderr, want nothing", stderr.String())
+	}
+}
+
+func nonEmptyLines(s string) []string {
+	var out []string
+	for _, line := range strings.Split(s, "\n") {
+		if strings.TrimSpace(line) != "" {
+			out = append(out, line)
+		}
+	}
+	return out
+}

@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strings"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/logging"
@@ -69,22 +68,22 @@ type commandFunc func(ctx context.Context, client readClient, args []string) int
 // schema is hostile to an agent parsing it (D-02).
 var commands = map[string]commandFunc{
 	"workitems list": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "workitems list", args, c.GetWorkItems, plainRows[ado.WorkItem])
+		return runRead(ctx, "workitems list", args, c.GetWorkItems, renderWorkItems)
 	},
 	"prs list": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "prs list", args, c.GetPullRequests, plainRows[ado.PullRequest])
+		return runRead(ctx, "prs list", args, c.GetPullRequests, renderPullRequests)
 	},
 	"pipelines runs": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "pipelines runs", args, c.GetPipelineRuns, plainRows[ado.PipelineRun])
+		return runRead(ctx, "pipelines runs", args, c.GetPipelineRuns, renderPipelineRuns)
 	},
 	"pipelines definitions": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "pipelines definitions", args, c.GetPipelineDefinitions, plainRows[ado.PipelineDefinition])
+		return runRead(ctx, "pipelines definitions", args, c.GetPipelineDefinitions, renderPipelineDefinitions)
 	},
 	"releases list": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "releases list", args, c.GetReleases, plainRows[ado.Release])
+		return runRead(ctx, "releases list", args, c.GetReleases, renderReleases)
 	},
 	"releases approvals": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "releases approvals", args, c.GetPendingApprovals, plainRows[ado.ReleaseApproval])
+		return runRead(ctx, "releases approvals", args, c.GetPendingApprovals, renderReleaseApprovals)
 	},
 	"branches list": func(ctx context.Context, c readClient, args []string) int {
 		// The extra repositories parameter is absorbed here rather than by a
@@ -93,10 +92,10 @@ var commands = map[string]commandFunc{
 		fetch := func(ctx context.Context, projects []string) (ado.Result[ado.Branch], error) {
 			return c.GetBranches(ctx, projects, nil)
 		}
-		return runRead(ctx, "branches list", args, fetch, plainRows[ado.Branch])
+		return runRead(ctx, "branches list", args, fetch, renderBranches)
 	},
 	"dashboard counts": func(ctx context.Context, c readClient, args []string) int {
-		return runRead(ctx, "dashboard counts", args, c.GetDashboardCounts, plainRows[ado.DashboardCounts])
+		return runRead(ctx, "dashboard counts", args, c.GetDashboardCounts, renderDashboardCounts)
 	},
 }
 
@@ -157,7 +156,12 @@ func runRead[T any](
 			return exitUnknown
 		}
 	} else {
+		// Human mode: rows to stdout, failures to stderr (D-13). Failures are
+		// never suppressed here — a human running the default is exactly the
+		// caller who must not mistake a broken read for an empty one. Under
+		// --json the failures already ride inside the stdout envelope.
 		render(stdoutWriter, result.Items)
+		renderFailures(stderrWriter, result.Failures)
 	}
 
 	return exitCodeFor(result.Failures, result.Complete)
@@ -175,20 +179,6 @@ func emitJSON(v any) error {
 	payload = append(payload, '\n')
 	_, err = stdoutWriter.Write(payload)
 	return err
-}
-
-// plainRows is the provisional human-mode renderer carried forward from 03-01's
-// prs-list fallback, generalised so the seven newly registered verbs are not
-// broken without --json between this task and the real renderer. Task 3 of this
-// plan replaces every use of it with a per-type renderer in render.go.
-func plainRows[T any](w io.Writer, items []T) {
-	var b strings.Builder
-	for _, item := range items {
-		fmt.Fprintf(&b, "%+v\n", item)
-	}
-	if b.Len() > 0 {
-		_, _ = io.WriteString(w, b.String())
-	}
 }
 
 // commandKeys returns every registered `noun verb` key in sorted order so any
