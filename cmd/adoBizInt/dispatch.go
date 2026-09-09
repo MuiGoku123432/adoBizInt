@@ -208,6 +208,22 @@ func runRead[T any](
 	defer cancel()
 
 	result, err := fetch(readCtx, projects, repositories)
+
+	// The interrupt check keys on the parent's Err(), not on the failure kind.
+	// The failure classifier maps a cancellation to the generic kind on purpose,
+	// so a user-initiated abort is never reported as a server timeout — which
+	// means the kind alone cannot tell you a signal fired, only the parent can.
+	//
+	// It runs before any stdout write, so an interrupt that lands between the
+	// read returning and the output being written still yields exactly one
+	// top-level document: the crash record instead of the envelope, never both.
+	if ctx.Err() != nil {
+		log.Warn("Read interrupted", "command", name, "error", ctx.Err())
+		writeCrashRecord(crashKindInterrupt,
+			"read interrupted before any output was written: "+ctx.Err().Error())
+		return exitUnknown
+	}
+
 	if err != nil {
 		log.Error("Read failed", "command", name, "error", err)
 		fmt.Fprintf(stderrWriter, "Error running %s: %v\n", name, err)

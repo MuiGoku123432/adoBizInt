@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -94,7 +96,15 @@ func run() int {
 	// pay full TUI construction for a non-interactive read. Zero arguments falls
 	// through to the TUI path unchanged (CLI-01).
 	if len(os.Args) > 1 {
-		return dispatch(context.Background(), client, os.Args[1:])
+		// The read runs under a signal-cancelled parent so an interrupt aborts
+		// it in flight rather than after the fan-out completes. NotifyContext
+		// owns the goroutine, the cleanup and the repeat-signal case; a
+		// hand-rolled Notify plus a channel would reimplement all three and get
+		// the cleanup wrong on the paths that return early (D-25).
+		signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stopSignals()
+
+		return dispatch(signalCtx, client, os.Args[1:])
 	}
 
 	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.Repositories, cfg.StateTransitions, cfg.PollInterval, priorities)
