@@ -9,8 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/config"
 )
 
 // TestExitCodeFor pins the process exit contract (D-06) and its precedence rule
@@ -662,4 +664,157 @@ func nonEmptyLines(s string) []string {
 		}
 	}
 	return out
+}
+
+// withReadBudget sets the package-level fan-out budget for one test and
+// restores it afterwards, standing in for the assignment run() makes after
+// config validation.
+func withReadBudget(t *testing.T, d time.Duration) {
+	t.Helper()
+	prev := readBudget
+	readBudget = d
+	t.Cleanup(func() { readBudget = prev })
+}
+
+// deadlineCapturingClient records the deadline of the context the read was
+// invoked with, which is how these tests observe the applied budget without
+// waiting for it to expire.
+func deadlineCapturingClient(t *testing.T, got *time.Duration, ok *bool) *fakeReadClient {
+	t.Helper()
+	return &fakeReadClient{
+		t: t,
+		GetPullRequestsFunc: func(ctx context.Context, _ []string) (ado.Result[ado.PullRequest], error) {
+			deadline, has := ctx.Deadline()
+			*ok = has
+			if has {
+				*got = time.Until(deadline)
+			}
+			return emptyResult[ado.PullRequest](), nil
+		},
+	}
+}
+
+// TestTimeoutOverridesConfiguredBudgetAfterValidation is the ordering proof for
+// D-P6. A 5s fetch budget written into the config would be rejected by
+// validation, because it sits below the 30s default poll interval. The same
+// value supplied as --timeout must be accepted, because the override lands
+// after validation has already passed on the configured value.
+func TestTimeoutOverridesConfiguredBudgetAfterValidation(t *testing.T) {
+	cfg := &config.Config{
+		PAT:          "fixture-pat",
+		OrgURL:       "https://dev.azure.com/fixture",
+		PollInterval: 30 * time.Second,
+		FetchTimeout: 2 * time.Minute,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("configured budget must validate before the override: %v", err)
+	}
+
+	// The same duration written into the config would fail. Asserting that here
+	// is what makes the ordering load-bearing rather than incidental.
+	rejected := *cfg
+	rejected.FetchTimeout = 5 * time.Second
+	if err := rejected.Validate(); err == nil {
+		t.Fatalf("a 5s fetch budget below the poll interval should fail validation; the ordering proof is vacuous otherwise")
+	}
+
+	withReadBudget(t, cfg.FetchTimeout)
+	captureOutput(t)
+
+	var applied time.Duration
+	var hasDeadline bool
+	client := deadlineCapturingClient(t, &applied, &hasDeadline)
+
+	code := dispatch(context.Background(), client, []string{"prs", "list", "--json", "--timeout", "5s"})
+	if code != exitOK {
+		t.Fatalf("dispatch with --timeout 5s = %d, want %d (no validation error)", code, exitOK)
+	}
+	if !hasDeadline {
+		t.Fatalf("the read ran with no deadline")
+	}
+	if applied > 10*time.Second {
+		t.Errorf("applied budget is %v, want roughly 5s (the flag, not the configured 2m)", applied)
+	}
+}
+
+// TestTimeoutOmittedUsesConfiguredBudget pins the default path: no flag means
+// the configured fetch budget, not the fetchctx fallback.
+func TestTimeoutOmittedUsesConfiguredBudget(t *testing.T) {
+	withReadBudget(t, 17*time.Minute)
+	captureOutput(t)
+
+	var applied time.Duration
+	var hasDeadline bool
+	client := deadlineCapturingClient(t, &applied, &hasDeadline)
+
+	if code := dispatch(context.Background(), client, []string{"prs", "list", "--json"}); code != exitOK {
+		t.Fatalf("dispatch = %d, want %d", code, exitOK)
+	}
+	if !hasDeadline {
+		t.Fatalf("the read ran with no deadline")
+	}
+	if applied < 16*time.Minute {
+		t.Errorf("applied budget is %v, want roughly the configured 17m", applied)
+	}
+}
+
+// TestTimeoutZeroFallsBackToDefaultBudget guards the reading of --timeout 0s as
+// "unbounded". A caller who writes it gets the fetchctx default; every CLI read
+// carries a deadline (threat T-03-17).
+func TestTimeoutZeroFallsBackToDefaultBudget(t *testing.T) {
+	withReadBudget(t, 0)
+	captureOutput(t)
+
+	var applied time.Duration
+	var hasDeadline bool
+	client := deadlineCapturingClient(t, &applied, &hasDeadline)
+
+	if code := dispatch(context.Background(), client, []string{"prs", "list", "--json", "--timeout", "0s"}); code != exitOK {
+		t.Fatalf("dispatch = %d, want %d", code, exitOK)
+	}
+	if !hasDeadline {
+		t.Fatalf("--timeout 0s produced a context with no deadline; it must fall back to the default budget")
+	}
+	if applied <= 0 {
+		t.Errorf("applied budget is %v, want the positive default budget", applied)
+	}
+}
+
+// TestTimeoutEqualToPollIntervalIsAccepted is the boundary the config validator
+// rejects. As a flag it is legitimate, because nothing is refreshing.
+func TestTimeoutEqualToPollIntervalIsAccepted(t *testing.T) {
+	withReadBudget(t, 2*time.Minute)
+	stdout, _ := captureOutput(t)
+
+	var applied time.Duration
+	var hasDeadline bool
+	client := deadlineCapturingClient(t, &applied, &hasDeadline)
+
+	if code := dispatch(context.Background(), client, []string{"prs", "list", "--json", "--timeout", "30s"}); code != exitOK {
+		t.Fatalf("dispatch with --timeout 30s = %d, want %d", code, exitOK)
+	}
+	if !hasDeadline || applied > time.Minute {
+		t.Errorf("applied budget is %v (deadline=%v), want roughly 30s", applied, hasDeadline)
+	}
+	if stdout.Len() == 0 {
+		t.Errorf("stdout is empty; want the result envelope")
+	}
+}
+
+// TestTimeoutUnparseableExitsThreeWithCleanStdout pins the malformed-value path
+// against the usage contract from 03-02: usage to stderr, nothing to stdout.
+func TestTimeoutUnparseableExitsThreeWithCleanStdout(t *testing.T) {
+	withReadBudget(t, 2*time.Minute)
+	stdout, stderr := captureOutput(t)
+
+	code := dispatch(context.Background(), allReadsFake(t), []string{"prs", "list", "--timeout", "banana"})
+	if code != exitUnknown {
+		t.Errorf("dispatch with an unparseable --timeout = %d, want %d", code, exitUnknown)
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("stdout = %q, want empty", stdout.String())
+	}
+	if stderr.Len() == 0 {
+		t.Errorf("stderr is empty; want the parse error and usage")
+	}
 }

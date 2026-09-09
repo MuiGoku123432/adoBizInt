@@ -67,6 +67,14 @@ func run() int {
 		return exitUnknown
 	}
 
+	// The fan-out budget is captured only now, after validation has passed
+	// (D-P6). A --timeout given on the command line replaces it per invocation,
+	// downstream of the rule at config validation that rejects a fetch budget at
+	// or below the poll interval — that rule protects a refreshing TUI and has
+	// no meaning for a one-shot read, so a CLI flag must not be measured
+	// against it.
+	readBudget = cfg.FetchTimeout
+
 	client, err := ado.NewClient(cfg)
 	if err != nil {
 		log.Error("Failed to create ADO client", "error", err)

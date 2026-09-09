@@ -62,10 +62,11 @@ var filterSupportByCommand = map[string]filterSupport{
 	"pipelines runs": {search: true},
 }
 
-// defaultTimeout is the zero value meaning "no CLI-imposed deadline"; plan
-// 03-05 owns turning a non-zero value into a context deadline. The override
-// must land after config validation, because config.go:159 rejects a FetchTimeout
-// at or below PollInterval and a CLI flag must not trip a config-file check.
+// defaultTimeout is the zero value meaning "no CLI-imposed deadline": the read
+// then runs under the configured fetch budget. A non-zero value replaces that
+// budget for this invocation only, and the replacement lands after config
+// validation, because the validator rejects a fetch budget at or below the poll
+// interval and a CLI flag must not trip a config-file check (D-P6).
 const defaultTimeout time.Duration = 0
 
 // stringList collects a repeatable, also comma-separated, flag value. It backs
@@ -107,7 +108,7 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags) {
 	fs.BoolVar(&gf.asJSON, "json", false,
 		"emit the raw result envelope as one JSON document on stdout")
 	fs.DurationVar(&gf.timeout, "timeout", defaultTimeout,
-		"deadline for the whole read, e.g. 30s (applied in a later plan)")
+		"deadline for the whole read, e.g. 30s; 0s means the built-in default budget")
 	fs.Var(&gf.projects, "project",
 		"restrict the read to a project; repeatable or comma-separated")
 

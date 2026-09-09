@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"sort"
+	"time"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/logging"
+	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 )
 
 // Process exit codes (D-06). These are a public contract from this plan onward:
@@ -30,6 +32,18 @@ var (
 	stdoutWriter io.Writer = os.Stdout
 	stderrWriter io.Writer = os.Stderr
 )
+
+// readBudget is the fan-out deadline every CLI read runs under when --timeout
+// is not given. run() assigns it from the loaded configuration AFTER validation
+// returns, which is the whole point of D-P6: the validator rejects a fetch
+// budget at or below the poll interval, a rule that is correct for a refreshing
+// TUI and meaningless for a one-shot read. Applying the override before
+// validation would fail `--timeout 10s` with a message about a concept the CLI
+// does not have.
+//
+// The zero value means "unset", and fetchctx turns an unset budget into its own
+// default rather than into an unbounded read.
+var readBudget time.Duration
 
 // readClient is the consumer-side seam the dispatch table calls through
 // (D-P1). It is declared here rather than in internal/ado because the consumer
@@ -177,7 +191,23 @@ func runRead[T any](
 	projects := emptyIfNil(gf.projects)
 	repositories := emptyIfNil(ff.repos)
 
-	result, err := fetch(ctx, projects, repositories)
+	// --timeout overrides the configured fetch budget for this invocation only
+	// (CLI-04, D-P5). It maps to the fan-out budget rather than the per-request
+	// one, because the per-request value is baked into the HTTP client at
+	// construction, before any flag value could reach it.
+	//
+	// The context is derived from ctx, the caller's cancellable parent, so a
+	// signal aborts the read in flight. The budget goes through fetchctx so the
+	// zero-budget fallback stays defined in exactly one place: an explicit
+	// --timeout 0s means "use the default budget", never "no deadline" (D-P7).
+	budget := readBudget
+	if gf.timeout != 0 {
+		budget = gf.timeout
+	}
+	readCtx, cancel := fetchctx.NewWithParent(ctx, budget)
+	defer cancel()
+
+	result, err := fetch(readCtx, projects, repositories)
 	if err != nil {
 		log.Error("Read failed", "command", name, "error", err)
 		fmt.Fprintf(stderrWriter, "Error running %s: %v\n", name, err)
