@@ -103,7 +103,18 @@ type Result[T any] struct {
 
 // newResult derives Complete from the failure slice so no call site has to
 // remember to set it. Complete is true only when nothing failed.
+//
+// Both slices are pre-allocated when the caller passes nil (D-P3) so they
+// marshal as [] rather than null. This is not cosmetic: failures is nil on
+// every successful read, so "failures":null was the happy-path output, and an
+// agent evaluating `.failures | length` errored on the ordinary success case.
 func newResult[T any](items []T, failures []Failure) Result[T] {
+	if items == nil {
+		items = []T{}
+	}
+	if failures == nil {
+		failures = []Failure{}
+	}
 	return Result[T]{
 		Items:    items,
 		Failures: failures,
