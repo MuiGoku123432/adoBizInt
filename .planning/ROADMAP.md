@@ -104,7 +104,7 @@ Plans:
   6. Agent-relevant filters work as flags, promoted out of the view packages
   7. A panic emits structured JSON rather than dying silently
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 
@@ -123,7 +123,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 03-05-PLAN.md — `--timeout`, `fetchctx.NewWithParent`, SIGINT handling, and the structured panic record
+- [x] 03-05-PLAN.md — `--timeout`, `fetchctx.NewWithParent`, SIGINT handling, and the structured panic record
 
 ### Phase 4: Guarded writes
 
