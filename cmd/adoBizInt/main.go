@@ -38,6 +38,13 @@ func run() int {
 	log := logging.Logger()
 	log.Info("Starting adoBizInt")
 
+	// Usage resolution runs before config is touched. cfg.Validate aborts when
+	// PAT is empty (config.go:151), so `adoBizInt --help` failing for lack of a
+	// credential would be hostile — and it is the first thing a new user runs.
+	if code, handled := handleUsage(os.Args[1:]); handled {
+		return code
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Error("Failed to load config", "error", err)

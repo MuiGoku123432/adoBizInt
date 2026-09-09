@@ -100,18 +100,17 @@ var commands = map[string]commandFunc{
 	},
 }
 
-// dispatch routes os.Args[1:] to a command. An unrecognised first token, or a
-// recognised noun with no verb, prints the command list and returns
-// exitUnknown — it deliberately does not fall through to the TUI (D-09, D-22),
-// because a typo must not start a full-screen program in a non-interactive
-// context.
+// dispatch routes os.Args[1:] to a command. Help, unknown nouns, unknown verbs
+// and bare nouns are already resolved by handleUsage before config is loaded,
+// so a key reaching here is expected to resolve; the fallback stays because a
+// typo must never fall through to the TUI (D-09, D-22).
 func dispatch(ctx context.Context, client readClient, args []string) int {
 	if len(args) >= 2 {
 		if cmd, ok := commands[args[0]+" "+args[1]]; ok {
 			return cmd(ctx, client, args[2:])
 		}
 	}
-	printUsage()
+	usageRoot()
 	return exitUnknown
 }
 
@@ -125,9 +124,7 @@ func runRead[T any](
 	fetch func(context.Context, []string) (ado.Result[T], error),
 	render func(io.Writer, []T),
 ) int {
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	fs.SetOutput(stderrWriter)
-	asJSON := fs.Bool("json", false, "emit the result envelope as one JSON document on stdout")
+	fs, gf := newFlagSet(name)
 	if err := fs.Parse(args); err != nil {
 		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
 		// been written and the request succeeded rather than failed.
@@ -139,8 +136,12 @@ func runRead[T any](
 
 	log := logging.Logger()
 
-	// No filter flags are passed to the read: a read verb with no filter flags
-	// returns the unfiltered set, even where the TUI defaults to filtering (D-18).
+	// --project is parsed and carried but not yet applied: plan 03-04 Task 2
+	// owns passing it as the projects argument and settling what an unset flag
+	// means. Until then no filter the caller did not request is applied, so the
+	// read returns the unfiltered set even where the TUI defaults to filtering
+	// (D-18).
+	_ = gf.projects
 	result, err := fetch(ctx, nil)
 	if err != nil {
 		log.Error("Read failed", "command", name, "error", err)
@@ -149,7 +150,7 @@ func runRead[T any](
 	}
 	log.Info("Read complete", "command", name, "items", len(result.Items), "failures", len(result.Failures))
 
-	if *asJSON {
+	if gf.asJSON {
 		if err := emitJSON(result); err != nil {
 			log.Error("Failed to marshal result", "error", err)
 			fmt.Fprintf(stderrWriter, "Error encoding result: %v\n", err)
@@ -199,15 +200,4 @@ func commandKeys() []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// printUsage lists the available commands on stderr. Usage text is a
-// diagnostic, so it never touches stdout (OUT-03).
-func printUsage() {
-	fmt.Fprintf(stderrWriter, "Usage: adoBizInt [command] [flags]\n")
-	fmt.Fprintf(stderrWriter, "\nRun with no arguments to start the interactive TUI.\n")
-	fmt.Fprintf(stderrWriter, "\nAvailable commands:\n")
-	for _, k := range commandKeys() {
-		fmt.Fprintf(stderrWriter, "  %s\n", k)
-	}
 }
