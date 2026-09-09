@@ -158,3 +158,52 @@ func TestFilterMatchesRepositoryEqualsInlineBranchesRule(t *testing.T) {
 		}
 	}
 }
+
+// TestFilterMatchesSearch pins the shared free-text matcher promoted out of the
+// five view packages that each held their own strings.Contains chain (CLI-06).
+// The field list is variadic because the five views search five different field
+// sets; a single item-typed signature would collapse into a type switch, which
+// is the trap this design avoids.
+func TestFilterMatchesSearch(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		fields []string
+		want   bool
+	}{
+		{"an empty query keeps every item", "", []string{"alpha", "beta"}, true},
+		{"a whitespace-only query keeps every item", "   ", []string{"alpha"}, true},
+		{"a tab-and-newline query keeps every item", "\t\n", []string{"alpha"}, true},
+		{"a substring of the only field matches", "lph", []string{"alpha"}, true},
+		{"a substring of a later field matches", "amm", []string{"alpha", "gamma"}, true},
+		{"an upper-case query matches a lower-case field", "LPH", []string{"alpha"}, true},
+		{"a lower-case query matches an upper-case field", "lph", []string{"ALPHA"}, true},
+		{"a query matching no field drops the item", "zzz", []string{"alpha", "gamma"}, false},
+		{"no fields supplied and a real query drops the item", "zzz", nil, false},
+		{"an empty field never matches a real query", "z", []string{""}, false},
+		{"a numeric ID substring matches when the caller formats it in", "23", []string{"1234", "Title"}, true},
+		{"a full field value matches", "alpha", []string{"alpha"}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := MatchesSearch(tt.query, tt.fields...); got != tt.want {
+				t.Errorf("MatchesSearch(%q, %v) = %v, want %v", tt.query, tt.fields, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestFilterMatchesSearchIsIdempotentOverNormalization asserts the matcher
+// accepts both a raw query and the already-normalized form the five view
+// packages pass, so the call-site normalization the views keep is a no-op
+// rather than a second, drifting rule.
+func TestFilterMatchesSearchIsIdempotentOverNormalization(t *testing.T) {
+	fields := []string{"Alpha", "REPO-one", "Ann"}
+	for _, raw := range []string{"  ALPHA  ", "alpha", "Alpha", "  alpha"} {
+		normalized := strings.ToLower(strings.TrimSpace(raw))
+		if MatchesSearch(raw, fields...) != MatchesSearch(normalized, fields...) {
+			t.Errorf("MatchesSearch disagrees on raw %q vs normalized %q", raw, normalized)
+		}
+	}
+}

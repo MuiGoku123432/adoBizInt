@@ -80,3 +80,10 @@ func matchesAny(value string, set []string) bool {
 	}
 	return false
 }
+
+// MatchesSearch reports whether any of fields contains the free-text query.
+//
+// RED stub — implemented in the GREEN commit.
+func MatchesSearch(query string, fields ...string) bool {
+	return false
+}
