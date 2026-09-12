@@ -139,7 +139,7 @@ Plans:
   5. A write that times out reports outcome-unknown, distinct from both success and failure
   6. All of the above are covered by tests using the Phase 1 seam
 
-**Plans**: 3/4 plans executed
+**Plans**: 4/4 plans executed
 
 Plans:
 
@@ -157,7 +157,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 04-04-PLAN.md — Phase-wide guard matrix over every write verb, validation map completion, and live-ADO confirmation
+- [x] 04-04-PLAN.md — Phase-wide guard matrix over every write verb, validation map completion, and live-ADO confirmation
 
 ### Phase 5: Hardening
 

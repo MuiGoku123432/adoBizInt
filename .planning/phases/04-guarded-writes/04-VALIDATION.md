@@ -86,9 +86,15 @@ created: 2026-09-12
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| Real ADO write against a live project | SAFE-01..04 | Requires live credentials and a disposable work item; out of scope for CI | Against a scratch work item: run the verb without `--confirm` (expect diff, no change), then with `--confirm` (expect change + audit line). Confirm the audit file contains exactly one new record. |
+| Behavior | Requirement | Why Manual | Test Instructions | Status |
+|----------|-------------|------------|-------------------|--------|
+| Real ADO write against a live project | SAFE-01..04 | Requires live credentials and a disposable work item; out of scope for CI | Against a scratch work item: run the verb without `--confirm` (expect diff, no change), then with `--confirm` (expect change + audit line). Confirm the audit file contains exactly one new record. Full seven-step procedure preserved verbatim in `04-04-SUMMARY.md` § "Deferred — Live Azure DevOps verification (UNVERIFIED)". | ⬜ pending |
+| TUI effort modal closes a real Task with typed effort (carried from 04-02) | SAFE-03 | No automated test drives the Bubble Tea effort modal end to end | Close one real Task through the TUI effort modal, entering effort values. Confirm the Task closes with the effort typed and that fields left blank were not zeroed. | ⬜ pending |
+
+> **Deferred at plan 04-04 (2026-09-12).** Both rows above were deferred by the user at the
+> 04-04 Task 3 checkpoint and have NOT been run. No result may be inferred for them. Phase 4
+> is not fully verified against a live Azure DevOps instance until they are. This is why
+> `status` remains `draft` and `nyquist_compliant` remains `false`.
 
 ---
 
