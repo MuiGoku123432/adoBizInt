@@ -290,7 +290,15 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 
 // UpdateWorkItemStateWithEffort updates the state of a work item along with effort fields
 // Used for Tasks transitioning to Closed which require effort tracking
-func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed float64) error {
+//
+// Each effort parameter is nullable, and nil means "the caller did not name this
+// field" — no operation is appended for it and ADO leaves it untouched. A nil
+// pointer must never reach the Value field: Value is interface{}, so a nil
+// *float64 placed there serializes as "value":null, which CLEARS the field
+// rather than omitting it. The nil check therefore gates the append, never the
+// value. A non-nil pointer to 0 is a real zero and must survive — closing a task
+// legitimately means RemainingWork 0.
+func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error {
 	log := logging.Logger()
 
 	addOp := webapi.OperationValues.Add
@@ -299,30 +307,37 @@ func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, 
 	remainingPath := "/fields/Microsoft.VSTS.Scheduling.RemainingWork"
 	completedPath := "/fields/Microsoft.VSTS.Scheduling.CompletedWork"
 
-	// Update effort fields first, then state change
-	// Using Add operation which works for both new and existing values
-	document := []webapi.JsonPatchOperation{
-		{
+	// Update effort fields first, then state change. The relative order —
+	// OriginalEstimate, RemainingWork, CompletedWork, then State — is a pinned
+	// contract; surviving operations are not reordered when some are omitted.
+	// Using Add operation which works for both new and existing values.
+	document := []webapi.JsonPatchOperation{}
+	if originalEstimate != nil {
+		document = append(document, webapi.JsonPatchOperation{
 			Op:    &addOp,
 			Path:  &originalEstimatePath,
-			Value: originalEstimate,
-		},
-		{
+			Value: *originalEstimate,
+		})
+	}
+	if remaining != nil {
+		document = append(document, webapi.JsonPatchOperation{
 			Op:    &addOp,
 			Path:  &remainingPath,
-			Value: remaining,
-		},
-		{
+			Value: *remaining,
+		})
+	}
+	if completed != nil {
+		document = append(document, webapi.JsonPatchOperation{
 			Op:    &addOp,
 			Path:  &completedPath,
-			Value: completed,
-		},
-		{
-			Op:    &addOp,
-			Path:  &statePath,
-			Value: newState,
-		},
+			Value: *completed,
+		})
 	}
+	document = append(document, webapi.JsonPatchOperation{
+		Op:    &addOp,
+		Path:  &statePath,
+		Value: newState,
+	})
 
 	_, err := c.workitemClient.UpdateWorkItem(ctx, workitemtracking.UpdateWorkItemArgs{
 		Id:       &itemID,
@@ -335,8 +350,20 @@ func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, 
 	}
 
 	log.Info("Work item state updated with effort", "id", itemID, "state", newState,
-		"originalEstimate", originalEstimate, "remaining", remaining, "completed", completed)
+		"originalEstimate", effortLogValue(originalEstimate),
+		"remaining", effortLogValue(remaining),
+		"completed", effortLogValue(completed))
 	return nil
+}
+
+// effortLogValue renders a nullable effort value for structured logging. Logging
+// the pointer itself would print an address, which hides both the value and the
+// omitted/supplied distinction this function exists to preserve.
+func effortLogValue(v *float64) any {
+	if v == nil {
+		return "omitted"
+	}
+	return *v
 }
 
 // GetWorkItemDetail fetches full details for a single work item

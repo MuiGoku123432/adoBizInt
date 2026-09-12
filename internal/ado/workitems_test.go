@@ -350,7 +350,8 @@ func TestUpdateWorkItemStateWithEffortIssuesExactPatch(t *testing.T) {
 		},
 	}
 
-	if err := client.UpdateWorkItemStateWithEffort(context.Background(), 84, "Closed", 8.0, 3.5, 4.5); err != nil {
+	originalEstimate, remaining, completed := 8.0, 3.5, 4.5
+	if err := client.UpdateWorkItemStateWithEffort(context.Background(), 84, "Closed", &originalEstimate, &remaining, &completed); err != nil {
 		t.Fatalf("UpdateWorkItemStateWithEffort() error = %v, want nil", err)
 	}
 
@@ -388,6 +389,92 @@ func TestUpdateWorkItemStateWithEffortIssuesExactPatch(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("UpdateWorkItem args = %+v, want %+v", got, want)
+	}
+}
+
+// A nil effort pointer means "the caller did not name this field", which must
+// produce NO operation at all. Assigning a nil *float64 to JsonPatchOperation.Value
+// would serialize as "value":null — an explicit CLEAR, not an omission — so the nil
+// check gates the append itself. The operation count is what proves that: an
+// appended null would keep the count at four.
+func TestUpdateWorkItemStateWithEffortOmitsNilFields(t *testing.T) {
+	ptr := func(f float64) *float64 { return &f }
+
+	addOp := webapi.OperationValues.Add
+	originalEstimatePath := "/fields/Microsoft.VSTS.Scheduling.OriginalEstimate"
+	remainingPath := "/fields/Microsoft.VSTS.Scheduling.RemainingWork"
+	completedPath := "/fields/Microsoft.VSTS.Scheduling.CompletedWork"
+	statePath := "/fields/System.State"
+
+	stateOp := webapi.JsonPatchOperation{Op: &addOp, Path: &statePath, Value: "Closed"}
+
+	tests := []struct {
+		name                              string
+		originalEstimate, remaining, comp *float64
+		want                              []webapi.JsonPatchOperation
+	}{
+		{
+			name:      "only remaining supplied",
+			remaining: ptr(3.5),
+			want: []webapi.JsonPatchOperation{
+				{Op: &addOp, Path: &remainingPath, Value: 3.5},
+				stateOp,
+			},
+		},
+		{
+			name:             "all three supplied",
+			originalEstimate: ptr(8.0),
+			remaining:        ptr(3.5),
+			comp:             ptr(4.5),
+			want: []webapi.JsonPatchOperation{
+				{Op: &addOp, Path: &originalEstimatePath, Value: 8.0},
+				{Op: &addOp, Path: &remainingPath, Value: 3.5},
+				{Op: &addOp, Path: &completedPath, Value: 4.5},
+				stateOp,
+			},
+		},
+		{
+			name:      "explicit zero remaining is a real zero, not an omission",
+			remaining: ptr(0.0),
+			want: []webapi.JsonPatchOperation{
+				{Op: &addOp, Path: &remainingPath, Value: 0.0},
+				stateOp,
+			},
+		},
+		{
+			name: "no effort supplied leaves only the state operation",
+			want: []webapi.JsonPatchOperation{stateOp},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got workitemtracking.UpdateWorkItemArgs
+			client := &Client{
+				workitemClient: &fakeWorkItemAPI{
+					t: t,
+					UpdateWorkItemFunc: func(_ context.Context, args workitemtracking.UpdateWorkItemArgs) (*workitemtracking.WorkItem, error) {
+						got = args
+						return &workitemtracking.WorkItem{}, nil
+					},
+				},
+			}
+
+			if err := client.UpdateWorkItemStateWithEffort(context.Background(), 84, "Closed",
+				tc.originalEstimate, tc.remaining, tc.comp); err != nil {
+				t.Fatalf("UpdateWorkItemStateWithEffort() error = %v, want nil", err)
+			}
+
+			if got.Document == nil {
+				t.Fatalf("UpdateWorkItem Document = nil, want %d operations", len(tc.want))
+			}
+			if len(*got.Document) != len(tc.want) {
+				t.Fatalf("operation count = %d, want %d (document = %+v)", len(*got.Document), len(tc.want), *got.Document)
+			}
+			if !reflect.DeepEqual(*got.Document, tc.want) {
+				t.Errorf("document = %+v, want %+v", *got.Document, tc.want)
+			}
+		})
 	}
 }
 
