@@ -139,14 +139,25 @@ Plans:
   5. A write that times out reports outcome-unknown, distinct from both success and failure
   6. All of the above are covered by tests using the Phase 1 seam
 
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
 
-- [ ] 04-01: Dry-run and confirmation contract shared by all write verbs
-- [ ] 04-02: Write subcommands for the seven mutations
-- [ ] 04-03: Audit record and outcome-unknown handling
-- [ ] 04-04: Nullable effort fields
+**Wave 1**
+
+- [ ] 04-01-PLAN.md — Tracer: `workitems set-state` end to end — dry-run default, `--confirm`, pre-read diff, pre-flight audit sink, outcome classification, two new exit codes
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 04-02-PLAN.md — Nullable effort fields at the `internal/ado` signature, TUI call sites, and `fs.Visit` flag-presence detection
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 04-03-PLAN.md — By-id pre-reads and the remaining five write verbs, with three-level `--help` coverage
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 04-04-PLAN.md — Phase-wide guard matrix over every write verb, validation map completion, and live-ADO confirmation
 
 ### Phase 5: Hardening
 
