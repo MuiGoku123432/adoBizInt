@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: guarded-writes
 status: executing
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-09-12T07:20:58.120Z"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-09-12T07:34:31.267Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 20
-  completed_plans: 13
+  completed_plans: 14
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 04 (guarded-writes) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Next: Phase 04 (guarded writes)
 Last activity: 2026-09-12 — Phase 04 execution started
 
-Progress: [███████░░░] 65%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [███████░░░] 65%
 | Phase 03 P05 | 29 min | 3 tasks | 8 files |
 | Phase 04 P01 | 42 min | 3 tasks | 15 files |
 | Phase 04 P02 | 24 min | 3 tasks | 8 files |
+| Phase 04 P03 | 26 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 04]: The nil check gates the JSON-Patch append, never the Value field: a nil *float64 in Value serializes as value:null, which CLEARS the field rather than omitting it
 - [Phase 04]: fs.Visit (flags actually set), not fs.VisitAll or a value comparison, is what keeps --remaining 0 distinct from an omitted --remaining
 - [Phase 04]: internal/ui/workitems/effort.go left untouched: blank input still means 0, so TUI behaviour is unchanged by the nullable signature
+- [Phase 04]: No releaseAPI interface entry added: the Azure DevOps SDK exposes no by-id approval endpoint, so GetReleaseApprovalDetail filters the existing GetApprovals list by id — Keeps ROADMAP SC4 (no uncalled interface entry) satisfied by construction
+- [Phase 04]: runWrite generalised over a writeOp closure struct (resolve/plan/mutate) so all six write verbs share one guard body — A guard in a shared body cannot be forgotten on a new verb; six copies can drift
+- [Phase 04]: Structural prohibitions asserted with go/ast rather than grep-negative criteria — STATE.md records three Phase 3 incidents where a grep criterion was defeated by a prose comment; comments are not in the AST
 
 ### Pending Todos
 
@@ -185,6 +189,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-12T07:20:58.113Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-09-12T07:34:31.261Z
+Stopped at: Completed 04-03-PLAN.md
 Resume file: None

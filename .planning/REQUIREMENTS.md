@@ -30,7 +30,7 @@ Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 
 - [x] **CLI-01**: `adoBizInt` with no subcommand launches the existing TUI with no behavior change
 - [x] **CLI-02**: Read subcommands exist for work items, PRs, pipelines, releases, branches and dashboard
-- [ ] **CLI-03**: Write subcommands exist for the seven existing mutations
+- [x] **CLI-03**: Write subcommands exist for the seven existing mutations
 - [x] **CLI-04**: `--timeout` sets a per-invocation deadline; the process handles interrupt signals
 - [x] **CLI-05**: Every command responds to `--help` with its flags and arguments
 - [x] **CLI-06**: Filtering an agent would want (assigned-to-me, hide-done, by project, by repo) is available as flags, promoted out of the view packages where it currently lives
@@ -47,8 +47,8 @@ Prerequisite for verifying any write guard. Source: CONCERNS.md H1, TESTING.md.
 
 Source: CONCERNS.md C2.
 
-- [ ] **SAFE-01**: Write verbs are dry-run by default and require an explicit confirmation flag to execute
-- [ ] **SAFE-02**: Every executed write appends an audit record identifying what changed
+- [x] **SAFE-01**: Write verbs are dry-run by default and require an explicit confirmation flag to execute
+- [x] **SAFE-02**: Every executed write appends an audit record identifying what changed
 - [x] **SAFE-03**: Effort updates accept omitted fields as "leave unchanged" rather than blind-overwriting with zero
 - [ ] **SAFE-04**: A write that times out reports outcome-unknown rather than success or failure
 
@@ -237,9 +237,9 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 | OUT-03 | Phase 3 | Complete |
 | OUT-04 | Phase 3 | Complete |
 | OUT-05 | Phase 3 | Complete |
-| CLI-03 | Phase 4 | Pending |
-| SAFE-01 | Phase 4 | Pending |
-| SAFE-02 | Phase 4 | Pending |
+| CLI-03 | Phase 4 | Complete |
+| SAFE-01 | Phase 4 | Complete |
+| SAFE-02 | Phase 4 | Complete |
 | SAFE-03 | Phase 4 | Complete |
 | SAFE-04 | Phase 4 | Pending |
 | HARD-01 | Phase 5 | Pending |

@@ -139,7 +139,7 @@ Plans:
   5. A write that times out reports outcome-unknown, distinct from both success and failure
   6. All of the above are covered by tests using the Phase 1 seam
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 
 Plans:
 
@@ -153,7 +153,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 04-03-PLAN.md — By-id pre-reads and the remaining five write verbs, with three-level `--help` coverage
+- [x] 04-03-PLAN.md — By-id pre-reads and the remaining five write verbs, with three-level `--help` coverage
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
