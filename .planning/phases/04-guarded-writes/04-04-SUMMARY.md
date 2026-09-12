@@ -61,11 +61,21 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: "Live Azure DevOps write confirmation against a scratch work item (preview / --confirm / repeat / audit inspection / required-flag rejection), plus the carried 04-02 TUI effort-modal close"
+    description: "Live Azure DevOps write confirmation against a scratch work item (preview / --confirm / repeat / audit inspection / required-flag rejection)"
     requirement: "SAFE-02"
-    verification: []
+    verification:
+      - ref: "Live run 2026-09-12, Windstream/Kinetic work item 1198503, steps 1-6"
+        status: pass
     human_judgment: true
-    rationale: "Requires live credentials and a disposable work item; DEFERRED by the user and NOT performed. No result may be inferred. See '## Deferred — Live Azure DevOps verification (UNVERIFIED)'."
+    rationale: "Run against live ADO on 2026-09-12. Steps 1-6 all passed. See '## Live Azure DevOps verification — RUN 2026-09-12'."
+  - id: D4
+    description: "Carried from 04-02: TUI effort modal preserves effort fields left blank"
+    requirement: "SAFE-03"
+    verification:
+      - ref: "Live run 2026-09-12: Task closed via Bubble Tea effort modal with Original Estimate blank"
+        status: fail
+    human_judgment: true
+    rationale: "FAILED. Blank effort field is silently overwritten with 0 (effort.go:193-199 + workitems.go:362-374). SAFE-03 holds on the CLI path only. The TUI write path bypasses runWrite entirely — no dry run, no --confirm, no audit record. Remediation tracked in .planning/BACKLOG.md; not a Phase 4 correction because D-17 locked TUI behaviour."
 
 duration: 38 min
 completed: 2026-09-12
@@ -99,9 +109,74 @@ status: complete
 - `cmd/adoBizInt/writeverbs_test.go` — narrower per-verb assertions subsumed by the matrix consolidated away
 - `.planning/phases/04-guarded-writes/04-VALIDATION.md` — map completed; manual-only row left pending
 
-## Deferred — Live Azure DevOps verification (UNVERIFIED)
+## Live Azure DevOps verification — RUN 2026-09-12
 
-**Status: NOT RUN. NOT APPROVED. No step below has an observed result.**
+**Superseded the deferral below. Steps 1-6 PASSED. Step 7 FAILED.**
+
+Target: `dev.azure.com/Windstream`, project `Kinetic`, work item `1198503`
+(restored to its original `New` state after the run; two `executed` audit records reflect
+the write and the restore).
+
+| # | Check | Result |
+|---|-------|--------|
+| 1 | Dry run reports the diff, mutates nothing | ✅ `System.State: New -> Active`, `executed:false`, `outcome:dry_run`, exit 0. Re-run showed `from` still `New`, proving no mutation. |
+| 2 | Audit baseline | ✅ `audit.jsonl` did not exist; 0 lines |
+| 3 | `--confirm` executes | ✅ `executed:true`, `outcome:executed`, exit 0, exactly 1 new audit line |
+| 4 | Repeat refused as no-op | ✅ exit 4, `outcome:no_op`, `changes:[]`, no new audit line — on BOTH the `--confirm` and dry-run paths |
+| 5 | Audit record shape | ✅ keys exactly `["changes","command","outcome","target","timestamp"]`; leak scan for `argv`/token/PAT/bearer/URL/actor returned 0 hits |
+| 6 | `pipelines queue` without `--branch` | ✅ exit 3, error on stderr, no ADO call attempted (used a nonexistent definition id AND project — still failed at the flag guard first) |
+| 7 | TUI effort modal preserves blank fields | ❌ **FAILED — blank field silently overwritten with 0** |
+
+### Step 7 failure — SAFE-03 is only half satisfied
+
+Predicted from source before running, then confirmed empirically.
+
+- `internal/ui/workitems/effort.go:193-199` — `parseFloat("")` returns `0, nil`. A blank input
+  becomes `0.0`, not "absent".
+- `internal/ui/workitems/workitems.go:362-374` — all three effort values are then always passed
+  as non-nil pointers. The in-source comment states it plainly: *"All three are ALWAYS non-nil
+  here — TUI behaviour is unchanged."*
+- `EffortSubmitMsg` still carries plain `float64`, not `*float64`, so the modal has no
+  representation for "leave unchanged".
+
+Observed: a Task closed through the modal with Original Estimate left blank had its Original
+Estimate overwritten with 0. (`Completed` cannot be tested this way — `effort.go:144` rejects
+a value <= 0, so it can never be blank.)
+
+**The TUI write path bypasses every Phase 4 guard.** It does not route through `runWrite`, so
+there is no dry run, no `--confirm`, and no audit record. The observed data loss left no trace
+in `audit.jsonl`. That makes this a gap against SAFE-01 and SAFE-02 for that path as well, not
+only SAFE-03.
+
+| Path | SAFE-03 |
+|------|---------|
+| CLI (`--original-estimate` / `--remaining` / `--completed`) | ✅ omitted -> no patch op; `--remaining 0` is a real zero |
+| TUI effort modal | ❌ blank -> explicit `value: 0` -> field overwritten |
+
+Not a regression from this phase: D-17 locked "preserve TUI behaviour exactly", so 04-02
+deliberately plumbed the nullable signature to the boundary and stopped. Remediation is a NEW
+decision — tracked in `.planning/BACKLOG.md`, not a correction within Phase 4.
+
+### Three findings from the CLI run that no fake produced
+
+1. **ADO refused the first write, and the refusal path was correct.** Initial target `Closed`
+   hit a Kinetic project rule: `TF401320: Rule Error for field Completed Work. Error code:
+   Required, InvalidEmpty.` The CLI reported `outcome:"failed"`, `executed:false`, exit 1
+   (P-08), and wrote **no** audit record. The "ADO refused a write" branch was exercised by a
+   real rule engine — it was not one of the seven steps.
+2. **A dry run creates `audit.jsonl` as a side effect** (empty, 0 records). D-14 holds, but the
+   D-13 pre-flight open runs on dry runs too, so a preview is not filesystem-inert. Defensible
+   — you learn the sink is unwritable before typing `--confirm` — but undocumented, and not what
+   "reports what would change and does nothing" implies.
+3. **Exit 1 is ambiguous in practice.** It means both "a read did not reach every configured
+   project" and "Azure DevOps refused a write". The envelope disambiguates via
+   `outcome:"failed"`, but the exit code alone does not, which weakens the SAFE-04 claim that
+   outcomes are distinguishable. Flagged as a known cost at the P-01 ratification; confirmed
+   live.
+
+## Superseded — original deferral record (UNVERIFIED at time of writing)
+
+**Superseded by the run above on 2026-09-12. Retained for history.**
 
 The user elected to defer this checkpoint rather than run it now. Nothing in this SUMMARY,
 in `04-VALIDATION.md`, or in the phase state asserts that any of these steps passed. The

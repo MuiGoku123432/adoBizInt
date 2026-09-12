@@ -172,7 +172,8 @@ Carried from `.planning/codebase/CONCERNS.md`. All are addressed by the roadmap.
 Affecting the v2 scrum milestone, not v1:
 
 - **Days off unmaintained in ADO.** ADO capacity is `capacityPerDay x workingDays - daysOff`, so every capacity figure is overstated. Constrains v2 design: capacity is display-only, and no nag rule may read it. Revisit if teams start maintaining days off.
-- Phase 4 manual-only verifications are OUTSTANDING and unverified: the live Azure DevOps guarded-write confirmation and the carried 04-02 TUI effort-modal close. Deferred by the user at the 04-04 Task 3 checkpoint. Full procedure in 04-04-SUMMARY.md. Phase 4 is not fully verified until these run.
+- **BL-01 (high, open): the TUI write path bypasses every Phase 4 guard.** Live verification on 2026-09-12 confirmed the Bubble Tea effort modal silently overwrites a blank effort field with 0, with no preview, no confirmation and no audit record. SAFE-03 holds on the CLI path only. C2 is therefore only partly closed by Phase 4 — the CLI half is done, the TUI half is not. Remediation needs its own discuss-phase because D-17 locked "preserve TUI behaviour exactly". See `.planning/BACKLOG.md`.
+- Phase 4 live verification RAN 2026-09-12: CLI steps 1-6 passed against Windstream/Kinetic work item 1198503; the TUI effort-modal step FAILED (see BL-01). `04-VALIDATION.md` stays `status: draft` / `nyquist_compliant: false` because a required manual verification is red.
 
 ### Environment Notes
 

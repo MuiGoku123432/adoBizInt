@@ -88,13 +88,38 @@ created: 2026-09-12
 
 | Behavior | Requirement | Why Manual | Test Instructions | Status |
 |----------|-------------|------------|-------------------|--------|
-| Real ADO write against a live project | SAFE-01..04 | Requires live credentials and a disposable work item; out of scope for CI | Against a scratch work item: run the verb without `--confirm` (expect diff, no change), then with `--confirm` (expect change + audit line). Confirm the audit file contains exactly one new record. Full seven-step procedure preserved verbatim in `04-04-SUMMARY.md` § "Deferred — Live Azure DevOps verification (UNVERIFIED)". | ⬜ pending |
-| TUI effort modal closes a real Task with typed effort (carried from 04-02) | SAFE-03 | No automated test drives the Bubble Tea effort modal end to end | Close one real Task through the TUI effort modal, entering effort values. Confirm the Task closes with the effort typed and that fields left blank were not zeroed. | ⬜ pending |
+| Real ADO write against a live project (CLI path) | SAFE-01, SAFE-02 | Requires live credentials and a disposable work item; out of scope for CI | Steps 1-6 of the procedure in `04-04-SUMMARY.md`. | ✅ green |
+| TUI effort modal closes a real Task with typed effort (carried from 04-02) | SAFE-03 | No automated test drives the Bubble Tea effort modal end to end | Close one real Task through the TUI effort modal leaving Original Estimate blank. Confirm whether blank fields are preserved or zeroed. | ❌ red |
 
-> **Deferred at plan 04-04 (2026-09-12).** Both rows above were deferred by the user at the
-> 04-04 Task 3 checkpoint and have NOT been run. No result may be inferred for them. Phase 4
-> is not fully verified against a live Azure DevOps instance until they are. This is why
-> `status` remains `draft` and `nyquist_compliant` remains `false`.
+> **Live verification run 2026-09-12** against `dev.azure.com/Windstream`, project `Kinetic`,
+> work item `1198503` (restored to its original `New` state afterwards).
+>
+> **Steps 1-6 PASSED (CLI path).** Dry run reported the diff and mutated nothing; `--confirm`
+> executed and appended exactly one audit record; the repeat was refused as a no-op (exit 4,
+> `changes:[]`) on both the `--confirm` and dry-run paths with no second audit line; the audit
+> record carried exactly `timestamp`, `command`, `target`, `changes`, `outcome` with zero hits
+> for `argv`/token/PAT/bearer/URL/actor; `pipelines queue` without `--branch` exited 3 before
+> any ADO call.
+>
+> **Step 7 FAILED (TUI path).** The Bubble Tea effort modal silently overwrites a blank effort
+> field with zero. Predicted from source (`internal/ui/workitems/effort.go:193-199` —
+> `parseFloat("")` returns `0, nil`; `internal/ui/workitems/workitems.go:362-374` — all three
+> values are always sent as non-nil pointers), then **confirmed empirically**: a Task closed
+> through the modal with Original Estimate left blank had its Original Estimate overwritten
+> with 0.
+>
+> **SAFE-03 is therefore PARTIALLY satisfied** — correct on the CLI path, violated on the TUI
+> path. The TUI write path does not route through `runWrite`, so it inherits none of Phase 4's
+> guards: no dry run, no `--confirm`, and no audit record. The observed data loss left no trace
+> in `audit.jsonl`. This is a gap against SAFE-01 and SAFE-02 for that path as well, not only
+> SAFE-03.
+>
+> Not a regression introduced by this phase: D-17 locked "preserve TUI behaviour exactly", so
+> the nullable signature was deliberately plumbed to the boundary and stopped there. Remediation
+> is a NEW decision, tracked in `.planning/BACKLOG.md`, not a correction within Phase 4.
+>
+> `status` remains `draft` and `nyquist_compliant` remains `false` because a required manual
+> verification is red.
 
 ---
 
