@@ -79,7 +79,7 @@ type writeEnvelope struct {
 // precedes the --confirm branch because D-03 refuses on both paths.
 func runWrite(ctx context.Context, name string, c writeClient, args []string) int {
 	fs, gf, _, wf := newFlagSet(name)
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(hoistLeadingPositionals(args)); err != nil {
 		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
 		// been written and the request succeeded rather than failed.
 		if errors.Is(err, flag.ErrHelp) {
@@ -302,4 +302,36 @@ func renderWriteRecord(r writeRecord) {
 		fmt.Fprintf(stdoutWriter, "%s: %s -> %s\n", ch.Field, ch.From, ch.To)
 	}
 	fmt.Fprintf(stdoutWriter, "%s %s #%d: %s\n", r.Command, r.Target.Project, r.Target.ID, r.Outcome)
+}
+
+// hoistLeadingPositionals moves the arguments that appear before the first
+// flag to the end of the slice, so `set-state 4821 --project P` and
+// `set-state --project P 4821` parse identically.
+//
+// This exists because stdlib flag stops parsing at the first non-flag argument,
+// and D-23 puts the target in positional form specifically so a missing target
+// is a parse error rather than an --id defaulting to zero that could plausibly
+// be issued. Without this the natural spelling — target first, as every
+// `git`-shaped CLI writes it — would silently leave --project and --state unset
+// and every write would fail as a usage error.
+//
+// It moves rather than extracts, so the arity check still sees every stray
+// positional in fs.Args() and a second target is still a parse error (D-25).
+// Nothing is dropped and nothing is reinterpreted: a token is relocated only
+// when it precedes the first flag, so a flag's own value can never be hoisted.
+func hoistLeadingPositionals(args []string) []string {
+	firstFlag := len(args)
+	for i, a := range args {
+		if len(a) > 1 && a[0] == '-' {
+			firstFlag = i
+			break
+		}
+	}
+	if firstFlag == 0 || firstFlag == len(args) {
+		return args
+	}
+	hoisted := make([]string, 0, len(args))
+	hoisted = append(hoisted, args[firstFlag:]...)
+	hoisted = append(hoisted, args[:firstFlag]...)
+	return hoisted
 }
