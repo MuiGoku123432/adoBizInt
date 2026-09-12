@@ -86,9 +86,16 @@ type writeSupport struct {
 }
 
 var writeSupportByCommand = map[string]writeSupport{
-	// 04-01 is the tracer: one verb, state only. 04-03 expands this map to the
-	// remaining six verbs and turns on effort, comment, branch and repo.
+	// Each entry declares exactly the flags its payload can honour. A flag that
+	// parses but cannot mean anything is worse than one that does not exist, so
+	// `prs approve --state Closed` is a parse error rather than a silently
+	// ignored instruction (threat T-04-15).
 	"workitems set-state": {confirm: true, state: true, effort: true},
+	"prs approve":         {confirm: true, repo: true},
+	"prs complete":        {confirm: true, repo: true},
+	"releases approve":    {confirm: true, comment: true},
+	"releases reject":     {confirm: true, comment: true},
+	"pipelines queue":     {confirm: true, branch: true},
 }
 
 // writeFlags holds the per-verb write flags, exactly as filterFlags does for
@@ -211,6 +218,26 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 			"set the work item's remaining work in hours; omitted leaves it unchanged, 0 sets it to zero")
 		fs.Float64Var(&wf.completedVal, "completed", 0,
 			"set the work item's completed work in hours; omitted leaves it unchanged")
+	}
+
+	if wsup.comment {
+		fs.StringVar(&wf.comment, "comment", "",
+			"comment recorded with the decision in Azure DevOps; optional, empty by default")
+	}
+
+	// No default value, and none is inferred from the definition: --branch is
+	// the substance of a queue, so omitting it is a parse error (P-04).
+	if wsup.branch {
+		fs.StringVar(&wf.branch, "branch", "",
+			"branch to queue the pipeline run on; required, never defaulted from the definition")
+	}
+
+	// The write --repo is a stringList only so it reuses the read path's
+	// spelling and parsing; its arity is checked as exactly one, because
+	// fanning a mutation across repositories is meaningless (D-24).
+	if wsup.repo {
+		fs.Var(&wf.repo, "repo",
+			"the repository holding the pull request; exactly one value required")
 	}
 
 	fs.Usage = func() { usageVerb(name, fs) }

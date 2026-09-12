@@ -319,6 +319,16 @@ func TestFilterFlagsRegisteredOnSupportedVerbsOnly(t *testing.T) {
 		"releases approvals":    {},
 		"dashboard counts":      {},
 		"workitems set-state":   {},
+		// The two prs write verbs register --repo, but from writeSupport rather
+		// than filterSupport: on a write it names the repository holding the
+		// pull request with an arity of exactly one, it does not narrow a read.
+		// This test can only see the FlagSet, so the expectation is recorded
+		// here; TestWriteRepoArityIsExactlyOne pins the difference in meaning.
+		"prs approve":      {"repo"},
+		"prs complete":     {"repo"},
+		"releases approve": {},
+		"releases reject":  {},
+		"pipelines queue":  {},
 	}
 	allFilterFlags := []string{"search", "assigned-to-me", "hide-done", "hide-tasks", "repo"}
 

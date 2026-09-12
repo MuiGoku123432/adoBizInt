@@ -97,6 +97,28 @@ type writeClient interface {
 	// write path routes here only when at least one effort flag was set, so an
 	// effort-free write never hands this method three nils.
 	UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error
+
+	// The three by-id pre-reads added for the non-work-item verbs. Unlike
+	// GetWorkItemDetail they never return (nil, nil) for a missing target —
+	// internal/ado's TestPreReadNeverReturnsNilNilStructural enforces that
+	// structurally — so a caller here can never read a missing target as an
+	// empty diff (D-02, threat T-04-13).
+	GetPullRequestDetail(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error)
+	GetReleaseApprovalDetail(ctx context.Context, project string, approvalID int) (*ado.ReleaseApprovalDetail, error)
+	GetPipelineDefinitionDetail(ctx context.Context, project string, definitionID int) (*ado.PipelineDefinitionDetail, error)
+
+	// The five remaining mutations. Each is reachable through exactly one CLI
+	// verb (CLI-03), and each returns a bare error, which is why writeExitCodeFor
+	// exists separately from the read path's exitCodeFor.
+	ApprovePullRequest(ctx context.Context, project, repositoryID string, prID int) error
+	CompletePullRequest(ctx context.Context, project, repositoryID string, prID int) error
+	ApproveRelease(ctx context.Context, project string, approvalID int, comment string) error
+	RejectRelease(ctx context.Context, project string, approvalID int, comment string) error
+
+	// QueuePipeline returns the queued run; the write path discards it. The
+	// envelope reports the change that was requested, not a second read of what
+	// ADO then created, because those are different claims.
+	QueuePipeline(ctx context.Context, project string, definitionID int, branch string) (*ado.PipelineRun, error)
 }
 
 // client is what the dispatch table is handed. It embeds both seams so one
@@ -170,7 +192,22 @@ var commands = map[string]commandFunc{
 			ignoreRepos(c.GetDashboardCounts), nil, renderDashboardCounts)
 	},
 	"workitems set-state": func(ctx context.Context, c client, args []string) int {
-		return runWrite(ctx, "workitems set-state", c, args)
+		return runWrite(ctx, setStateOp(c), args)
+	},
+	"prs approve": func(ctx context.Context, c client, args []string) int {
+		return runWrite(ctx, prsApproveOp(c), args)
+	},
+	"prs complete": func(ctx context.Context, c client, args []string) int {
+		return runWrite(ctx, prsCompleteOp(c), args)
+	},
+	"releases approve": func(ctx context.Context, c client, args []string) int {
+		return runWrite(ctx, releaseApprovalOp("releases approve", "approved", c.ApproveRelease, c), args)
+	},
+	"releases reject": func(ctx context.Context, c client, args []string) int {
+		return runWrite(ctx, releaseApprovalOp("releases reject", "rejected", c.RejectRelease, c), args)
+	},
+	"pipelines queue": func(ctx context.Context, c client, args []string) int {
+		return runWrite(ctx, pipelinesQueueOp(c), args)
 	},
 }
 

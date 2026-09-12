@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/logging"
@@ -21,6 +22,20 @@ const (
 	fieldRemainingWork    = "Microsoft.VSTS.Scheduling.RemainingWork"
 	fieldCompletedWork    = "Microsoft.VSTS.Scheduling.CompletedWork"
 )
+
+// Field names for the non-work-item verbs. Same contract as the block above:
+// these strings are the `field` values of the envelope and of every persisted
+// audit line, so they are a one-way door.
+const (
+	fieldReviewerVote   = "reviewer.vote"
+	fieldPRStatus       = "status"
+	fieldApprovalStatus = "approval.status"
+	fieldQueuedBuild    = "queued_build"
+)
+
+// voteApproved is Azure DevOps' own reviewer-vote value for "approved", the
+// same literal ApprovePullRequest sends (pullrequests.go:183).
+const voteApproved = 10
 
 // fieldChange is one line of the current -> proposed diff D-01 requires. The
 // `from` value is a claim about the moment of the pre-read, not a guarantee
@@ -73,11 +88,54 @@ type writeEnvelope struct {
 	Write writeRecord `json:"write"`
 }
 
+// writeOp is the per-verb half of a guarded write. It exists so the six verbs
+// share ONE body rather than six copies of the ten-step order, mirroring how the
+// read side gives each verb its own closure differing only in fetch func and
+// renderer (dispatch.go:136-175). A guard that lives in a shared body cannot be
+// forgotten on a verb; a guard copied six times can.
+//
+// Each field is the whole of one verb's difference:
+//   - resolve enforces the per-verb arity rules and builds the target. Returning
+//     an error means nothing was attempted, which is exit 3.
+//   - plan runs the by-id pre-read and computes the current -> proposed diff. A
+//     non-nil error is fatal and emits nothing to stdout (D-02).
+//   - mutate issues the single mutation.
+type writeOp struct {
+	name    string
+	resolve func(gf *globalFlags, wf *writeFlags, id int) (writeTarget, error)
+	plan    func(ctx context.Context, t writeTarget, wf *writeFlags) ([]fieldChange, error)
+	mutate  func(ctx context.Context, t writeTarget, wf *writeFlags) error
+}
+
+// oneProject enforces D-24's arity of exactly one on --project.
+//
+// It is deliberately NOT emptyIfNil. That helper exists so an omitted --project
+// falls back to the read method's configured project list; silently landing a
+// mutation on a project the caller did not name is unacceptable (threat T-04-12),
+// so every write verb comes through here instead.
+func oneProject(name string, gf *globalFlags) (string, error) {
+	if len(gf.projects) != 1 {
+		return "", fmt.Errorf("%s requires exactly one --project value", name)
+	}
+	return gf.projects[0], nil
+}
+
+// oneRepo enforces the same arity on --repo for the verbs that address a
+// repository. Transposing project and repo on an approve has no type system to
+// catch it, so both are named flags with an arity of one rather than positionals.
+func oneRepo(name string, wf *writeFlags) (string, error) {
+	if len(wf.repo) != 1 {
+		return "", fmt.Errorf("%s requires exactly one --repo value", name)
+	}
+	return wf.repo[0], nil
+}
+
 // runWrite is the guarded-write body, the sibling of runRead. The ORDER of its
 // steps is the contract, not an implementation detail — in particular the audit
 // sink is opened before anything is attempted (D-13), and the no-op refusal
 // precedes the --confirm branch because D-03 refuses on both paths.
-func runWrite(ctx context.Context, name string, c writeClient, args []string) int {
+func runWrite(ctx context.Context, op writeOp, args []string) int {
+	name := op.name
 	fs, gf, _, wf := newFlagSet(name)
 	if err := fs.Parse(hoistLeadingPositionals(args)); err != nil {
 		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
@@ -95,44 +153,30 @@ func runWrite(ctx context.Context, name string, c writeClient, args []string) in
 
 	log := logging.Logger()
 
-	// Arity, all three failing to exit 3: nothing was attempted, which is
-	// exactly what exit 3 means.
+	// Arity, all failing to exit 3: nothing was attempted, which is exactly
+	// what exit 3 means.
 	//
 	// D-25: one target per invocation. Batching would force a partial-failure
 	// exit rule this contract has no clean answer for and would multiply the
 	// blast radius of a single mistyped --confirm, in the phase whose subject is
 	// safety.
 	if len(fs.Args()) != 1 {
-		fmt.Fprintf(stderrWriter, "%s requires exactly one work item id as a positional argument\n", name)
+		fmt.Fprintf(stderrWriter, "%s requires exactly one id as a positional argument\n", name)
 		return exitUnknown
 	}
 	id, err := strconv.Atoi(fs.Args()[0])
 	if err != nil {
-		fmt.Fprintf(stderrWriter, "%s: %q is not a work item id\n", name, fs.Args()[0])
+		fmt.Fprintf(stderrWriter, "%s: %q is not a numeric id\n", name, fs.Args()[0])
 		return exitUnknown
 	}
 
-	// D-24: exactly one --project, and deliberately NOT emptyIfNil. That helper
-	// exists so an omitted --project falls back to the read method's configured
-	// project list; silently picking a project the caller did not name is
-	// unacceptable for a mutation.
-	if len(gf.projects) != 1 {
-		fmt.Fprintf(stderrWriter, "%s requires exactly one --project value\n", name)
+	// Per-verb arity: exactly one --project for every verb (D-24), plus
+	// whichever of --repo and --branch this verb's payload actually needs.
+	target, err := op.resolve(gf, wf, id)
+	if err != nil {
+		fmt.Fprintf(stderrWriter, "%v\n", err)
 		return exitUnknown
 	}
-	project := gf.projects[0]
-
-	// D-26: --state is required and is never inferred from
-	// config.StateTransitions or GetNextState. A config-driven default means the
-	// same command produces different mutations on two machines, and it would
-	// also make the current -> proposed diff meaningless, since "proposed" would
-	// not have come from the caller.
-	if wf.state == "" {
-		fmt.Fprintf(stderrWriter, "%s requires --state\n", name)
-		return exitUnknown
-	}
-
-	target := writeTarget{Project: project, ID: id}
 
 	// P-11: the pre-read and the write share one budget from a single parent,
 	// matching runRead. The documented limit is that a slow pre-read can consume
@@ -160,18 +204,12 @@ func runWrite(ctx context.Context, name string, c writeClient, args []string) in
 	// D-02: a failed pre-read is fatal and emits NOTHING to stdout. A dry run
 	// that says "would set State=Closed" without having established the current
 	// state is a confident statement made without looking.
-	detail, err := c.GetWorkItemDetail(writeCtx, id)
+	changes, err := op.plan(writeCtx, target, wf)
 	if err != nil {
 		log.Error("Write pre-read failed", "command", name, "id", id, "error", err)
-		fmt.Fprintf(stderrWriter, "Error reading work item %d before writing: %v\n", id, err)
+		fmt.Fprintf(stderrWriter, "Error reading %s target %d before writing: %v\n", name, id, err)
 		return exitUnknown
 	}
-	if detail == nil {
-		fmt.Fprintf(stderrWriter, "Work item %d was not found\n", id)
-		return exitUnknown
-	}
-
-	changes := diffWorkItem(detail, wf)
 
 	// D-03/D-08: a change already applied is refused with no mutation attempted,
 	// on BOTH paths — this branch precedes the --confirm check deliberately.
@@ -189,15 +227,7 @@ func runWrite(ctx context.Context, name string, c writeClient, args []string) in
 		return finishWrite(name, target, changes, false, outcomeDryRun, exitOK, gf.asJSON)
 	}
 
-	// Route through the effort method only when the caller named an effort
-	// field. Sending three nils through it would be harmless but dishonest: an
-	// effort-free write is not an effort write with nothing to say.
-	if wf.hasEffort() {
-		err = c.UpdateWorkItemStateWithEffort(writeCtx, id, wf.state,
-			wf.originalEstimate, wf.remaining, wf.completed)
-	} else {
-		err = c.UpdateWorkItemState(writeCtx, id, wf.state)
-	}
+	err = op.mutate(writeCtx, target, wf)
 
 	// The parent's Err() is consulted, not the failure kind: classifyFailure maps
 	// context.Canceled to FailureOther on purpose, so the kind alone cannot tell
@@ -229,6 +259,212 @@ func runWrite(ctx context.Context, name string, c writeClient, args []string) in
 	}
 
 	return finishWrite(name, target, changes, outcome == outcomeExecuted, outcome, code, gf.asJSON)
+}
+
+// setStateOp is the work item verb (04-01's tracer), expressed as a writeOp so
+// it shares the same body as the five verbs added alongside it.
+func setStateOp(c writeClient) writeOp {
+	const name = "workitems set-state"
+	return writeOp{
+		name: name,
+		resolve: func(gf *globalFlags, wf *writeFlags, id int) (writeTarget, error) {
+			project, err := oneProject(name, gf)
+			if err != nil {
+				return writeTarget{}, err
+			}
+			// D-26: --state is required and is never inferred from
+			// config.StateTransitions or GetNextState. A config-driven default
+			// means the same command produces different mutations on two
+			// machines, and it would also make the current -> proposed diff
+			// meaningless, since "proposed" would not have come from the caller.
+			if wf.state == "" {
+				return writeTarget{}, fmt.Errorf("%s requires --state", name)
+			}
+			return writeTarget{Project: project, ID: id}, nil
+		},
+		plan: func(ctx context.Context, t writeTarget, wf *writeFlags) ([]fieldChange, error) {
+			detail, err := c.GetWorkItemDetail(ctx, t.ID)
+			if err != nil {
+				return nil, err
+			}
+			// GetWorkItemDetail predates preread.go and still returns (nil, nil)
+			// for a missing item (workitems.go:384-386), so the nil is checked
+			// here rather than trusted. The three pre-reads in preread.go cannot
+			// do this to us — TestPreReadNeverReturnsNilNilStructural forbids it.
+			if detail == nil {
+				return nil, fmt.Errorf("work item %d was not found", t.ID)
+			}
+			return diffWorkItem(detail, wf), nil
+		},
+		mutate: func(ctx context.Context, t writeTarget, wf *writeFlags) error {
+			// Route through the effort method only when the caller named an
+			// effort field. Sending three nils through it would be harmless but
+			// dishonest: an effort-free write is not an effort write with
+			// nothing to say.
+			if wf.hasEffort() {
+				return c.UpdateWorkItemStateWithEffort(ctx, t.ID, wf.state,
+					wf.originalEstimate, wf.remaining, wf.completed)
+			}
+			return c.UpdateWorkItemState(ctx, t.ID, wf.state)
+		},
+	}
+}
+
+// prsApproveOp casts the acting identity's approving vote.
+func prsApproveOp(c writeClient) writeOp {
+	const name = "prs approve"
+	return writeOp{
+		name:    name,
+		resolve: resolveProjectRepo(name),
+		plan: func(ctx context.Context, t writeTarget, _ *writeFlags) ([]fieldChange, error) {
+			detail, err := c.GetPullRequestDetail(ctx, t.Project, t.Repo, t.ID)
+			if err != nil {
+				return nil, err
+			}
+			changes := []fieldChange{}
+			// Already approved by this identity: D-03 refuses rather than
+			// re-casting a vote that is already recorded.
+			if detail.MyVote != voteApproved {
+				changes = append(changes, fieldChange{
+					Field: fieldReviewerVote,
+					From:  strconv.Itoa(detail.MyVote),
+					To:    strconv.Itoa(voteApproved),
+				})
+			}
+			return changes, nil
+		},
+		mutate: func(ctx context.Context, t writeTarget, _ *writeFlags) error {
+			return c.ApprovePullRequest(ctx, t.Project, t.Repo, t.ID)
+		},
+	}
+}
+
+// prsCompleteOp completes (merges) a pull request. The verb is `complete`, not
+// `merge`: the one spelling matches the ado method it drives, and D-23's
+// reasoning against accepting two spellings for one input applies to verb names
+// as much as to flags.
+func prsCompleteOp(c writeClient) writeOp {
+	const name = "prs complete"
+	return writeOp{
+		name:    name,
+		resolve: resolveProjectRepo(name),
+		plan: func(ctx context.Context, t writeTarget, _ *writeFlags) ([]fieldChange, error) {
+			detail, err := c.GetPullRequestDetail(ctx, t.Project, t.Repo, t.ID)
+			if err != nil {
+				return nil, err
+			}
+			changes := []fieldChange{}
+			// Completed and abandoned are both terminal: neither can be
+			// completed again, so both refuse as a no-op rather than being sent
+			// to ADO to be rejected.
+			switch strings.ToLower(detail.Status) {
+			case "completed", "abandoned":
+			default:
+				changes = append(changes, fieldChange{
+					Field: fieldPRStatus, From: detail.Status, To: "completed",
+				})
+			}
+			return changes, nil
+		},
+		mutate: func(ctx context.Context, t writeTarget, _ *writeFlags) error {
+			return c.CompletePullRequest(ctx, t.Project, t.Repo, t.ID)
+		},
+	}
+}
+
+// releaseApprovalOp builds the approve and reject verbs, which differ only in
+// the status they propose and the method they call. Writing them as one
+// constructor is what makes their guard behaviour identical by construction.
+func releaseApprovalOp(name, wantStatus string, mutate func(context.Context, string, int, string) error, c writeClient) writeOp {
+	return writeOp{
+		name: name,
+		resolve: func(gf *globalFlags, _ *writeFlags, id int) (writeTarget, error) {
+			project, err := oneProject(name, gf)
+			if err != nil {
+				return writeTarget{}, err
+			}
+			return writeTarget{Project: project, ID: id}, nil
+		},
+		plan: func(ctx context.Context, t writeTarget, _ *writeFlags) ([]fieldChange, error) {
+			detail, err := c.GetReleaseApprovalDetail(ctx, t.Project, t.ID)
+			if err != nil {
+				return nil, err
+			}
+			changes := []fieldChange{}
+			if !strings.EqualFold(detail.Status, wantStatus) {
+				changes = append(changes, fieldChange{
+					Field: fieldApprovalStatus, From: detail.Status, To: wantStatus,
+				})
+			}
+			return changes, nil
+		},
+		mutate: func(ctx context.Context, t writeTarget, wf *writeFlags) error {
+			// --comment defaults to empty, which is what the ado method already
+			// receives when the TUI omits it (P-03). The comment is carried into
+			// ADO, not into the audit record.
+			return mutate(ctx, t.Project, t.ID, wf.comment)
+		},
+	}
+}
+
+// pipelinesQueueOp triggers a pipeline run.
+func pipelinesQueueOp(c writeClient) writeOp {
+	const name = "pipelines queue"
+	return writeOp{
+		name: name,
+		resolve: func(gf *globalFlags, wf *writeFlags, id int) (writeTarget, error) {
+			project, err := oneProject(name, gf)
+			if err != nil {
+				return writeTarget{}, err
+			}
+			// P-04: --branch is required, never defaulted from the definition's
+			// own default branch. The branch IS the substance of the mutation,
+			// and inferring it would be exactly the config-driven behaviour D-26
+			// rejects — the same invocation would queue a different build on two
+			// machines.
+			if wf.branch == "" {
+				return writeTarget{}, fmt.Errorf("%s requires --branch", name)
+			}
+			return writeTarget{Project: project, ID: id}, nil
+		},
+		plan: func(ctx context.Context, t writeTarget, wf *writeFlags) ([]fieldChange, error) {
+			// The pre-read still runs, and its failure is still fatal (D-02):
+			// queuing a build against a definition that does not exist must fail
+			// loudly rather than be attempted.
+			if _, err := c.GetPipelineDefinitionDetail(ctx, t.Project, t.ID); err != nil {
+				return nil, err
+			}
+			// A queue is not an idempotent state change: there is no state the
+			// definition could already be in that makes "queue a run" redundant,
+			// so this verb has no "already applied" condition and emits one
+			// change unconditionally. That is deliberate — it keeps `changes`
+			// non-empty, so the no-op branch is never reached for this verb and
+			// a queue is never refused as a no-op it cannot be.
+			return []fieldChange{{
+				Field: fieldQueuedBuild, From: "", To: wf.branch,
+			}}, nil
+		},
+		mutate: func(ctx context.Context, t writeTarget, wf *writeFlags) error {
+			_, err := c.QueuePipeline(ctx, t.Project, t.ID, wf.branch)
+			return err
+		},
+	}
+}
+
+// resolveProjectRepo is the shared arity rule for the two verbs addressing a
+// pull request: exactly one --project and exactly one --repo.
+func resolveProjectRepo(name string) func(*globalFlags, *writeFlags, int) (writeTarget, error) {
+	return func(gf *globalFlags, wf *writeFlags, id int) (writeTarget, error) {
+		project, err := oneProject(name, gf)
+		if err != nil {
+			return writeTarget{}, err
+		}
+		repo, err := oneRepo(name, wf)
+		if err != nil {
+			return writeTarget{}, err
+		}
+		return writeTarget{Project: project, Repo: repo, ID: id}, nil
+	}
 }
 
 // diffWorkItem compares the pre-read state to what was requested.

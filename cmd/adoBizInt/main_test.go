@@ -265,6 +265,11 @@ var wantCommands = []string{
 // with a bare `--json` invocation that a guarded write correctly rejects: a
 // write requires a positional target, exactly one --project and --state.
 var wantWriteCommands = []string{
+	"pipelines queue",
+	"prs approve",
+	"prs complete",
+	"releases approve",
+	"releases reject",
 	"workitems set-state",
 }
 

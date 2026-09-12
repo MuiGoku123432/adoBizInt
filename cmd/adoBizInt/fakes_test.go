@@ -151,6 +151,16 @@ type fakeWriteClient struct {
 	UpdateWorkItemStateFunc func(ctx context.Context, itemID int, newState string) error
 
 	UpdateWorkItemStateWithEffortFunc func(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error
+
+	GetPullRequestDetailFunc        func(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error)
+	GetReleaseApprovalDetailFunc    func(ctx context.Context, project string, approvalID int) (*ado.ReleaseApprovalDetail, error)
+	GetPipelineDefinitionDetailFunc func(ctx context.Context, project string, definitionID int) (*ado.PipelineDefinitionDetail, error)
+
+	ApprovePullRequestFunc  func(ctx context.Context, project, repositoryID string, prID int) error
+	CompletePullRequestFunc func(ctx context.Context, project, repositoryID string, prID int) error
+	ApproveReleaseFunc      func(ctx context.Context, project string, approvalID int, comment string) error
+	RejectReleaseFunc       func(ctx context.Context, project string, approvalID int, comment string) error
+	QueuePipelineFunc       func(ctx context.Context, project string, definitionID int, branch string) (*ado.PipelineRun, error)
 }
 
 func (f *fakeWriteClient) GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error) {
@@ -175,4 +185,68 @@ func (f *fakeWriteClient) UpdateWorkItemStateWithEffort(ctx context.Context, ite
 		f.t.Fatalf("writeClient.UpdateWorkItemStateWithEffort called with no UpdateWorkItemStateWithEffortFunc set")
 	}
 	return f.UpdateWorkItemStateWithEffortFunc(ctx, itemID, newState, originalEstimate, remaining, completed)
+}
+
+func (f *fakeWriteClient) GetPullRequestDetail(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error) {
+	f.t.Helper()
+	if f.GetPullRequestDetailFunc == nil {
+		f.t.Fatalf("writeClient.GetPullRequestDetail called with no GetPullRequestDetailFunc set")
+	}
+	return f.GetPullRequestDetailFunc(ctx, project, repositoryID, prID)
+}
+
+func (f *fakeWriteClient) GetReleaseApprovalDetail(ctx context.Context, project string, approvalID int) (*ado.ReleaseApprovalDetail, error) {
+	f.t.Helper()
+	if f.GetReleaseApprovalDetailFunc == nil {
+		f.t.Fatalf("writeClient.GetReleaseApprovalDetail called with no GetReleaseApprovalDetailFunc set")
+	}
+	return f.GetReleaseApprovalDetailFunc(ctx, project, approvalID)
+}
+
+func (f *fakeWriteClient) GetPipelineDefinitionDetail(ctx context.Context, project string, definitionID int) (*ado.PipelineDefinitionDetail, error) {
+	f.t.Helper()
+	if f.GetPipelineDefinitionDetailFunc == nil {
+		f.t.Fatalf("writeClient.GetPipelineDefinitionDetail called with no GetPipelineDefinitionDetailFunc set")
+	}
+	return f.GetPipelineDefinitionDetailFunc(ctx, project, definitionID)
+}
+
+func (f *fakeWriteClient) ApprovePullRequest(ctx context.Context, project, repositoryID string, prID int) error {
+	f.t.Helper()
+	if f.ApprovePullRequestFunc == nil {
+		f.t.Fatalf("writeClient.ApprovePullRequest called with no ApprovePullRequestFunc set")
+	}
+	return f.ApprovePullRequestFunc(ctx, project, repositoryID, prID)
+}
+
+func (f *fakeWriteClient) CompletePullRequest(ctx context.Context, project, repositoryID string, prID int) error {
+	f.t.Helper()
+	if f.CompletePullRequestFunc == nil {
+		f.t.Fatalf("writeClient.CompletePullRequest called with no CompletePullRequestFunc set")
+	}
+	return f.CompletePullRequestFunc(ctx, project, repositoryID, prID)
+}
+
+func (f *fakeWriteClient) ApproveRelease(ctx context.Context, project string, approvalID int, comment string) error {
+	f.t.Helper()
+	if f.ApproveReleaseFunc == nil {
+		f.t.Fatalf("writeClient.ApproveRelease called with no ApproveReleaseFunc set")
+	}
+	return f.ApproveReleaseFunc(ctx, project, approvalID, comment)
+}
+
+func (f *fakeWriteClient) RejectRelease(ctx context.Context, project string, approvalID int, comment string) error {
+	f.t.Helper()
+	if f.RejectReleaseFunc == nil {
+		f.t.Fatalf("writeClient.RejectRelease called with no RejectReleaseFunc set")
+	}
+	return f.RejectReleaseFunc(ctx, project, approvalID, comment)
+}
+
+func (f *fakeWriteClient) QueuePipeline(ctx context.Context, project string, definitionID int, branch string) (*ado.PipelineRun, error) {
+	f.t.Helper()
+	if f.QueuePipelineFunc == nil {
+		f.t.Fatalf("writeClient.QueuePipeline called with no QueuePipelineFunc set")
+	}
+	return f.QueuePipelineFunc(ctx, project, definitionID, branch)
 }
