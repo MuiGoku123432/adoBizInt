@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: 03
-current_phase_name: read-cli
-status: verified
-stopped_at: Phase 04 context gathered
-last_updated: "2026-09-12T06:53:14.854Z"
-last_activity: 2026-09-09
-last_activity_desc: Phase 03 verified and closed
+current_phase: 04
+current_phase_name: guarded-writes
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-09-12T07:12:42.249Z"
+last_activity: 2026-09-12
+last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 20
-  completed_plans: 11
+  completed_plans: 12
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -24,17 +24,17 @@ state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 See: .planning/PROJECT.md (updated 2026-09-03)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 04 — guarded writes
+**Current focus:** Phase 04 — guarded-writes
 
 ## Current Position
 
-Phase: 03 (read-cli) — COMPLETE
-Plan: 5 of 5
-Status: VERIFIED 2026-09-09 — PASS, 9/9 requirements, all UAT closed
+Phase: 04 (guarded-writes) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Next: Phase 04 (guarded writes)
-Last activity: 2026-09-09 — Phase 03 verified and closed
+Last activity: 2026-09-12 — Phase 04 execution started
 
-Progress: [██████░░░░] 3 of 5 phases complete (16/16 planned plans executed)
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [██████░░░░] 3 of 5 phases complete (16/16 planned
 | Phase 03 P03 | 26 min | 2 tasks | 7 files |
 | Phase 03 P04 | 34 min | 3 tasks | 19 files |
 | Phase 03 P05 | 29 min | 3 tasks | 8 files |
+| Phase 04 P01 | 42 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 03]: Promoted five filter predicates into internal/ado; doneStates has exactly one definition repo-wide
 - [Phase 03]: MatchesRepository also replaced the inline GetBranches filter, making the promotion a three-way deduplication
 - [Phase 03]: Row-equivalence tests compare ordered table.RowData, not table.Row, because NewRow stamps a global incrementing id
+- [Phase 04]: Ratified P-01/P-02, the write envelope schema and the five-key audit record as the published one-way contract
+- [Phase 04]: Exported ado.ClassifyFailure alongside StatusCodeOf so writeExitCodeFor keys on FailureKind instead of duplicating the cancellation-is-not-a-timeout rule
+- [Phase 04]: Added hoistLeadingPositionals: stdlib flag stops at the first non-flag arg, so the D-23 target-first spelling needed argument reordering before Parse
 
 ### Pending Todos
 
@@ -177,6 +181,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:21:39.651Z
-Stopped at: Phase 04 context gathered
-Resume file: .planning/phases/04-guarded-writes/04-CONTEXT.md
+Last session: 2026-09-12T07:12:42.242Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None

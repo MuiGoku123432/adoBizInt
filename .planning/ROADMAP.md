@@ -139,13 +139,13 @@ Plans:
   5. A write that times out reports outcome-unknown, distinct from both success and failure
   6. All of the above are covered by tests using the Phase 1 seam
 
-**Plans**: 4 plans
+**Plans**: 1/4 plans executed
 
 Plans:
 
 **Wave 1**
 
-- [ ] 04-01-PLAN.md — Tracer: `workitems set-state` end to end — dry-run default, `--confirm`, pre-read diff, pre-flight audit sink, outcome classification, two new exit codes
+- [x] 04-01-PLAN.md — Tracer: `workitems set-state` end to end — dry-run default, `--confirm`, pre-read diff, pre-flight audit sink, outcome classification, two new exit codes
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
