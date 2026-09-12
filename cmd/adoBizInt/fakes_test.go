@@ -14,6 +14,13 @@ import (
 type fakeReadClient struct {
 	t *testing.T
 
+	// fakeWriteClient is embedded so one fake satisfies the combined client
+	// interface the dispatch table takes. It is nil in the read-only tests that
+	// predate the write path, which is the correct behaviour: a read test that
+	// somehow reached a mutation would panic on the nil receiver rather than
+	// silently succeed.
+	*fakeWriteClient
+
 	GetWorkItemsFunc           func(ctx context.Context, projects []string) (ado.Result[ado.WorkItem], error)
 	GetPullRequestsFunc        func(ctx context.Context, projects []string) (ado.Result[ado.PullRequest], error)
 	GetPipelineRunsFunc        func(ctx context.Context, projects []string) (ado.Result[ado.PipelineRun], error)
@@ -126,4 +133,36 @@ func allReadsFake(t *testing.T) *fakeReadClient {
 // nothing to report: both slices present and empty, never nil.
 func emptyResult[T any]() ado.Result[T] {
 	return ado.Result[T]{Items: []T{}, Failures: []ado.Failure{}, Complete: true}
+}
+
+// fakeWriteClient satisfies writeClient with the same per-call closure shape as
+// fakeReadClient, and for a sharper reason.
+//
+// The nil-closure t.Fatalf IS the "no mutation occurred" assertion. A dry-run
+// test sets only GetWorkItemDetailFunc and leaves UpdateWorkItemStateFunc nil,
+// so any mutation fails the test immediately, by name, at the call site. That is
+// strictly better than a call counter asserted == 0: a counter records a call
+// that already happened, whereas a nil field makes the call impossible to make
+// silently. Do not add a counter here.
+type fakeWriteClient struct {
+	t *testing.T
+
+	GetWorkItemDetailFunc   func(ctx context.Context, id int) (*ado.WorkItemDetail, error)
+	UpdateWorkItemStateFunc func(ctx context.Context, itemID int, newState string) error
+}
+
+func (f *fakeWriteClient) GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error) {
+	f.t.Helper()
+	if f.GetWorkItemDetailFunc == nil {
+		f.t.Fatalf("writeClient.GetWorkItemDetail called with no GetWorkItemDetailFunc set")
+	}
+	return f.GetWorkItemDetailFunc(ctx, id)
+}
+
+func (f *fakeWriteClient) UpdateWorkItemState(ctx context.Context, itemID int, newState string) error {
+	f.t.Helper()
+	if f.UpdateWorkItemStateFunc == nil {
+		f.t.Fatalf("writeClient.UpdateWorkItemState called with no UpdateWorkItemStateFunc set")
+	}
+	return f.UpdateWorkItemStateFunc(ctx, itemID, newState)
 }

@@ -196,3 +196,23 @@ func statusCodeOf(err error) (int, bool) {
 
 	return 0, false
 }
+
+// StatusCodeOf is the exported wrapper over statusCodeOf. The CLI's write exit
+// mapper needs the HTTP status to distinguish a 5xx (outcome genuinely
+// unresolved on a non-idempotent request) from a 409 (the server answered and
+// refused), and duplicating the extraction there would duplicate the
+// value-vs-pointer WrappedError subtlety documented above — which is exactly the
+// detail a second copy would get wrong.
+func StatusCodeOf(err error) (int, bool) {
+	return statusCodeOf(err)
+}
+
+// ClassifyFailure is the exported wrapper over classifyFailure, for the same
+// reason as StatusCodeOf: the CLI's write exit mapper is required to key on
+// FailureKind rather than on error text, and that is only possible if the
+// structural classifier is reachable from outside this package. Re-implementing
+// it in cmd would put the "cancellation must not look like a timeout" rule in
+// two places and let the two drift.
+func ClassifyFailure(err error) FailureKind {
+	return classifyFailure(err)
+}

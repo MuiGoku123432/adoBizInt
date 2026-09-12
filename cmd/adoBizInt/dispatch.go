@@ -23,6 +23,9 @@ const (
 	exitPartial = 1 // the read ran but did not reach every configured project
 	exitAuth    = 2 // at least one failure was an authentication rejection
 	exitUnknown = 3 // the read never ran: usage error, config error, client error
+
+	exitNoOp           = 4 // the pre-read showed the change was already applied: nothing was written
+	exitOutcomeUnknown = 5 // the write was issued and its outcome could not be established
 )
 
 // stdoutWriter and stderrWriter are the dispatch layer's output sinks. The
@@ -72,11 +75,36 @@ type readClient interface {
 	CurrentUserEmail() string
 }
 
+// writeClient is the sibling seam every write verb calls through. It is a
+// SEPARATE interface rather than an extension of readClient: readClient's doc
+// comment pins its membership to the eight aggregate reads returning
+// ado.Result[T], and a write returns a bare error with no failure list and no
+// completeness flag, so the two contracts cannot share a mapper.
+//
+// The by-id pre-read belongs here, not in readClient, for the same reason:
+// GetWorkItemDetail returns a bare type and is deliberately excluded there.
+type writeClient interface {
+	// GetWorkItemDetail is the write path's pre-read. D-01 makes a dry run
+	// report current -> proposed rather than echoing intent, and D-03 uses the
+	// same read to refuse a no-op on the --confirm path.
+	GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error)
+
+	UpdateWorkItemState(ctx context.Context, itemID int, newState string) error
+}
+
+// client is what the dispatch table is handed. It embeds both seams so one
+// value serves read and write verbs without either interface widening to
+// accommodate the other. *ado.Client satisfies it structurally.
+type client interface {
+	readClient
+	writeClient
+}
+
 // commandFunc runs one `noun verb` command over the remaining arguments and
 // returns the process exit code. Each dispatch entry is its own closure, so no
 // uniform read signature is required — GetBranches' extra repositories
 // parameter is absorbed by its own entry rather than by an adapter (D-P2).
-type commandFunc func(ctx context.Context, client readClient, args []string) int
+type commandFunc func(ctx context.Context, c client, args []string) int
 
 // commands is keyed on the two-token `noun verb` string (D-01, D-02). The key
 // space is a fixed set of literals: an unmatched key returns exitUnknown and
@@ -98,31 +126,31 @@ func ignoreRepos[T any](
 }
 
 var commands = map[string]commandFunc{
-	"workitems list": func(ctx context.Context, c readClient, args []string) int {
+	"workitems list": func(ctx context.Context, c client, args []string) int {
 		return runRead(ctx, "workitems list", args, c.CurrentUserEmail(),
 			ignoreRepos(c.GetWorkItems), filterWorkItems, renderWorkItems)
 	},
-	"prs list": func(ctx context.Context, c readClient, args []string) int {
+	"prs list": func(ctx context.Context, c client, args []string) int {
 		return runRead(ctx, "prs list", args, "",
 			ignoreRepos(c.GetPullRequests), filterPullRequests, renderPullRequests)
 	},
-	"pipelines runs": func(ctx context.Context, c readClient, args []string) int {
+	"pipelines runs": func(ctx context.Context, c client, args []string) int {
 		return runRead(ctx, "pipelines runs", args, "",
 			ignoreRepos(c.GetPipelineRuns), filterPipelineRuns, renderPipelineRuns)
 	},
-	"pipelines definitions": func(ctx context.Context, c readClient, args []string) int {
+	"pipelines definitions": func(ctx context.Context, c client, args []string) int {
 		return runRead[ado.PipelineDefinition](ctx, "pipelines definitions", args, "",
 			ignoreRepos(c.GetPipelineDefinitions), nil, renderPipelineDefinitions)
 	},
-	"releases list": func(ctx context.Context, c readClient, args []string) int {
+	"releases list": func(ctx context.Context, c client, args []string) int {
 		return runRead(ctx, "releases list", args, "",
 			ignoreRepos(c.GetReleases), filterReleases, renderReleases)
 	},
-	"releases approvals": func(ctx context.Context, c readClient, args []string) int {
+	"releases approvals": func(ctx context.Context, c client, args []string) int {
 		return runRead[ado.ReleaseApproval](ctx, "releases approvals", args, "",
 			ignoreRepos(c.GetPendingApprovals), nil, renderReleaseApprovals)
 	},
-	"branches list": func(ctx context.Context, c readClient, args []string) int {
+	"branches list": func(ctx context.Context, c client, args []string) int {
 		// GetBranches is the only read with a repositories parameter, so --repo
 		// narrows the read here rather than post-filtering the result
 		// (branches.go:92 does the filtering inside). filterBranches therefore
@@ -130,9 +158,12 @@ var commands = map[string]commandFunc{
 		return runRead(ctx, "branches list", args, "",
 			c.GetBranches, filterBranches, renderBranches)
 	},
-	"dashboard counts": func(ctx context.Context, c readClient, args []string) int {
+	"dashboard counts": func(ctx context.Context, c client, args []string) int {
 		return runRead[ado.DashboardCounts](ctx, "dashboard counts", args, "",
 			ignoreRepos(c.GetDashboardCounts), nil, renderDashboardCounts)
+	},
+	"workitems set-state": func(ctx context.Context, c client, args []string) int {
+		return runWrite(ctx, "workitems set-state", c, args)
 	},
 }
 
@@ -140,10 +171,10 @@ var commands = map[string]commandFunc{
 // and bare nouns are already resolved by handleUsage before config is loaded,
 // so a key reaching here is expected to resolve; the fallback stays because a
 // typo must never fall through to the TUI (D-09, D-22).
-func dispatch(ctx context.Context, client readClient, args []string) int {
+func dispatch(ctx context.Context, c client, args []string) int {
 	if len(args) >= 2 {
 		if cmd, ok := commands[args[0]+" "+args[1]]; ok {
-			return cmd(ctx, client, args[2:])
+			return cmd(ctx, c, args[2:])
 		}
 	}
 	usageRoot()
@@ -165,7 +196,7 @@ func runRead[T any](
 	postFilter func([]T, *filterFlags, io.Writer) []T,
 	render func(io.Writer, []T),
 ) int {
-	fs, gf, ff := newFlagSet(name)
+	fs, gf, ff, _ := newFlagSet(name)
 	if err := fs.Parse(args); err != nil {
 		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
 		// been written and the request succeeded rather than failed.

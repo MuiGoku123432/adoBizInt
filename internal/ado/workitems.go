@@ -49,6 +49,15 @@ type WorkItemDetail struct {
 	ModifiedBy         string       `json:"modified_by"`
 	IterationPath      string       `json:"iteration_path"`
 	AreaPath           string       `json:"area_path"`
+
+	// The three scheduling effort fields are pointers because "ADO does not
+	// hold this field" and "ADO holds zero" are different facts, and a write
+	// path diffing current against proposed must be able to tell them apart
+	// (D-17). A float64 zero value would report an unset field as 0 and make a
+	// genuine `--remaining 0` look like a no-op.
+	OriginalEstimate *float64 `json:"original_estimate"`
+	RemainingWork    *float64 `json:"remaining_work"`
+	CompletedWork    *float64 `json:"completed_work"`
 }
 
 // Attachment represents a work item attachment
@@ -369,6 +378,22 @@ func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail
 	}
 	if points, ok := itemFields["Microsoft.VSTS.Scheduling.StoryPoints"].(float64); ok {
 		detail.StoryPoints = int(points)
+	}
+	// Effort fields, extracted the same way StoryPoints is. Expand: Relations
+	// already returns the full field map, so this is extraction only — no extra
+	// round trip. The address is taken of a fresh local per field so the three
+	// pointers never alias.
+	if v, ok := itemFields["Microsoft.VSTS.Scheduling.OriginalEstimate"].(float64); ok {
+		originalEstimate := v
+		detail.OriginalEstimate = &originalEstimate
+	}
+	if v, ok := itemFields["Microsoft.VSTS.Scheduling.RemainingWork"].(float64); ok {
+		remainingWork := v
+		detail.RemainingWork = &remainingWork
+	}
+	if v, ok := itemFields["Microsoft.VSTS.Scheduling.CompletedWork"].(float64); ok {
+		completedWork := v
+		detail.CompletedWork = &completedWork
 	}
 	if ac, ok := itemFields["Microsoft.VSTS.Common.AcceptanceCriteria"].(string); ok {
 		detail.AcceptanceCriteria = ac

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -259,13 +260,29 @@ var wantCommands = []string{
 	"workitems list",
 }
 
-// TestDispatchTableMatchesD02 pins the eight registered `noun verb` keys.
+// wantWriteCommands is the write half of the same published surface, kept apart
+// from wantCommands because TestDispatchResolvesEveryVerb drives the read verbs
+// with a bare `--json` invocation that a guarded write correctly rejects: a
+// write requires a positional target, exactly one --project and --state.
+var wantWriteCommands = []string{
+	"workitems set-state",
+}
+
+// allCommands is the full published `noun verb` surface in commandKeys order.
+func allCommands() []string {
+	all := append(append([]string{}, wantCommands...), wantWriteCommands...)
+	sort.Strings(all)
+	return all
+}
+
+// TestDispatchTableMatchesD02 pins every registered `noun verb` key.
 func TestDispatchTableMatchesD02(t *testing.T) {
 	got := commandKeys()
-	if len(got) != len(wantCommands) {
-		t.Fatalf("commands has %d entries (%v), want %d", len(got), got, len(wantCommands))
+	want := allCommands()
+	if len(got) != len(want) {
+		t.Fatalf("commands has %d entries (%v), want %d", len(got), got, len(want))
 	}
-	for i, want := range wantCommands {
+	for i, want := range want {
 		if got[i] != want {
 			t.Errorf("commandKeys()[%d] = %q, want %q", i, got[i], want)
 		}

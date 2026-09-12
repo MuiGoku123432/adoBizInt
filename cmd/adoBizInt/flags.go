@@ -62,6 +62,56 @@ var filterSupportByCommand = map[string]filterSupport{
 	"pipelines runs": {search: true},
 }
 
+// writeSupport records which write flags a verb registers. It mirrors
+// filterSupport exactly: keyed on the same `noun verb` string as the dispatch
+// table so the two cannot disagree about which verbs exist, and a verb absent
+// from this map registers no write flags at all.
+//
+// Membership of this map is also the definition of "is a write verb", which is
+// what makes --confirm's presence a structural property rather than a
+// convention: TestConfirmRegisteredOnEveryWriteVerbAndNoReadVerb asserts the
+// two agree for every registered command.
+//
+// --confirm is deliberately NOT a global flag. flags.go's own rule (see
+// filterFlags) is that a flag which parses but cannot mean anything is worse
+// than one that does not exist: an agent reading `prs list --help` must not
+// find a --confirm that cannot confirm anything.
+type writeSupport struct {
+	confirm bool
+	state   bool
+	effort  bool
+	comment bool
+	branch  bool
+	repo    bool
+}
+
+var writeSupportByCommand = map[string]writeSupport{
+	// 04-01 is the tracer: one verb, state only. 04-03 expands this map to the
+	// remaining six verbs and turns on effort, comment, branch and repo.
+	"workitems set-state": {confirm: true, state: true},
+}
+
+// writeFlags holds the per-verb write flags, exactly as filterFlags does for
+// reads.
+//
+// The three effort values are pointers so "omitted" and "zero" stay
+// distinguishable all the way to the JSON-Patch builder (D-17, D-18). Never
+// give them a float64 + omitempty shape anywhere between the flag and the
+// patch document: that silently drops `--remaining 0`, which is the inverse
+// bug and the one a closing Task actually needs.
+type writeFlags struct {
+	confirm bool
+	state   string
+
+	originalEstimate *float64
+	remaining        *float64
+	completed        *float64
+
+	comment string
+	branch  string
+	repo    stringList
+}
+
 // defaultTimeout is the zero value meaning "no CLI-imposed deadline": the read
 // then runs under the configured fetch budget. A non-zero value replaces that
 // budget for this invocation only, and the replacement lands after config
@@ -100,7 +150,7 @@ func (p *stringList) Set(value string) error {
 // change cannot silently redirect flag errors to stdout and break OUT-03. This
 // is RESEARCH assumption A2 closed by construction and pinned by a test rather
 // than trusted.
-func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags) {
+func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeFlags) {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderrWriter)
 
@@ -135,7 +185,18 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags) {
 			"restrict the read to a repository; repeatable or comma-separated")
 	}
 
+	wf := &writeFlags{}
+	wsup := writeSupportByCommand[name]
+	if wsup.confirm {
+		fs.BoolVar(&wf.confirm, "confirm", false,
+			"actually perform the write; without it the command reports the diff and changes nothing")
+	}
+	if wsup.state {
+		fs.StringVar(&wf.state, "state", "",
+			"the state to set; required, and never inferred from configuration")
+	}
+
 	fs.Usage = func() { usageVerb(name, fs) }
 
-	return fs, gf, ff
+	return fs, gf, ff, wf
 }

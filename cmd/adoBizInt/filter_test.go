@@ -318,6 +318,7 @@ func TestFilterFlagsRegisteredOnSupportedVerbsOnly(t *testing.T) {
 		"pipelines definitions": {},
 		"releases approvals":    {},
 		"dashboard counts":      {},
+		"workitems set-state":   {},
 	}
 	allFilterFlags := []string{"search", "assigned-to-me", "hide-done", "hide-tasks", "repo"}
 
@@ -328,7 +329,7 @@ func TestFilterFlagsRegisteredOnSupportedVerbsOnly(t *testing.T) {
 				t.Fatalf("command %q is not covered by this test's expectation table", name)
 			}
 			registered := map[string]bool{}
-			fs, _, _ := newFlagSet(name)
+			fs, _, _, _ := newFlagSet(name)
 			for _, flagName := range allFilterFlags {
 				if fs.Lookup(flagName) != nil {
 					registered[flagName] = true

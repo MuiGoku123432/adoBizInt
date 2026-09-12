@@ -140,6 +140,8 @@ func TestJSONFieldNames(t *testing.T) {
 			"description", "acceptance_criteria", "repro_steps", "attachments",
 			"created_date", "modified_date", "created_by", "modified_by",
 			"iteration_path", "area_path",
+			// the three scheduling effort fields the write path diffs against
+			"original_estimate", "remaining_work", "completed_work",
 		})
 	})
 

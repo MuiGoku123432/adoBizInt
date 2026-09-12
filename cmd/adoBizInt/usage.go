@@ -124,7 +124,7 @@ func handleUsage(args []string) (int, bool) {
 	// FlagSet, so it too runs before config is loaded.
 	for _, arg := range args[2:] {
 		if helpTokens[arg] {
-			fs, _, _ := newFlagSet(noun + " " + verb)
+			fs, _, _, _ := newFlagSet(noun + " " + verb)
 			usageVerb(noun+" "+verb, fs)
 			return exitOK, true
 		}
