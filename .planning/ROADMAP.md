@@ -139,7 +139,7 @@ Plans:
   5. A write that times out reports outcome-unknown, distinct from both success and failure
   6. All of the above are covered by tests using the Phase 1 seam
 
-**Plans**: 1/4 plans executed
+**Plans**: 2/4 plans executed
 
 Plans:
 
@@ -149,7 +149,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 04-02-PLAN.md — Nullable effort fields at the `internal/ado` signature, TUI call sites, and `fs.Visit` flag-presence detection
+- [x] 04-02-PLAN.md — Nullable effort fields at the `internal/ado` signature, TUI call sites, and `fs.Visit` flag-presence detection
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

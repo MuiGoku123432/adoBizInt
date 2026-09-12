@@ -49,7 +49,7 @@ Source: CONCERNS.md C2.
 
 - [ ] **SAFE-01**: Write verbs are dry-run by default and require an explicit confirmation flag to execute
 - [ ] **SAFE-02**: Every executed write appends an audit record identifying what changed
-- [ ] **SAFE-03**: Effort updates accept omitted fields as "leave unchanged" rather than blind-overwriting with zero
+- [x] **SAFE-03**: Effort updates accept omitted fields as "leave unchanged" rather than blind-overwriting with zero
 - [ ] **SAFE-04**: A write that times out reports outcome-unknown rather than success or failure
 
 ### Hardening
@@ -240,7 +240,7 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 | CLI-03 | Phase 4 | Pending |
 | SAFE-01 | Phase 4 | Pending |
 | SAFE-02 | Phase 4 | Pending |
-| SAFE-03 | Phase 4 | Pending |
+| SAFE-03 | Phase 4 | Complete |
 | SAFE-04 | Phase 4 | Pending |
 | HARD-01 | Phase 5 | Pending |
 | HARD-02 | Phase 5 | Pending |

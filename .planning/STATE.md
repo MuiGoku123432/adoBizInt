@@ -5,15 +5,15 @@ milestone_name: milestone
 current_phase: 04
 current_phase_name: guarded-writes
 status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-09-12T07:12:42.249Z"
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-09-12T07:20:58.120Z"
 last_activity: 2026-09-12
 last_activity_desc: Phase 04 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 20
-  completed_plans: 12
+  completed_plans: 13
 state_head: 98c2c0013e8206fdede4bd1fb9cbefd5da93593b
 ---
 
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 04 (guarded-writes) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Next: Phase 04 (guarded writes)
 Last activity: 2026-09-12 — Phase 04 execution started
 
-Progress: [██████░░░░] 60%
+Progress: [███████░░░] 65%
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [██████░░░░] 60%
 | Phase 03 P04 | 34 min | 3 tasks | 19 files |
 | Phase 03 P05 | 29 min | 3 tasks | 8 files |
 | Phase 04 P01 | 42 min | 3 tasks | 15 files |
+| Phase 04 P02 | 24 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 04]: Ratified P-01/P-02, the write envelope schema and the five-key audit record as the published one-way contract
 - [Phase 04]: Exported ado.ClassifyFailure alongside StatusCodeOf so writeExitCodeFor keys on FailureKind instead of duplicating the cancellation-is-not-a-timeout rule
 - [Phase 04]: Added hoistLeadingPositionals: stdlib flag stops at the first non-flag arg, so the D-23 target-first spelling needed argument reordering before Parse
+- [Phase 04]: The nil check gates the JSON-Patch append, never the Value field: a nil *float64 in Value serializes as value:null, which CLEARS the field rather than omitting it
+- [Phase 04]: fs.Visit (flags actually set), not fs.VisitAll or a value comparison, is what keeps --remaining 0 distinct from an omitted --remaining
+- [Phase 04]: internal/ui/workitems/effort.go left untouched: blank input still means 0, so TUI behaviour is unchanged by the nullable signature
 
 ### Pending Todos
 
@@ -181,6 +185,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-12T07:12:42.242Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-09-12T07:20:58.113Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
