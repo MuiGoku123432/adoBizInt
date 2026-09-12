@@ -414,3 +414,179 @@ func TestConfirmRegisteredOnEveryWriteVerbAndNoReadVerb(t *testing.T) {
 		}
 	}
 }
+
+// effortPreReadFake answers the pre-read with a work item whose effort fields
+// are all unset, and captures the effort pointers the mutating call receives.
+// UpdateWorkItemStateFunc is left nil on purpose: routing an effort write
+// through the no-effort method would fail by name rather than silently drop the
+// effort operations.
+func effortPreReadFake(t *testing.T, got *[]*float64) *fakeReadClient {
+	t.Helper()
+	return &fakeReadClient{
+		t: t,
+		fakeWriteClient: &fakeWriteClient{
+			t: t,
+			GetWorkItemDetailFunc: func(_ context.Context, id int) (*ado.WorkItemDetail, error) {
+				d := &ado.WorkItemDetail{}
+				d.ID = id
+				d.State = "Active"
+				return d, nil
+			},
+			UpdateWorkItemStateWithEffortFunc: func(_ context.Context, _ int, _ string, oe, rem, comp *float64) error {
+				*got = []*float64{oe, rem, comp}
+				return nil
+			},
+		},
+	}
+}
+
+// TestExplicitZeroEffortIsDistinctFromOmitted is D-18 stated at its narrowest.
+// `--remaining 0` is a REAL zero — closing a task legitimately means
+// RemainingWork 0 — and must be distinguishable from omitting the flag. The
+// mechanism is fs.Visit (flags actually set) rather than a value comparison,
+// because a value comparison cannot tell 0-because-asked from 0-by-default.
+func TestExplicitZeroEffortIsDistinctFromOmitted(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		// want is indexed originalEstimate, remaining, completed; nil means the
+		// pointer must be nil.
+		want []*float64
+	}{
+		{
+			name: "explicit zero remaining is a non-nil pointer to 0",
+			args: setStateArgs("--confirm", "--remaining", "0"),
+			want: []*float64{nil, floatPtr(0), nil},
+		},
+		{
+			name: "two effort flags supplied, one omitted",
+			args: setStateArgs("--confirm", "--remaining", "3.5", "--completed", "4.5"),
+			want: []*float64{nil, floatPtr(3.5), floatPtr(4.5)},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tempAuditSink(t)
+			_, stderr := captureOutput(t)
+
+			var got []*float64
+			if code := dispatch(context.Background(), effortPreReadFake(t, &got), tc.args); code != exitOK {
+				t.Fatalf("write = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
+			}
+
+			if len(got) != 3 {
+				t.Fatalf("UpdateWorkItemStateWithEffort was not called (got = %v)", got)
+			}
+			for i, want := range tc.want {
+				switch {
+				case want == nil && got[i] != nil:
+					t.Errorf("effort[%d] = %v, want nil (an omitted flag must not become a value)", i, *got[i])
+				case want != nil && got[i] == nil:
+					t.Errorf("effort[%d] = nil, want %v (a supplied flag must survive)", i, *want)
+				case want != nil && got[i] != nil && *want != *got[i]:
+					t.Errorf("effort[%d] = %v, want %v", i, *got[i], *want)
+				}
+			}
+		})
+	}
+}
+
+// TestOmittedEffortRoutesThroughTheNoEffortMethod is the other half of D-18: with
+// no effort flag supplied at all, the write must NOT go through the effort
+// method, because that method would then be handed three nils for no reason.
+// UpdateWorkItemStateWithEffortFunc is nil here, so taking that route fails by
+// name.
+func TestOmittedEffortRoutesThroughTheNoEffortMethod(t *testing.T) {
+	tempAuditSink(t)
+	_, stderr := captureOutput(t)
+
+	called := false
+	c := &fakeReadClient{
+		t: t,
+		fakeWriteClient: &fakeWriteClient{
+			t: t,
+			GetWorkItemDetailFunc: func(_ context.Context, id int) (*ado.WorkItemDetail, error) {
+				d := &ado.WorkItemDetail{}
+				d.ID = id
+				d.State = "Active"
+				return d, nil
+			},
+			UpdateWorkItemStateFunc: func(_ context.Context, _ int, _ string) error {
+				called = true
+				return nil
+			},
+		},
+	}
+
+	if code := dispatch(context.Background(), c, setStateArgs("--confirm")); code != exitOK {
+		t.Fatalf("write = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
+	}
+	if !called {
+		t.Error("UpdateWorkItemState was not called for an effort-free write")
+	}
+}
+
+// TestEffortChangesAreOrderedBeforeState pins the fixed diff order —
+// OriginalEstimate, RemainingWork, CompletedWork, then System.State — which
+// matches the JSON-Patch operation order the exact-patch test in internal/ado
+// asserts. The diff a caller reads and the document ADO receives describe the
+// same sequence.
+func TestEffortChangesAreOrderedBeforeState(t *testing.T) {
+	tempAuditSink(t)
+	stdout, stderr := captureOutput(t)
+
+	args := setStateArgs("--remaining", "3.5", "--completed", "4.5")
+	if code := dispatch(context.Background(), preReadFake(t, "Active"), args); code != exitOK {
+		t.Fatalf("dry run = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
+	}
+
+	got := decodeWriteEnvelope(t, stdout.Bytes())
+	want := []fieldChange{
+		{Field: fieldRemainingWork, From: "", To: "3.5"},
+		{Field: fieldCompletedWork, From: "", To: "4.5"},
+		{Field: fieldState, From: "Active", To: "Closed"},
+	}
+	if !reflect.DeepEqual(got.Changes, want) {
+		t.Errorf("changes = %#v, want %#v", got.Changes, want)
+	}
+}
+
+// TestEffortFlagsNotRegisteredOnNonEffortVerbs is the same structural rule
+// --confirm follows: a flag that parses but cannot mean anything is worse than
+// a flag that does not exist. An agent reading `prs approve --help` must not
+// find a --remaining that cannot set remaining work.
+func TestEffortFlagsNotRegisteredOnNonEffortVerbs(t *testing.T) {
+	effortFlagNames := []string{"original-estimate", "remaining", "completed"}
+
+	for _, name := range commandKeys() {
+		t.Run(name, func(t *testing.T) {
+			wantRegistered := writeSupportByCommand[name].effort
+
+			fs, _, _, _ := newFlagSet(name)
+			for _, flagName := range effortFlagNames {
+				registered := fs.Lookup(flagName) != nil
+				if wantRegistered && !registered {
+					t.Errorf("effort verb %q does not register --%s", name, flagName)
+				}
+				if !wantRegistered && registered {
+					t.Errorf("verb %q registers --%s, which cannot mean anything there", name, flagName)
+				}
+			}
+		})
+	}
+}
+
+// TestEffortFlagOnNonEffortVerbIsAParseError is the runtime consequence of the
+// registration rule above: exit 3, nothing attempted.
+func TestEffortFlagOnNonEffortVerbIsAParseError(t *testing.T) {
+	_, _ = captureOutput(t)
+
+	c := &fakeReadClient{t: t}
+	code := dispatch(context.Background(), c, []string{"workitems", "list", "--remaining", "3"})
+	if code != exitUnknown {
+		t.Errorf("workitems list --remaining = %d, want %d", code, exitUnknown)
+	}
+}
+
+func floatPtr(f float64) *float64 { return &f }

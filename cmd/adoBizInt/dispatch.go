@@ -90,6 +90,13 @@ type writeClient interface {
 	GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error)
 
 	UpdateWorkItemState(ctx context.Context, itemID int, newState string) error
+
+	// UpdateWorkItemStateWithEffort carries the three nullable effort values. A
+	// nil pointer means the caller did not name the field, so no JSON-Patch
+	// operation is emitted for it and ADO leaves it untouched (D-17/D-18). The
+	// write path routes here only when at least one effort flag was set, so an
+	// effort-free write never hands this method three nils.
+	UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error
 }
 
 // client is what the dispatch table is handed. It embeds both seams so one

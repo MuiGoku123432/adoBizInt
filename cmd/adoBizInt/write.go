@@ -88,6 +88,11 @@ func runWrite(ctx context.Context, name string, c writeClient, args []string) in
 		return exitUnknown
 	}
 
+	// D-18: promote the effort flags the caller actually set into non-nil
+	// pointers. This runs immediately after Parse and before the arity checks,
+	// so nothing downstream can read a pointer that has not been resolved yet.
+	wf.promoteEffort(fs)
+
 	log := logging.Logger()
 
 	// Arity, all three failing to exit 3: nothing was attempted, which is
@@ -184,7 +189,15 @@ func runWrite(ctx context.Context, name string, c writeClient, args []string) in
 		return finishWrite(name, target, changes, false, outcomeDryRun, exitOK, gf.asJSON)
 	}
 
-	err = c.UpdateWorkItemState(writeCtx, id, wf.state)
+	// Route through the effort method only when the caller named an effort
+	// field. Sending three nils through it would be harmless but dishonest: an
+	// effort-free write is not an effort write with nothing to say.
+	if wf.hasEffort() {
+		err = c.UpdateWorkItemStateWithEffort(writeCtx, id, wf.state,
+			wf.originalEstimate, wf.remaining, wf.completed)
+	} else {
+		err = c.UpdateWorkItemState(writeCtx, id, wf.state)
+	}
 
 	// The parent's Err() is consulted, not the failure kind: classifyFailure maps
 	// context.Canceled to FailureOther on purpose, so the kind alone cannot tell

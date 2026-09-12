@@ -88,7 +88,7 @@ type writeSupport struct {
 var writeSupportByCommand = map[string]writeSupport{
 	// 04-01 is the tracer: one verb, state only. 04-03 expands this map to the
 	// remaining six verbs and turns on effort, comment, branch and repo.
-	"workitems set-state": {confirm: true, state: true},
+	"workitems set-state": {confirm: true, state: true, effort: true},
 }
 
 // writeFlags holds the per-verb write flags, exactly as filterFlags does for
@@ -106,6 +106,14 @@ type writeFlags struct {
 	originalEstimate *float64
 	remaining        *float64
 	completed        *float64
+
+	// The plain float64 destinations the flag package writes into. They are
+	// meaningless on their own — a zero here is indistinguishable from an
+	// omitted flag, which is the entire bug. promoteEffort turns the ones the
+	// caller actually set into the pointers above.
+	originalEstimateVal float64
+	remainingVal        float64
+	completedVal        float64
 
 	comment string
 	branch  string
@@ -196,7 +204,47 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 			"the state to set; required, and never inferred from configuration")
 	}
 
+	if wsup.effort {
+		fs.Float64Var(&wf.originalEstimateVal, "original-estimate", 0,
+			"set the work item's original estimate in hours; omitted leaves it unchanged")
+		fs.Float64Var(&wf.remainingVal, "remaining", 0,
+			"set the work item's remaining work in hours; omitted leaves it unchanged, 0 sets it to zero")
+		fs.Float64Var(&wf.completedVal, "completed", 0,
+			"set the work item's completed work in hours; omitted leaves it unchanged")
+	}
+
 	fs.Usage = func() { usageVerb(name, fs) }
 
 	return fs, gf, ff, wf
+}
+
+// promoteEffort turns the effort flags the caller ACTUALLY SET into non-nil
+// pointers, leaving the rest nil. It must be called immediately after a
+// successful fs.Parse and before anything reads the pointers.
+//
+// fs.Visit walks only the flags that were set, unlike fs.VisitAll which walks
+// every registered flag. That distinction is the whole mechanism: it is why
+// `--remaining 0` is a real zero rather than an omission, and why an omitted
+// `--remaining` never reaches ADO as an operation at all. A value comparison
+// cannot do this job — zero-because-asked and zero-by-default are the same
+// float64 — and neither can a `float64` with `omitempty`, which drops the
+// explicit zero that closing a task actually needs.
+func (wf *writeFlags) promoteEffort(fs *flag.FlagSet) {
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+
+	if set["original-estimate"] {
+		wf.originalEstimate = &wf.originalEstimateVal
+	}
+	if set["remaining"] {
+		wf.remaining = &wf.remainingVal
+	}
+	if set["completed"] {
+		wf.completed = &wf.completedVal
+	}
+}
+
+// hasEffort reports whether the caller named any effort field.
+func (wf *writeFlags) hasEffort() bool {
+	return wf.originalEstimate != nil || wf.remaining != nil || wf.completed != nil
 }

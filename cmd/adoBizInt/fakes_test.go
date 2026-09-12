@@ -149,6 +149,8 @@ type fakeWriteClient struct {
 
 	GetWorkItemDetailFunc   func(ctx context.Context, id int) (*ado.WorkItemDetail, error)
 	UpdateWorkItemStateFunc func(ctx context.Context, itemID int, newState string) error
+
+	UpdateWorkItemStateWithEffortFunc func(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error
 }
 
 func (f *fakeWriteClient) GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error) {
@@ -165,4 +167,12 @@ func (f *fakeWriteClient) UpdateWorkItemState(ctx context.Context, itemID int, n
 		f.t.Fatalf("writeClient.UpdateWorkItemState called with no UpdateWorkItemStateFunc set")
 	}
 	return f.UpdateWorkItemStateFunc(ctx, itemID, newState)
+}
+
+func (f *fakeWriteClient) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error {
+	f.t.Helper()
+	if f.UpdateWorkItemStateWithEffortFunc == nil {
+		f.t.Fatalf("writeClient.UpdateWorkItemStateWithEffort called with no UpdateWorkItemStateWithEffortFunc set")
+	}
+	return f.UpdateWorkItemStateWithEffortFunc(ctx, itemID, newState, originalEstimate, remaining, completed)
 }
