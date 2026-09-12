@@ -166,3 +166,69 @@ func TestHandleUsagePassesValidSubcommandsThrough(t *testing.T) {
 		}
 	}
 }
+
+// TestEveryWriteVerbAppearsInNounUsage iterates writeSupportByCommand — the same
+// map the dispatcher gates flag registration on — rather than a hand-maintained
+// list of verb names. A write verb added to the dispatch table without being
+// added to help fails here with no second list to remember to update.
+func TestEveryWriteVerbAppearsInNounUsage(t *testing.T) {
+	for key := range writeSupportByCommand {
+		t.Run(key, func(t *testing.T) {
+			noun, verb, found := strings.Cut(key, " ")
+			if !found {
+				t.Fatalf("write command key %q is not a `noun verb` pair", key)
+			}
+
+			_, stderr := captureOutput(t)
+			usageNoun(noun)
+
+			if !strings.Contains(stderr.String(), verb) {
+				t.Errorf("`adoBizInt %s --help` does not list the verb %q:\n%s", noun, verb, stderr.String())
+			}
+			// The dry-run default is not discoverable at runtime: D-06 means
+			// there is no prompt and D-04 means --confirm is the whole
+			// mechanism, so the noun listing has to say so.
+			if !strings.Contains(stderr.String(), "--confirm") {
+				t.Errorf("noun usage for %q never mentions --confirm:\n%s", noun, stderr.String())
+			}
+		})
+	}
+}
+
+// TestWriteVerbUsageDocumentsConfirm pins the verb level: a caller reading
+// `adoBizInt prs approve --help` must find the double-dash spelling, not only
+// stdlib PrintDefaults' single-dash rendering.
+func TestWriteVerbUsageDocumentsConfirm(t *testing.T) {
+	for key := range writeSupportByCommand {
+		t.Run(key, func(t *testing.T) {
+			_, stderr := captureOutput(t)
+
+			fs, _, _, _ := newFlagSet(key)
+			usageVerb(key, fs)
+
+			if !strings.Contains(stderr.String(), "--confirm") {
+				t.Errorf("verb usage for %q does not contain `--confirm`:\n%s", key, stderr.String())
+			}
+		})
+	}
+}
+
+// TestRootUsageDocumentsTheWriteExitCodes pins D-08 and D-09's integers into the
+// published help. They are a one-way door; help is where a caller learns them.
+func TestRootUsageDocumentsTheWriteExitCodes(t *testing.T) {
+	_, stderr := captureOutput(t)
+	usageRoot()
+
+	out := stderr.String()
+	if !strings.Contains(out, "Exit codes:") {
+		t.Fatalf("root usage has no exit-code section:\n%s", out)
+	}
+	for _, want := range []string{
+		"  4  already in the requested state, nothing written",
+		"  5  the write was issued and its outcome could not be established",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("root usage does not document %q:\n%s", want, out)
+		}
+	}
+}

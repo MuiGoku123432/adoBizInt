@@ -34,6 +34,33 @@ func nounVerbs() ([]string, map[string][]string) {
 	return nouns, byNoun
 }
 
+// verbSummaries is the one-line description shown beside each verb at the noun
+// level. Every write verb's text states the dry-run default explicitly, because
+// D-06 means there is no prompt to discover it at runtime and D-04 means
+// --confirm is the entire mechanism: an agent that reads help and not source
+// must learn from this line alone that the verb previews by default.
+//
+// A verb missing from this map renders with no description rather than failing,
+// so adding a read verb cannot break help. TestEveryWriteVerbAppearsInNounUsage
+// enforces the stricter rule for writes.
+var verbSummaries = map[string]string{
+	"branches list":         "list branches",
+	"dashboard counts":      "summary counts across the configured projects",
+	"pipelines definitions": "list pipeline definitions",
+	"pipelines runs":        "list recent pipeline runs",
+	"prs list":              "list pull requests",
+	"releases approvals":    "list pending release approvals",
+	"releases list":         "list releases",
+	"workitems list":        "list work items",
+
+	"workitems set-state": "set a work item's state; previews the diff by default, writes only with --confirm",
+	"prs approve":         "approve a pull request; previews the diff by default, writes only with --confirm",
+	"prs complete":        "complete (merge) a pull request; previews the diff by default, writes only with --confirm",
+	"releases approve":    "approve a pending release approval; previews the diff by default, writes only with --confirm",
+	"releases reject":     "reject a pending release approval; previews the diff by default, writes only with --confirm",
+	"pipelines queue":     "queue a pipeline run on --branch; previews by default, queues only with --confirm",
+}
+
 // Usage text is a diagnostic and goes to stderr at every level, never to
 // stdout. OUT-03 makes stdout the parseable channel: a caller piping
 // `adoBizInt prs list --json` into a parser must not have to distinguish a
@@ -50,6 +77,22 @@ func usageRoot() {
 	for _, noun := range nouns {
 		fmt.Fprintf(stderrWriter, "  %-12s %s\n", noun, strings.Join(byNoun[noun], ", "))
 	}
+
+	// Every write verb previews by default. Saying so once at the root means an
+	// agent scanning the top-level page learns it without opening a verb.
+	fmt.Fprintf(stderrWriter, "\nWrite verbs report the change they would make and do nothing;\n")
+	fmt.Fprintf(stderrWriter, "pass --confirm to actually perform the write.\n")
+
+	// The exit-code contract (D-06, D-08, D-09). These integers are published:
+	// agents and CI jobs branch on them.
+	fmt.Fprintf(stderrWriter, "\nExit codes:\n")
+	fmt.Fprintf(stderrWriter, "  0  the command completed and nothing failed\n")
+	fmt.Fprintf(stderrWriter, "  1  a read did not reach every configured project, or Azure DevOps refused a write\n")
+	fmt.Fprintf(stderrWriter, "  2  at least one failure was an authentication rejection\n")
+	fmt.Fprintf(stderrWriter, "  3  nothing ran: usage error, config error, client error\n")
+	fmt.Fprintf(stderrWriter, "  4  already in the requested state, nothing written\n")
+	fmt.Fprintf(stderrWriter, "  5  the write was issued and its outcome could not be established\n")
+
 	fmt.Fprintf(stderrWriter, "\nRun 'adoBizInt <noun> --help' for a noun's verbs.\n")
 }
 
@@ -61,7 +104,7 @@ func usageNoun(noun string) {
 	fmt.Fprintf(stderrWriter, "Usage: adoBizInt %s <verb> [flags]\n", noun)
 	fmt.Fprintf(stderrWriter, "\nVerbs:\n")
 	for _, verb := range byNoun[noun] {
-		fmt.Fprintf(stderrWriter, "  %s\n", verb)
+		fmt.Fprintf(stderrWriter, "  %-12s %s\n", verb, verbSummaries[noun+" "+verb])
 	}
 	fmt.Fprintf(stderrWriter, "\nRun 'adoBizInt %s <verb> --help' for a verb's flags.\n", noun)
 }
@@ -69,8 +112,20 @@ func usageNoun(noun string) {
 // usageVerb prints one subcommand's flag list (D-21 level three). It renders
 // the FlagSet's own defaults, so a flag added to the shared registrar appears
 // here with no second edit.
+//
+// The write notice is printed in longhand rather than left to PrintDefaults,
+// which renders single-dash spellings: an agent copying `-confirm` from help
+// would be relying on stdlib's tolerance rather than on the documented surface.
 func usageVerb(name string, fs *flag.FlagSet) {
 	fmt.Fprintf(stderrWriter, "Usage: adoBizInt %s [flags]\n", name)
+	if summary := verbSummaries[name]; summary != "" {
+		fmt.Fprintf(stderrWriter, "\n%s\n", summary)
+	}
+	if writeSupportByCommand[name].confirm {
+		fmt.Fprintf(stderrWriter, "\nThis verb previews by default: it reports the change it would make,\n")
+		fmt.Fprintf(stderrWriter, "writes nothing, and exits 0. Pass --confirm to perform the write.\n")
+		fmt.Fprintf(stderrWriter, "Exits 4 if the change is already applied, 5 if the outcome is unknown.\n")
+	}
 	fmt.Fprintf(stderrWriter, "\nFlags:\n")
 	fs.PrintDefaults()
 }
