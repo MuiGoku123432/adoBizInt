@@ -330,13 +330,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			return m, func() tea.Msg {
 				// Update the dev task's effort if we have one
 				if !effortMsg.SkipTaskUpdate && effortMsg.TargetTaskID > 0 {
+					// Local copies so the address taken below does not alias
+					// effortMsg. All three are ALWAYS non-nil here: the TUI
+					// sends the same three values it has always sent, so the
+					// emitted patch document is unchanged by the nullable
+					// signature.
+					originalEstimate := effortMsg.OriginalEstimate
+					remaining := effortMsg.Remaining
+					completed := effortMsg.Completed
 					err := client.UpdateWorkItemStateWithEffort(
 						context.Background(),
 						effortMsg.TargetTaskID,
 						"Closed", // Close the dev task
-						effortMsg.OriginalEstimate,
-						effortMsg.Remaining,
-						effortMsg.Completed,
+						&originalEstimate,
+						&remaining,
+						&completed,
 					)
 					if err != nil {
 						return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: fmt.Errorf("failed to update dev task: %w", err)}
@@ -351,13 +359,18 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 
 		// Original Task flow
 		return m, func() tea.Msg {
+			// Local copies so the address taken below does not alias effortMsg.
+			// All three are ALWAYS non-nil here — TUI behaviour is unchanged.
+			originalEstimate := effortMsg.OriginalEstimate
+			remaining := effortMsg.Remaining
+			completed := effortMsg.Completed
 			err := client.UpdateWorkItemStateWithEffort(
 				context.Background(),
 				effortMsg.ItemID,
 				effortMsg.NewState,
-				effortMsg.OriginalEstimate,
-				effortMsg.Remaining,
-				effortMsg.Completed,
+				&originalEstimate,
+				&remaining,
+				&completed,
 			)
 			return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: err}
 		}
