@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -590,3 +591,404 @@ func TestEffortFlagOnNonEffortVerbIsAParseError(t *testing.T) {
 }
 
 func floatPtr(f float64) *float64 { return &f }
+
+// ---------------------------------------------------------------------------
+// The phase-wide write guard matrix
+// ---------------------------------------------------------------------------
+
+// writeFixture describes one write verb well enough to drive the whole guard
+// set against it.
+//
+// newFake is the load-bearing field. When mutate is nil it leaves the verb's
+// mutating closure nil, so a mutation is a t.Fatalf naming the method at the
+// call site rather than an assertion about a counter after the fact. That is
+// the difference between "no mutation happened" and "no mutation was possible".
+type writeFixture struct {
+	// args is a complete invocation in --json mode with every required flag
+	// present and --confirm absent.
+	args []string
+	// hasNoOpCondition is false only for `pipelines queue`: queuing a run is
+	// not an idempotent state change, so no pre-read state makes it redundant.
+	hasNoOpCondition bool
+	// wantChange is the single diff row a pending target produces.
+	wantChange fieldChange
+	// newFake builds the client. applied selects the already-applied pre-read
+	// state; mutate, when non-nil, is installed as the verb's mutating closure.
+	newFake func(t *testing.T, applied bool, mutate func() error) *fakeReadClient
+	// parseErrors are per-verb invocations that must exit 3 with no client call.
+	parseErrors map[string][]string
+}
+
+// writeGuardFixtures is the per-verb half of the matrix. It is keyed on the same
+// `noun verb` string as writeSupportByCommand so the two can be compared
+// directly; TestWriteGuardMatrix fails on any key present there and missing
+// here.
+func writeGuardFixtures() map[string]writeFixture {
+	return map[string]writeFixture{
+		"workitems set-state": {
+			args:             []string{"workitems", "set-state", "4821", "--project", "P", "--state", "Closed", "--json"},
+			hasNoOpCondition: true,
+			wantChange:       fieldChange{Field: fieldState, From: "Active", To: "Closed"},
+			newFake: func(t *testing.T, applied bool, mutate func() error) *fakeReadClient {
+				w := &fakeWriteClient{t: t,
+					GetWorkItemDetailFunc: func(_ context.Context, id int) (*ado.WorkItemDetail, error) {
+						d := &ado.WorkItemDetail{}
+						d.ID = id
+						d.State = "Active"
+						if applied {
+							d.State = "Closed"
+						}
+						return d, nil
+					}}
+				if mutate != nil {
+					w.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return mutate() }
+				}
+				return wrapFake(t, w)
+			},
+			parseErrors: map[string][]string{
+				"missing state": {"workitems", "set-state", "4821", "--project", "P"},
+			},
+		},
+		"prs approve": {
+			args:             []string{"prs", "approve", "4821", "--project", "P", "--repo", "R", "--json"},
+			hasNoOpCondition: true,
+			wantChange:       fieldChange{Field: fieldReviewerVote, From: "0", To: "10"},
+			newFake: func(t *testing.T, applied bool, mutate func() error) *fakeReadClient {
+				w := &fakeWriteClient{t: t,
+					GetPullRequestDetailFunc: func(_ context.Context, _, _ string, prID int) (*ado.PullRequestDetail, error) {
+						d := &ado.PullRequestDetail{ID: prID, Status: "active"}
+						if applied {
+							d.MyVote = voteApproved
+						}
+						return d, nil
+					}}
+				if mutate != nil {
+					w.ApprovePullRequestFunc = func(context.Context, string, string, int) error { return mutate() }
+				}
+				return wrapFake(t, w)
+			},
+			parseErrors: map[string][]string{
+				"zero repos": {"prs", "approve", "4821", "--project", "P"},
+				"two repos":  {"prs", "approve", "4821", "--project", "P", "--repo", "R", "--repo", "S"},
+			},
+		},
+		"prs complete": {
+			args:             []string{"prs", "complete", "4821", "--project", "P", "--repo", "R", "--json"},
+			hasNoOpCondition: true,
+			wantChange:       fieldChange{Field: fieldPRStatus, From: "active", To: "completed"},
+			newFake: func(t *testing.T, applied bool, mutate func() error) *fakeReadClient {
+				w := &fakeWriteClient{t: t,
+					GetPullRequestDetailFunc: func(_ context.Context, _, _ string, prID int) (*ado.PullRequestDetail, error) {
+						d := &ado.PullRequestDetail{ID: prID, Status: "active"}
+						if applied {
+							d.Status = "completed"
+						}
+						return d, nil
+					}}
+				if mutate != nil {
+					w.CompletePullRequestFunc = func(context.Context, string, string, int) error { return mutate() }
+				}
+				return wrapFake(t, w)
+			},
+			parseErrors: map[string][]string{
+				"zero repos": {"prs", "complete", "4821", "--project", "P"},
+				"two repos":  {"prs", "complete", "4821", "--project", "P", "--repo", "R", "--repo", "S"},
+			},
+		},
+		"releases approve": {
+			args:             []string{"releases", "approve", "77", "--project", "P", "--json"},
+			hasNoOpCondition: true,
+			wantChange:       fieldChange{Field: fieldApprovalStatus, From: "pending", To: "approved"},
+			newFake: func(t *testing.T, applied bool, mutate func() error) *fakeReadClient {
+				w := &fakeWriteClient{t: t,
+					GetReleaseApprovalDetailFunc: func(_ context.Context, _ string, id int) (*ado.ReleaseApprovalDetail, error) {
+						d := &ado.ReleaseApprovalDetail{ID: id, Status: "pending"}
+						if applied {
+							d.Status = "approved"
+						}
+						return d, nil
+					}}
+				if mutate != nil {
+					w.ApproveReleaseFunc = func(context.Context, string, int, string) error { return mutate() }
+				}
+				return wrapFake(t, w)
+			},
+		},
+		"releases reject": {
+			args:             []string{"releases", "reject", "77", "--project", "P", "--json"},
+			hasNoOpCondition: true,
+			wantChange:       fieldChange{Field: fieldApprovalStatus, From: "pending", To: "rejected"},
+			newFake: func(t *testing.T, applied bool, mutate func() error) *fakeReadClient {
+				w := &fakeWriteClient{t: t,
+					GetReleaseApprovalDetailFunc: func(_ context.Context, _ string, id int) (*ado.ReleaseApprovalDetail, error) {
+						d := &ado.ReleaseApprovalDetail{ID: id, Status: "pending"}
+						if applied {
+							d.Status = "rejected"
+						}
+						return d, nil
+					}}
+				if mutate != nil {
+					w.RejectReleaseFunc = func(context.Context, string, int, string) error { return mutate() }
+				}
+				return wrapFake(t, w)
+			},
+		},
+		"pipelines queue": {
+			// --branch is required, never defaulted from the definition (P-04).
+			args:             []string{"pipelines", "queue", "12", "--project", "P", "--branch", "main", "--json"},
+			hasNoOpCondition: false,
+			wantChange:       fieldChange{Field: fieldQueuedBuild, From: "", To: "main"},
+			newFake: func(t *testing.T, _ bool, mutate func() error) *fakeReadClient {
+				w := &fakeWriteClient{t: t,
+					GetPipelineDefinitionDetailFunc: func(_ context.Context, _ string, id int) (*ado.PipelineDefinitionDetail, error) {
+						return &ado.PipelineDefinitionDetail{ID: id, Name: "nightly", DefaultBranch: "trunk"}, nil
+					}}
+				if mutate != nil {
+					w.QueuePipelineFunc = func(context.Context, string, int, string) (*ado.PipelineRun, error) {
+						return &ado.PipelineRun{ID: 900}, mutate()
+					}
+				}
+				return wrapFake(t, w)
+			},
+			parseErrors: map[string][]string{
+				"missing branch": {"pipelines", "queue", "12", "--project", "P"},
+			},
+		},
+	}
+}
+
+// rawChangesField returns the `changes` value of a write envelope as it was
+// actually serialized. A struct-level length assertion cannot distinguish `[]`
+// from `null`, and `null` is the shape an agent's `.changes | length` errors on
+// — which is the same class of bug newResult's pre-allocation closed for reads.
+func rawChangesField(t *testing.T, raw []byte) string {
+	t.Helper()
+	var env struct {
+		Write struct {
+			Changes json.RawMessage `json:"changes"`
+		} `json:"write"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		t.Fatalf("unmarshal write envelope: %v (raw: %q)", err, raw)
+	}
+	return string(env.Write.Changes)
+}
+
+// TestWriteGuardMatrix is the phase-wide statement of every guarded-write
+// guarantee, driven over writeSupportByCommand — the same map the dispatcher
+// and newFlagSet consult — rather than a hand-written list of verb names.
+//
+// That iteration source is the whole point. A guard proven per verb by hand is
+// a guard that can be forgotten on verb seven; ranging over the registration map
+// means a verb cannot enter the published surface without a fixture here, and
+// the t.Fatalf below is what says so.
+func TestWriteGuardMatrix(t *testing.T) {
+	fixtures := writeGuardFixtures()
+
+	// Reverse drift: a fixture for a verb no longer registered is dead weight
+	// that would keep asserting against a command nobody can invoke.
+	for name := range fixtures {
+		if _, ok := writeSupportByCommand[name]; !ok {
+			t.Errorf("the guard matrix covers %q, which writeSupportByCommand no longer registers", name)
+		}
+	}
+
+	for name := range writeSupportByCommand {
+		f, ok := fixtures[name]
+		if !ok {
+			t.Fatalf("command %q is not covered by the write guard matrix", name)
+		}
+
+		t.Run(name, func(t *testing.T) {
+			// Guard 1 — no mutation without --confirm (SAFE-01, D-01), and the
+			// preview reports a real field-level diff (SAFE-02, D-02).
+			t.Run("dry run reports a field-level diff and mutates nothing", func(t *testing.T) {
+				sink := tempAuditSink(t)
+				stdout, stderr := captureOutput(t)
+
+				code := dispatch(context.Background(), f.newFake(t, false, nil), f.args)
+				if code != exitOK {
+					t.Fatalf("dry run = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
+				}
+				got := decodeWriteEnvelope(t, stdout.Bytes())
+				if got.Executed {
+					t.Error("dry run reported executed:true")
+				}
+				if got.Outcome != outcomeDryRun {
+					t.Errorf("outcome = %q, want %q", got.Outcome, outcomeDryRun)
+				}
+				if got.Command != name {
+					t.Errorf("command = %q, want %q", got.Command, name)
+				}
+				if len(got.Changes) != 1 || got.Changes[0] != f.wantChange {
+					t.Errorf("changes = %#v, want exactly %#v", got.Changes, f.wantChange)
+				}
+				// D-14: a preview changed nothing, so it records nothing.
+				assertAuditLineCount(t, sink, 0)
+			})
+
+			// Guard 2 — an already-applied change is refused, on BOTH paths, so
+			// the refusal precedes the --confirm branch (D-03).
+			if f.hasNoOpCondition {
+				for _, confirm := range []bool{false, true} {
+					label := "no-op refused on the dry-run path"
+					args := f.args
+					if confirm {
+						label = "no-op refused on the --confirm path"
+						args = withConfirm(f.args)
+					}
+					t.Run(label, func(t *testing.T) {
+						sink := tempAuditSink(t)
+						stdout, stderr := captureOutput(t)
+
+						// mutate stays nil even with --confirm.
+						code := dispatch(context.Background(), f.newFake(t, true, nil), args)
+						if code != exitNoOp {
+							t.Fatalf("refused no-op = %d, want %d (stderr: %q)", code, exitNoOp, stderr.String())
+						}
+						got := decodeWriteEnvelope(t, stdout.Bytes())
+						if got.Outcome != outcomeNoOp {
+							t.Errorf("outcome = %q, want %q", got.Outcome, outcomeNoOp)
+						}
+						if got.Executed {
+							t.Error("refused no-op reported executed:true")
+						}
+						if raw := rawChangesField(t, stdout.Bytes()); raw != "[]" {
+							t.Errorf("changes serialized as %s, want []", raw)
+						}
+						assertAuditLineCount(t, sink, 0)
+					})
+				}
+			}
+
+			// Guard 3 — a confirmed write executes and is audited exactly once
+			// (SAFE-02, D-15).
+			t.Run("confirmed write executes and audits exactly once", func(t *testing.T) {
+				sink := tempAuditSink(t)
+				stdout, stderr := captureOutput(t)
+
+				c := f.newFake(t, false, func() error { return nil })
+				code := dispatch(context.Background(), c, withConfirm(f.args))
+				if code != exitOK {
+					t.Fatalf("confirmed write = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
+				}
+				got := decodeWriteEnvelope(t, stdout.Bytes())
+				if !got.Executed || got.Outcome != outcomeExecuted {
+					t.Errorf("executed = %v, outcome = %q; want true / %q", got.Executed, got.Outcome, outcomeExecuted)
+				}
+				lines := assertAuditLineCount(t, sink, 1)
+				if rec := decodeAuditRecord(t, lines[0]); rec["outcome"] != outcomeExecuted {
+					t.Errorf("audit outcome = %v, want %q", rec["outcome"], outcomeExecuted)
+				}
+			})
+
+			// Guard 4 — a write whose result never came back is outcome-unknown,
+			// not failed and not "nothing ran", and it IS audited (SAFE-04,
+			// D-16).
+			t.Run("deadline exceeded is outcome-unknown and audited", func(t *testing.T) {
+				sink := tempAuditSink(t)
+				stdout, _ := captureOutput(t)
+
+				c := f.newFake(t, false, func() error { return context.DeadlineExceeded })
+				code := dispatch(context.Background(), c, withConfirm(f.args))
+				if code != exitOutcomeUnknown {
+					t.Fatalf("timed-out write = %d, want %d", code, exitOutcomeUnknown)
+				}
+				got := decodeWriteEnvelope(t, stdout.Bytes())
+				if got.Outcome != outcomeUnknown {
+					t.Errorf("outcome = %q, want %q", got.Outcome, outcomeUnknown)
+				}
+				if got.Executed {
+					t.Error("an unresolved write reported executed:true")
+				}
+				lines := assertAuditLineCount(t, sink, 1)
+				if rec := decodeAuditRecord(t, lines[0]); rec["outcome"] != outcomeUnknown {
+					t.Errorf("audit outcome = %v, want %q", rec["outcome"], outcomeUnknown)
+				}
+			})
+
+			// Guard 5 — D-13's ordering, per verb. Unlike every row above, the
+			// mutating closure IS set here, so the mutation would be perfectly
+			// observable; the assertion is that it never happens, which is only
+			// true if openAuditSink runs before the ADO call.
+			t.Run("unwritable audit sink prevents the mutation", func(t *testing.T) {
+				dir := filepath.Join(t.TempDir(), "locked")
+				if err := os.MkdirAll(dir, 0500); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+
+				prev := auditPath
+				auditPath = filepath.Join(dir, "audit.jsonl")
+				t.Cleanup(func() { auditPath = prev })
+
+				stdout, stderr := captureOutput(t)
+
+				mutated := false
+				c := f.newFake(t, false, func() error {
+					mutated = true
+					return nil
+				})
+
+				code := dispatch(context.Background(), c, withConfirm(f.args))
+				if mutated {
+					t.Fatalf("%s issued a mutation with an unwritable audit sink; D-13 has been reversed", name)
+				}
+				if code == exitOK {
+					t.Fatalf("unwritable audit sink exited %d, want non-zero (stderr: %q)", code, stderr.String())
+				}
+				if stdout.Len() != 0 {
+					t.Errorf("unwritable audit sink wrote %q to stdout; want nothing", stdout.String())
+				}
+			})
+
+			// Usage errors never reach the client at all (D-24, D-25).
+			t.Run("parse errors exit 3 with no client call", func(t *testing.T) {
+				noun, verb := splitKey(name)
+				cases := map[string][]string{
+					"missing positional": stripPositional(f.args),
+					"two positionals":    append([]string{noun, verb, "1", "2"}, f.args[3:]...),
+					"non-numeric target": append([]string{noun, verb, "abc"}, f.args[3:]...),
+					"zero projects":      stripFlag(f.args, "--project"),
+					"two projects":       append(append([]string{}, f.args...), "--project", "Q"),
+				}
+				for label, args := range f.parseErrors {
+					cases[label] = args
+				}
+
+				for label, args := range cases {
+					t.Run(label, func(t *testing.T) {
+						tempAuditSink(t)
+						stdout, stderr := captureOutput(t)
+
+						// Every closure nil: any client call fails by name.
+						c := &fakeReadClient{t: t, fakeWriteClient: &fakeWriteClient{t: t}}
+						if code := dispatch(context.Background(), c, args); code != exitUnknown {
+							t.Fatalf("exit = %d, want %d (stderr: %q)", code, exitUnknown, stderr.String())
+						}
+						if stdout.Len() != 0 {
+							t.Errorf("parse error wrote %q to stdout; want nothing", stdout.String())
+						}
+					})
+				}
+			})
+
+			// A failed pre-read is fatal: no diff can be trusted, so nothing is
+			// reported and nothing is attempted (D-02).
+			t.Run("failed pre-read is fatal and emits no report", func(t *testing.T) {
+				tempAuditSink(t)
+				stdout, stderr := captureOutput(t)
+
+				if code := dispatch(context.Background(), failingPreReadFake(t, name), f.args); code == exitOK {
+					t.Fatal("failed pre-read exited 0, want non-zero")
+				}
+				if stdout.Len() != 0 {
+					t.Errorf("failed pre-read wrote %q to stdout; want nothing", stdout.String())
+				}
+				if stderr.Len() == 0 {
+					t.Error("failed pre-read wrote nothing to stderr; the failure must be announced")
+				}
+			})
+		})
+	}
+}
