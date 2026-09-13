@@ -2,6 +2,9 @@ package workitems
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"strings"
 	"testing"
 
@@ -117,5 +120,68 @@ func TestUpdateCompleteResultClearsFailureState(t *testing.T) {
 	}
 	if m.partialWarning != "" {
 		t.Errorf("Update(complete result) partialWarning = %q, want cleared", m.partialWarning)
+	}
+}
+
+// BL-01 regression guard: both UpdateWorkItemStateWithEffort call sites must
+// forward the EffortSubmitMsg pointers directly. Taking the address of a local
+// copy (&originalEstimate) turns a nil "leave unchanged" into a non-nil pointer
+// to a zero value, which is exactly how blank effort fields used to be
+// overwritten with 0. Asserted structurally over the AST — comments are not AST
+// nodes, so prose cannot defeat this guard the way it defeats a text search.
+func TestUpdateWorkItemStateWithEffortCallSitesForwardPointers(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "workitems.go", nil, parser.ParseComments)
+	if err != nil {
+		t.Fatalf("parser.ParseFile(workitems.go) error = %v", err)
+	}
+
+	wantFields := []string{"OriginalEstimate", "Remaining", "Completed"}
+	var calls []*ast.CallExpr
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "UpdateWorkItemStateWithEffort" {
+			return true
+		}
+		calls = append(calls, call)
+		return true
+	})
+
+	if len(calls) != 2 {
+		t.Fatalf("found %d UpdateWorkItemStateWithEffort call sites, want 2", len(calls))
+	}
+
+	for i, call := range calls {
+		if len(call.Args) != 6 {
+			t.Errorf("call site %d has %d args, want 6", i, len(call.Args))
+			continue
+		}
+		for j, field := range wantFields {
+			arg := call.Args[3+j]
+
+			if unary, ok := arg.(*ast.UnaryExpr); ok && unary.Op == token.AND {
+				t.Errorf("call site %d arg %d is an address-of expression, which reintroduces BL-01", i, 4+j)
+				continue
+			}
+
+			sel, ok := arg.(*ast.SelectorExpr)
+			if !ok {
+				t.Errorf("call site %d arg %d is %T, want *ast.SelectorExpr on effortMsg", i, 4+j, arg)
+				continue
+			}
+			ident, ok := sel.X.(*ast.Ident)
+			if !ok || ident.Name != "effortMsg" {
+				t.Errorf("call site %d arg %d selects on %v, want effortMsg", i, 4+j, sel.X)
+				continue
+			}
+			if sel.Sel.Name != field {
+				t.Errorf("call site %d arg %d = effortMsg.%s, want effortMsg.%s", i, 4+j, sel.Sel.Name, field)
+			}
+		}
 	}
 }
