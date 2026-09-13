@@ -11,6 +11,13 @@ within the phase that surfaced them.
 **Requirements affected:** SAFE-01, SAFE-02, SAFE-03
 **Severity:** High — confirmed silent data loss against a live work item
 
+**Part 1 (blank field zeroing) — FIXED 2026-09-13** by quick task `260913-nd2`
+(commits `b2f2ae2`, `266b88b`). Unit-verified; a live TUI re-test is still outstanding
+before part 1 can be called closed. See
+`.planning/quick/260913-nd2-fix-bl-01-tui-effort-modal-silently-zero/260913-nd2-VERIFICATION.md`.
+
+**Part 2 (no dry run / no confirmation / no audit on the TUI write path) — STILL OPEN.**
+
 ### What happens
 
 Closing a work item through the Bubble Tea effort modal silently overwrites any effort
