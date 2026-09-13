@@ -14,14 +14,19 @@ import (
 	"sentinovo.ai/bizInt/internal/utils"
 )
 
-// EffortSubmitMsg is sent when user submits the effort form
+// EffortSubmitMsg is sent when user submits the effort form.
+//
+// The three effort fields are nullable on purpose (BL-01). A nil field means
+// the user named no value, so the corresponding work item field must be left
+// unchanged — no patch operation is emitted for it. A non-nil pointer to 0 is a
+// deliberate zero write, matching CLI decision D-18.
 type EffortSubmitMsg struct {
 	ItemID           int
 	TargetTaskID     int // Child task ID for User Stories (0 if none found)
 	NewState         string
-	OriginalEstimate float64
-	Remaining        float64
-	Completed        float64
+	OriginalEstimate *float64
+	Remaining        *float64
+	Completed        *float64
 	IsUserStory      bool // True if this is a User Story completion flow
 	SkipTaskUpdate   bool // True if no dev task found and user chose to proceed anyway
 }
@@ -131,17 +136,19 @@ func (m EffortModal) Update(msg tea.Msg) (EffortModal, tea.Cmd) {
 
 		case "enter":
 			// Validate and submit
-			origEst, err1 := m.parseFloat(m.originalEstimate.Value())
-			remaining, err2 := m.parseFloat(m.remaining.Value())
-			completed, err3 := m.parseFloat(m.completed.Value())
+			origEst, err1 := m.parseEffort(m.originalEstimate.Value())
+			remaining, err2 := m.parseEffort(m.remaining.Value())
+			completed, err3 := m.parseEffort(m.completed.Value())
 
 			if err1 != nil || err2 != nil || err3 != nil {
 				m.err = "Please enter valid numbers for all fields"
 				return m, nil
 			}
 
-			// Validate non-zero completed hours (required for both Task and User Story)
-			if completed <= 0 {
+			// Validate non-zero completed hours (required for both Task and User Story).
+			// Completed is required by product rule, so a blank field (nil) is an
+			// invalid submission rather than a "leave unchanged" instruction.
+			if completed == nil || *completed <= 0 {
 				m.err = "Completed hours must be greater than zero"
 				return m, nil
 			}
@@ -190,12 +197,19 @@ func (m *EffortModal) updateFocus() {
 	}
 }
 
-func (m EffortModal) parseFloat(s string) (float64, error) {
+// parseEffort parses an effort field value. A blank or whitespace-only input
+// yields (nil, nil): the user named no value, so the field must be left
+// unchanged. An explicit "0" yields a non-nil pointer to 0 — a real zero write.
+func (m EffortModal) parseEffort(s string) (*float64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, nil
+		return nil, nil
 	}
-	return strconv.ParseFloat(s, 64)
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
 }
 
 // View renders the effort modal
