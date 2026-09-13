@@ -172,14 +172,14 @@ Carried from `.planning/codebase/CONCERNS.md`. All are addressed by the roadmap.
 Affecting the v2 scrum milestone, not v1:
 
 - **Days off unmaintained in ADO.** ADO capacity is `capacityPerDay x workingDays - daysOff`, so every capacity figure is overstated. Constrains v2 design: capacity is display-only, and no nag rule may read it. Revisit if teams start maintaining days off.
-- **BL-01 (high, open): the TUI write path bypasses every Phase 4 guard.** Live verification on 2026-09-12 confirmed the Bubble Tea effort modal silently overwrites a blank effort field with 0, with no preview, no confirmation and no audit record. SAFE-03 holds on the CLI path only. C2 is therefore only partly closed by Phase 4 — the CLI half is done, the TUI half is not. Remediation needs its own discuss-phase because D-17 locked "preserve TUI behaviour exactly". See `.planning/BACKLOG.md`.
-- Phase 4 live verification RAN 2026-09-12: CLI steps 1-6 passed against Windstream/Kinetic work item 1198503; the TUI effort-modal step FAILED (see BL-01). `04-VALIDATION.md` stays `status: draft` / `nyquist_compliant: false` because a required manual verification is red.
+- **BL-01 part 2 (high, open): TUI writes have no dry run, no confirmation, and no audit record.** A TUI-driven write leaves no trace in `audit.jsonl`. Part 1 (blank effort fields zeroed) was fixed and live-re-tested 2026-09-13 via quick task 260913-nd2. C2 is therefore only partly closed by Phase 4 — the CLI surface is guarded, the TUI surface is not. Needs its own discuss-phase because routing TUI writes through `runWrite` is an architectural change. See `.planning/BACKLOG.md`.
+- Phase 4 live verification RAN 2026-09-12: CLI steps 1-6 passed against Windstream/Kinetic work item 1198503; the TUI effort-modal step FAILED, was fixed by quick task 260913-nd2, and PASSED on re-test 2026-09-13. All manual rows are now green; `04-VALIDATION.md` stays `status: draft` / `nyquist_compliant: false` only until `/gsd-validate-phase 4` runs.
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
-| 260913-nd2 | Fix BL-01 part 1: TUI effort modal silently zeroes effort fields left blank | 2026-09-13 | 266b88b | human_needed (6/7) — unit-verified; live TUI re-test still outstanding | [260913-nd2-fix-bl-01-tui-effort-modal-silently-zero](./quick/260913-nd2-fix-bl-01-tui-effort-modal-silently-zero/) |
+| 260913-nd2 | Fix BL-01 part 1: TUI effort modal silently zeroes effort fields left blank | 2026-09-13 | 266b88b | complete — unit-verified + live TUI re-test passed 2026-09-13 | [260913-nd2-fix-bl-01-tui-effort-modal-silently-zero](./quick/260913-nd2-fix-bl-01-tui-effort-modal-silently-zero/) |
 
 ### Environment Notes
 

@@ -11,12 +11,14 @@ within the phase that surfaced them.
 **Requirements affected:** SAFE-01, SAFE-02, SAFE-03
 **Severity:** High — confirmed silent data loss against a live work item
 
-**Part 1 (blank field zeroing) — FIXED 2026-09-13** by quick task `260913-nd2`
-(commits `b2f2ae2`, `266b88b`). Unit-verified; a live TUI re-test is still outstanding
-before part 1 can be called closed. See
-`.planning/quick/260913-nd2-fix-bl-01-tui-effort-modal-silently-zero/260913-nd2-VERIFICATION.md`.
+**Part 1 (blank field zeroing) — FIXED AND CLOSED 2026-09-13.** Quick task `260913-nd2`
+(commits `b2f2ae2`, `266b88b`). Unit-verified, then confirmed by a live TUI re-test on
+2026-09-13: a Task closed through the modal with a blank effort field left that field
+unchanged in work item History. SAFE-03 is now satisfied on both the CLI and TUI paths.
 
 **Part 2 (no dry run / no confirmation / no audit on the TUI write path) — STILL OPEN.**
+This is now the whole of BL-01. The sections below still apply to it; the `parseFloat` /
+`EffortSubmitMsg` rows in the table are historical and describe the fixed part 1.
 
 ### What happens
 

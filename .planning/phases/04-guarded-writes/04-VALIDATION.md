@@ -89,7 +89,7 @@ created: 2026-09-12
 | Behavior | Requirement | Why Manual | Test Instructions | Status |
 |----------|-------------|------------|-------------------|--------|
 | Real ADO write against a live project (CLI path) | SAFE-01, SAFE-02 | Requires live credentials and a disposable work item; out of scope for CI | Steps 1-6 of the procedure in `04-04-SUMMARY.md`. | ✅ green |
-| TUI effort modal closes a real Task with typed effort (carried from 04-02) | SAFE-03 | No automated test drives the Bubble Tea effort modal end to end | Close one real Task through the TUI effort modal leaving Original Estimate blank. Confirm whether blank fields are preserved or zeroed. | ❌ red |
+| TUI effort modal closes a real Task with typed effort (carried from 04-02) | SAFE-03 | No automated test drives the Bubble Tea effort modal end to end | Close one real Task through the TUI effort modal leaving Original Estimate blank. Confirm whether blank fields are preserved or zeroed. | ✅ green (after fix — see re-test below) |
 
 > **Live verification run 2026-09-12** against `dev.azure.com/Windstream`, project `Kinetic`,
 > work item `1198503` (restored to its original `New` state afterwards).
@@ -108,16 +108,32 @@ created: 2026-09-12
 > through the modal with Original Estimate left blank had its Original Estimate overwritten
 > with 0.
 >
-> **SAFE-03 is therefore PARTIALLY satisfied** — correct on the CLI path, violated on the TUI
-> path. The TUI write path does not route through `runWrite`, so it inherits none of Phase 4's
-> guards: no dry run, no `--confirm`, and no audit record. The observed data loss left no trace
-> in `audit.jsonl`. This is a gap against SAFE-01 and SAFE-02 for that path as well, not only
-> SAFE-03.
+> **SAFE-03 was therefore PARTIALLY satisfied at the time of the 09-12 run** — correct on the
+> CLI path, violated on the TUI path.
 >
 > Not a regression introduced by this phase: D-17 locked "preserve TUI behaviour exactly", so
 > the nullable signature was deliberately plumbed to the boundary and stopped there. Remediation
-> is a NEW decision, tracked in `.planning/BACKLOG.md`, not a correction within Phase 4.
+> was a NEW decision, tracked in `.planning/BACKLOG.md` as BL-01.
 >
+> ---
+>
+> **RE-TEST 2026-09-13 — Step 7 now PASSES.** BL-01 part 1 was fixed by quick task `260913-nd2`
+> (commits `b2f2ae2`, `266b88b`): `parseEffort("")` returns `nil`, `EffortSubmitMsg` carries
+> `*float64`, and both call sites forward the pointers directly, so a blank field produces no
+> JSON-Patch operation. The user re-ran the live TUI close with a blank effort field and confirmed
+> from work item History that the field was left unchanged.
+>
+> **SAFE-03 is now fully satisfied on both the CLI and TUI paths.**
+>
+> **STILL OPEN — BL-01 part 2.** The TUI write path does not route through `runWrite`, so it
+> still inherits none of Phase 4's guards: no dry run, no `--confirm`, and no audit record. A
+> TUI-driven write leaves no trace in `audit.jsonl`. That is a gap against SAFE-01 and SAFE-02
+> for the TUI path, and it is out of Phase 4's declared scope (every Phase 4 success criterion
+> names a "write verb", meaning the CLI surface). Tracked in `.planning/BACKLOG.md`.
+>
+> `status` and `nyquist_compliant` are deliberately left at `draft` / `false`: both are owned by
+> `/gsd-validate-phase` §6, which has not run. Every manual row is now green, so that run is the
+> only remaining blocker to flipping them.
 > `status` remains `draft` and `nyquist_compliant` remains `false` because a required manual
 > verification is red.
 
