@@ -3,6 +3,7 @@ package ado
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
@@ -115,37 +116,101 @@ func (c *Client) GetPullRequestDetail(ctx context.Context, project, repositoryID
 // filter is widened past the endpoint's `pending` default because an approval
 // already approved or rejected is exactly the case D-03 refuses as a no-op, and
 // it would be invisible in the default list.
+//
+// WR-03 diagnosis. `releases approve` / `releases reject` were non-functional
+// live: an id that `releases approvals` had listed seconds earlier came back
+// "was not found". BOTH candidate causes turned out to be real, and the SDK
+// types settled each one:
+//
+//  1. Invalid status filter. release.ApprovalStatus is a plain `type
+//     ApprovalStatus string` alias, and release.ApprovalStatusValues enumerates
+//     only SINGLE tokens (undefined/pending/approved/rejected/reassigned/
+//     canceled/skipped). release/client.go:285-287 forwards it verbatim as
+//     `queryParams.Add("statusFilter", string(*args.StatusFilter))`, so the
+//     previous `release.ApprovalStatus("pending,approved,rejected")` cast put a
+//     comma list where the endpoint documents one enum token. There is no
+//     comma-list handling anywhere on that path — unlike ReleaseIdsFilter, which
+//     the SDK explicitly joins with ',' at client.go:288-295 precisely because
+//     that parameter DOES accept a list. The fix is a fan-out: one call per
+//     status, results merged.
+//
+//  2. No paging. release.GetApprovalsArgs documents `Top` as "Number of
+//     approvals to get. Default is 50", and exposes ContinuationToken; the
+//     response type GetApprovalsResponseValue carries a ContinuationToken the
+//     previous code never read. A single unpaged call therefore saw at most the
+//     first 50 approvals of a project. The live counter-evidence (releases.go:243
+//     returning 56 approvals from one unpaged call) does not acquit paging: that
+//     total is the sum across the configured projects loop, not one response.
+//
+// The fix addresses both: each status is paged to exhaustion, with an explicit
+// stop on an empty page, on an absent/unparseable continuation token, on
+// ctx.Err(), and on a hard iteration bound so a server that never stops handing
+// back tokens cannot spin forever.
 func (c *Client) GetReleaseApprovalDetail(ctx context.Context, project string, approvalID int) (*ReleaseApprovalDetail, error) {
 	log := logging.Logger()
 
-	statusFilter := release.ApprovalStatus("pending,approved,rejected")
-
-	resp, err := c.releaseClient.GetApprovals(ctx, release.GetApprovalsArgs{
-		Project:      &project,
-		StatusFilter: &statusFilter,
-	})
-	if err != nil {
-		log.Error("Failed to read release approval before writing", "approvalID", approvalID, "error", err)
-		return nil, err
-	}
-	if resp == nil {
-		log.Error("Release approval not found before writing", "approvalID", approvalID)
-		return nil, fmt.Errorf("release approval %d was not found", approvalID)
+	// D-03's no-op case needs approved and rejected visible, so the set is never
+	// narrowed back to pending only.
+	statuses := []release.ApprovalStatus{
+		release.ApprovalStatusValues.Pending,
+		release.ApprovalStatusValues.Approved,
+		release.ApprovalStatusValues.Rejected,
 	}
 
-	for _, a := range resp.Value {
-		if a.Id == nil || *a.Id != approvalID {
-			continue
+	const (
+		pageSize          = 200
+		maxPagesPerStatus = 50
+	)
+
+	for _, status := range statuses {
+		statusFilter := status
+		var continuationToken *int
+
+		for page := 0; page < maxPagesPerStatus; page++ {
+			if err := ctx.Err(); err != nil {
+				log.Error("Failed to read release approval before writing", "approvalID", approvalID, "error", err)
+				return nil, err
+			}
+
+			top := pageSize
+			resp, err := c.releaseClient.GetApprovals(ctx, release.GetApprovalsArgs{
+				Project:           &project,
+				StatusFilter:      &statusFilter,
+				Top:               &top,
+				ContinuationToken: continuationToken,
+			})
+			if err != nil {
+				log.Error("Failed to read release approval before writing", "approvalID", approvalID, "error", err)
+				return nil, err
+			}
+			if resp == nil || len(resp.Value) == 0 {
+				break
+			}
+
+			for _, a := range resp.Value {
+				if a.Id == nil || *a.Id != approvalID {
+					continue
+				}
+				detail := &ReleaseApprovalDetail{ID: approvalID}
+				if a.Status != nil {
+					detail.Status = string(*a.Status)
+				}
+				if a.Release != nil && a.Release.Name != nil {
+					detail.Release = *a.Release.Name
+				}
+				log.Info("Release approval pre-read", "approvalID", detail.ID, "status", detail.Status)
+				return detail, nil
+			}
+
+			// The response token is a string; the request field is an *int. An
+			// absent or unparseable token ends this status' pages rather than
+			// restarting them from the beginning.
+			next, err := strconv.Atoi(strings.TrimSpace(resp.ContinuationToken))
+			if err != nil {
+				break
+			}
+			continuationToken = &next
 		}
-		detail := &ReleaseApprovalDetail{ID: approvalID}
-		if a.Status != nil {
-			detail.Status = string(*a.Status)
-		}
-		if a.Release != nil && a.Release.Name != nil {
-			detail.Release = *a.Release.Name
-		}
-		log.Info("Release approval pre-read", "approvalID", detail.ID, "status", detail.Status)
-		return detail, nil
 	}
 
 	log.Error("Release approval not found before writing", "approvalID", approvalID)
