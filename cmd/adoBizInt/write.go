@@ -193,7 +193,7 @@ func runWrite(ctx context.Context, op writeOp, args []string) int {
 	// is the decision: the sink is proven writable before any request leaves, so
 	// there is no window in which ADO changed and nothing recorded it. Moving it
 	// below the mutate call reverses D-13 while appearing to honour it.
-	sink, err := openAuditSink()
+	sink, err := auditOpen()
 	if err != nil {
 		log.Error("Audit sink unavailable", "command", name, "error", err)
 		fmt.Fprintf(stderrWriter, "Refusing to write: audit sink %s is not writable: %v\n", auditPath, err)
@@ -247,7 +247,22 @@ func runWrite(ctx context.Context, op writeOp, args []string) int {
 		})
 		if auditErr := appendAuditRecord(sink, record); auditErr != nil {
 			log.Error("Failed to append audit record", "command", name, "error", auditErr)
-			fmt.Fprintf(stderrWriter, "Failed to append audit record: %v\n", auditErr)
+			// The operator needs to know WHAT to go check, not merely that a
+			// write to a file failed — the mutation may already be live in ADO.
+			fmt.Fprintf(stderrWriter, "Write may have landed but was NOT recorded in %s: %v\n", auditPath, auditErr)
+
+			// CR-01. The mutation landed in ADO and nothing recorded it, which
+			// genuinely IS an unknown outcome: SAFE-02 ("every executed write
+			// appends an audit record") is falsified for this run, so reporting
+			// exit 0 / "executed" would be the exact conflation this project
+			// exists to prevent. This reuses the already-ratified D-10/D-23
+			// vocabulary rather than inventing a seventh exit code. The
+			// reassignment is idempotent: a run already classified unknown is
+			// unchanged. finishWrite's `executed` argument at the return below
+			// falls to false on its own, because it is computed as
+			// `outcome == outcomeExecuted`.
+			outcome = outcomeUnknown
+			code = exitOutcomeUnknown
 		}
 	}
 

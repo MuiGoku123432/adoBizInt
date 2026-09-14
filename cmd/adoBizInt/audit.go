@@ -80,6 +80,16 @@ func openAuditSink() (*os.File, error) {
 	return os.OpenFile(auditPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }
 
+// auditOpen is the seam the write path actually calls. It exists ONLY so a test
+// can inject a sink that OPENS cleanly and fails on Write — the ENOSPC/EIO/quota
+// window that D-13's pre-flight open provably does not cover. D-13 proves the
+// sink was writable at open time; it cannot prove the eventual append succeeds,
+// and CR-01 is precisely the case where it does not.
+//
+// Like auditPath, this is a package-level var only for that test seam; nothing
+// ever assigns it from argv.
+var auditOpen = openAuditSink
+
 // appendAuditRecord marshals to a byte slice, appends the newline, and writes
 // it with ONE Write — the crash.go discipline, for a sharper reason here: a
 // partial line in a JSONL file is an unparseable record forever, and it is
@@ -89,12 +99,21 @@ func openAuditSink() (*os.File, error) {
 // json.NewEncoder(f).Encode is deliberately not used: it can leave a partial
 // line behind. Unlike writeCrashRecord, a marshal or write failure here is
 // returned rather than swallowed, because D-13 makes this sink fatal.
+//
+// The write is followed by f.Sync(), and the sync error is returned as the
+// append error. Without it the durability claim is untrue: a buffered line lost
+// to a crash or a power cut is exactly as invisible as one never written, and
+// this file's entire purpose is to survive the moment something went wrong. A
+// caller that has been told "recorded" must be able to rely on the record
+// existing on disk.
 func appendAuditRecord(f *os.File, r auditRecord) error {
 	payload, err := json.Marshal(r)
 	if err != nil {
 		return err
 	}
 	payload = append(payload, '\n')
-	_, err = f.Write(payload)
-	return err
+	if _, err = f.Write(payload); err != nil {
+		return err
+	}
+	return f.Sync()
 }
