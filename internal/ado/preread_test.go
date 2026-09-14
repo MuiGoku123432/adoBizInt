@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
@@ -317,6 +319,168 @@ func TestPreReadNeverReturnsNilNilStructural(t *testing.T) {
 	for name := range preReadFuncNames {
 		if !seen[name] {
 			t.Errorf("preread.go declares no %s; the structural assertion covered nothing", name)
+		}
+	}
+}
+
+// approvalPage is one canned GetApprovals response for the paging fake.
+type approvalPage struct {
+	ids               []int
+	status            release.ApprovalStatus
+	continuationToken string
+}
+
+// TestGetReleaseApprovalDetailPaging pins the WR-03 fix. Both real causes are
+// covered: the target may sit past the first page (paging), and it may carry a
+// non-pending status (the per-status fan-out that replaced the invalid
+// comma-joined ApprovalStatus cast).
+//
+// The fake counts its invocations and records every StatusFilter it was asked
+// for, so a regression to a single unpaged call — or to a pending-only filter —
+// fails loudly rather than passing by luck.
+func TestGetReleaseApprovalDetailPaging(t *testing.T) {
+	cases := []struct {
+		name          string
+		pages         map[release.ApprovalStatus][]approvalPage
+		lookup        int
+		wantStatus    string
+		wantErr       bool
+		wantMultiCall bool
+	}{
+		{
+			name: "target on a later page",
+			pages: map[release.ApprovalStatus][]approvalPage{
+				release.ApprovalStatusValues.Pending: {
+					{ids: []int{1, 2, 3}, status: release.ApprovalStatusValues.Pending, continuationToken: "3"},
+					{ids: []int{77}, status: release.ApprovalStatusValues.Pending},
+				},
+			},
+			lookup:        77,
+			wantStatus:    "pending",
+			wantMultiCall: true,
+		},
+		{
+			name: "already approved is still found",
+			pages: map[release.ApprovalStatus][]approvalPage{
+				release.ApprovalStatusValues.Approved: {
+					{ids: []int{77}, status: release.ApprovalStatusValues.Approved},
+				},
+			},
+			lookup:     77,
+			wantStatus: "approved",
+		},
+		{
+			name: "absent from every page",
+			pages: map[release.ApprovalStatus][]approvalPage{
+				release.ApprovalStatusValues.Pending: {
+					{ids: []int{1, 2}, status: release.ApprovalStatusValues.Pending, continuationToken: "2"},
+					{ids: []int{3, 4}, status: release.ApprovalStatusValues.Pending},
+				},
+			},
+			lookup:  77,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			seen := map[release.ApprovalStatus]bool{}
+
+			c := &Client{releaseClient: &fakeReleaseAPI{
+				t: t,
+				GetApprovalsFunc: func(_ context.Context, args release.GetApprovalsArgs) (*release.GetApprovalsResponseValue, error) {
+					calls++
+					if args.StatusFilter == nil {
+						t.Fatal("GetApprovals was called with the endpoint's pending-only default")
+					}
+					if strings.Contains(string(*args.StatusFilter), ",") {
+						t.Fatalf("StatusFilter %q is a comma list; ApprovalStatus is forwarded as ONE enum token", *args.StatusFilter)
+					}
+					seen[*args.StatusFilter] = true
+
+					pages := tc.pages[*args.StatusFilter]
+					idx := 0
+					if args.ContinuationToken != nil {
+						// The fake's tokens are the index of the page just served.
+						idx = *args.ContinuationToken
+						for i, p := range pages {
+							if p.continuationToken != "" && p.continuationToken == strconv.Itoa(*args.ContinuationToken) {
+								idx = i + 1
+								break
+							}
+						}
+					}
+					if idx >= len(pages) {
+						return &release.GetApprovalsResponseValue{}, nil
+					}
+					page := pages[idx]
+
+					var vals []release.ReleaseApproval
+					for _, id := range page.ids {
+						id := id
+						status := page.status
+						name := "Release-9"
+						vals = append(vals, release.ReleaseApproval{
+							Id:      &id,
+							Status:  &status,
+							Release: &release.ReleaseShallowReference{Name: &name},
+						})
+					}
+					return &release.GetApprovalsResponseValue{
+						Value:             vals,
+						ContinuationToken: page.continuationToken,
+					}, nil
+				},
+			}}
+
+			got, err := c.GetReleaseApprovalDetail(context.Background(), "P", tc.lookup)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("err = nil, want a non-nil error for an absent approval")
+				}
+				if got != nil {
+					t.Errorf("detail = %#v, want nil alongside the error (D-02)", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("GetReleaseApprovalDetail: %v", err)
+			}
+			if got == nil {
+				t.Fatal("detail = nil with a nil error; the (nil, nil) shape is prohibited")
+			}
+			if got.ID != tc.lookup || got.Status != tc.wantStatus {
+				t.Errorf("detail = %#v, want id %d status %q", got, tc.lookup, tc.wantStatus)
+			}
+			if tc.wantMultiCall && calls < 2 {
+				t.Errorf("GetApprovals called %d time(s); a single unpaged call cannot reach a later page", calls)
+			}
+		})
+	}
+
+	// The fan-out must cover all three statuses D-03 depends on, proven on a
+	// lookup that matches nothing so every status is exhausted.
+	seen := map[release.ApprovalStatus]bool{}
+	c := &Client{releaseClient: &fakeReleaseAPI{
+		t: t,
+		GetApprovalsFunc: func(_ context.Context, args release.GetApprovalsArgs) (*release.GetApprovalsResponseValue, error) {
+			seen[*args.StatusFilter] = true
+			return &release.GetApprovalsResponseValue{}, nil
+		},
+	}}
+	if _, err := c.GetReleaseApprovalDetail(context.Background(), "P", 77); err == nil {
+		t.Fatal("err = nil for an approval present under no status")
+	}
+	for _, want := range []release.ApprovalStatus{
+		release.ApprovalStatusValues.Pending,
+		release.ApprovalStatusValues.Approved,
+		release.ApprovalStatusValues.Rejected,
+	} {
+		if !seen[want] {
+			t.Errorf("status %q was never requested; the D-03 no-op case depends on it being visible", want)
 		}
 	}
 }
