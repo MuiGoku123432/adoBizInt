@@ -32,7 +32,7 @@ Phase: 04 (guarded-writes) — EXECUTING
 Plan: 4 of 4
 Status: Phase complete — ready for verification
 Next: Phase 04 (guarded writes)
-Last activity: 2026-09-13 — Completed quick task 260913-nd2: fix BL-01 part 1 (TUI blank effort fields no longer zeroed)
+Last activity: 2026-09-13 — Completed quick task 260913-uhj: fixed CR-01 (silent audit-append failure) and WR-03 (releases approve/reject non-functional)
 
 Progress: [████████░░] 75%
 
@@ -180,6 +180,7 @@ Affecting the v2 scrum milestone, not v1:
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
 | 260913-nd2 | Fix BL-01 part 1: TUI effort modal silently zeroes effort fields left blank | 2026-09-13 | 266b88b | complete — unit-verified + live TUI re-test passed 2026-09-13 | [260913-nd2-fix-bl-01-tui-effort-modal-silently-zero](./quick/260913-nd2-fix-bl-01-tui-effort-modal-silently-zero/) |
+| 260913-uhj | Fix CR-01 (audit-append failure reported as success) and WR-03 (`releases approve`/`reject` non-functional) | 2026-09-13 | 5ef869c | complete — verified 9/9; WR-03 confirmed by live A/B on approval 21611 | [260913-uhj-fix-cr-01-audit-append-failure-reported-](./quick/260913-uhj-fix-cr-01-audit-append-failure-reported-/) |
 
 ### Environment Notes
 
