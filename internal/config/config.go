@@ -1,6 +1,8 @@
 package config
 
 import (
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +51,25 @@ type Config struct {
 	StateTransitions   map[string]map[string]string `yaml:"state_transitions"`
 	UserEmail          string                       `yaml:"user_email"` // User's email for "Assigned to Me" filter
 }
+
+// LogValue, String and GoString render a Config without its PAT (WR-05). The
+// credential sits in a plain exported field, so without them one
+// `log.Info("Config loaded", "config", cfg)` or a debug Printf would write it
+// to the log. They carry only what run() already logs, plus whether a PAT is
+// set, never its value.
+func (c Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("org_url", c.OrgURL),
+		slog.Any("projects", []string(c.Projects)),
+		slog.Bool("pat_set", c.PAT != ""),
+	)
+}
+
+func (c Config) String() string {
+	return fmt.Sprintf("config{org_url: %s, projects: %v, pat_set: %t}", c.OrgURL, []string(c.Projects), c.PAT != "")
+}
+
+func (c Config) GoString() string { return c.String() }
 
 // DefaultStateTransitions provides default state transitions for common work item types
 // Flow: New -> Active -> Resolved -> Closed

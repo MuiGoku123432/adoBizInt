@@ -1,8 +1,12 @@
 package config
 
 import (
+	"bytes"
+	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -154,5 +158,48 @@ func TestValidate(t *testing.T) {
 				t.Errorf("Validate() ConfigError.Field = %v, want %v", cfgErr.Field, tt.wantField)
 			}
 		})
+	}
+}
+
+// TestLoadedConfigNeverRendersPAT pins WR-05 where the secret actually lives.
+// A loaded Config holds the PAT, so logging it as one slog attribute or
+// formatting it with fmt, the most likely careless edit to run()'s "Config
+// loaded" line, must not print the credential. The org URL must still appear,
+// or the check passes because nothing was rendered.
+func TestLoadedConfigNeverRendersPAT(t *testing.T) {
+	const pat = "pat-fixture-do-not-disclose-5e7b20"
+	writeConfig(t, "")
+	t.Setenv("ADO_PAT", pat)
+	t.Setenv("ADO_ORG_URL", "https://dev.azure.com/fabrikam")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+	if cfg.PAT != pat {
+		t.Fatalf("Load() PAT not taken from ADO_PAT; the check below would be vacuous")
+	}
+
+	var logged bytes.Buffer
+	text := slog.New(slog.NewTextHandler(&logged, nil))
+	jsonLog := slog.New(slog.NewJSONHandler(&logged, nil))
+	for _, l := range []*slog.Logger{text, jsonLog} {
+		l.Info("Config loaded", "config", cfg)
+		l.Info("Config loaded", "config", *cfg)
+	}
+
+	rendered := map[string]string{"slog": logged.String()}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s"} {
+		rendered["fmt "+verb+" pointer"] = fmt.Sprintf(verb, cfg)
+		rendered["fmt "+verb+" value"] = fmt.Sprintf(verb, *cfg)
+	}
+
+	for how, out := range rendered {
+		if strings.Contains(out, pat) {
+			t.Errorf("%s renders the PAT: %s", how, out)
+		}
+		if !strings.Contains(out, "fabrikam") {
+			t.Errorf("%s does not render the org URL, so the check is vacuous: %s", how, out)
+		}
 	}
 }

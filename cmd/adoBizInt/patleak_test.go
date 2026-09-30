@@ -25,6 +25,11 @@ import (
 // dispatch would carry the fixture rather than the developer's real token and
 // config: a test must never see a real secret.
 //
+// Because nothing reachable from dispatch holds the PAT, this test cannot catch
+// a leak from the code that does. That half lives with the secret:
+// internal/config's TestLoadedConfigNeverRendersPAT loads a Config from
+// ADO_PAT and pins that slog and fmt render it without the credential (WR-05).
+//
 // Do not call initLogging or logging.Init here. A successful Init points
 // logging.Logger() at a file instead of slog.Default(), and the capture would
 // silently go empty (Pitfall 8). The three marker checks at the end are what
