@@ -135,27 +135,24 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	log := logging.Logger()
 
 	// Get recent iterations (sprints active in last 90 days)
-	iterationFilter := ""
 	iterations, err := c.GetRecentIterations(ctx, project)
 	if err != nil {
 		log.Warn("Failed to get iterations, using date filter only", "project", project, "error", err)
 	} else if len(iterations) > 0 {
-		escapedPaths := make([]string, len(iterations))
-		for i, path := range iterations {
-			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
-		}
-		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
 		log.Info("Using iteration filter", "project", project, "sprints", iterations)
 	}
 
-	// Query for work items with relevant fields
-	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter + " ORDER BY [System.Id] DESC"
+	// Query for work items with relevant fields. The project never enters the
+	// query text: @project resolves server-side from args.Project, which the
+	// SDK sends in the request route (D-10 revised).
+	wiql := "SELECT [System.Id], [System.Title], [System.Description], [Microsoft.VSTS.Scheduling.StoryPoints], [System.WorkItemType], [System.State], [System.AssignedTo] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationClause(iterations) + " ORDER BY [System.Id] DESC"
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
 	}
 
-	log.Info("Executing WIQL query", "project", project, "query", wiql)
+	// The query text is not logged (D-11).
+	log.Info("Executing WIQL query", "project", project, "iterations", len(iterations))
 
 	result, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {

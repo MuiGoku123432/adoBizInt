@@ -277,6 +277,26 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 	return recentPaths, nil
 }
 
+// iterationClause renders the WIQL iteration filter for paths returned by
+// GetRecentIterations, or "" when there are none. It is the only escaping path
+// for iteration values (D-10 revised): each path is single-quoted with every
+// embedded single quote doubled, in input order.
+//
+// note: two call sites (getProjectWorkItems, getProjectCounts), below the rule
+// of three. It is extracted because D-12's structural test forbids a bare
+// identifier operand in a WIQL + chain, and this is the one callee
+// TestWIQLInterpolationStructural allow-lists (RESEARCH OQ2).
+func iterationClause(paths []string) string {
+	if len(paths) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(paths))
+	for i, path := range paths {
+		quoted[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
+	}
+	return " AND [System.IterationPath] IN (" + strings.Join(quoted, ", ") + ")"
+}
+
 // strPtr is a helper to get a pointer to a string
 func strPtr(s string) *string {
 	return &s
