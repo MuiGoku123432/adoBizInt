@@ -1,0 +1,31 @@
+# Gates are exactly ROADMAP Phase 5 SC5: build, vet, race tests, gofmt.
+# D-15 scope (no linters), D-16 go-version matches go.mod, D-17 no credentials.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25.4'
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needs to be run on:"
+            echo "$unformatted"
+            exit 1
+          fi
