@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 05
 current_phase_name: hardening
-status: executing
-stopped_at: Completed 05-05-wiql-project-macro-PLAN.md
-last_updated: "2026-09-30T17:33:43.851Z"
+status: verifying
+stopped_at: Completed 05-06-log-permissions-pat-test-PLAN.md
+last_updated: "2026-09-30T17:40:50.497Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 05 execution started
-state_head: 73591034a9bb22069fb93936706b45ddefdd9656
+state_head: b2cccba40c509ac0d7b49cdf9ae440cc3b56f671
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 26
-  completed_plans: 25
+  completed_plans: 26
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 
 Phase: 05 (hardening) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Next: Phase 04 (guarded writes)
 Last activity: 2026-09-30 — Phase 05 execution started
 
@@ -84,6 +84,7 @@ Progress: [████████░░] 75%
 | Phase 05 P03 | 1 min | 2 tasks | 1 files |
 | Phase 05 P04 | 6 min | 2 tasks | 8 files |
 | Phase 05 P05 | 8min | 2 tasks | 6 files |
+| Phase 05 P06 | 4 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 05]: 05-04: --project allow-list lives in the fs.Func callback in newFlagSet; exact case-sensitive match; nil configuredProjects rejects all; exit 3 via existing parse-error path
 - [Phase 05]: 05-05: WIQL uses [System.TeamProject] = @project; the project travels only in QueryByWiqlArgs.Project (the SDK route). iterationClause in client.go is the single escaper and the only callee TestWIQLInterpolationStructural allow-lists
 - [Phase 05]: 05-05: parsePackageFiles(t) in nilguard_test.go extracted on the third package-wide structural test (rule of three)
+- [Phase 05]: 05-06: logging.Init chmods ~/.config/adoBizInt to 0700 and adoBizInt.log to 0600 on every call (file.Chmod on the fd); chmod failure closes the file and returns, handled by initLogging's non-fatal warning (D-20, D-21)
+- [Phase 05]: 05-06: TestPATNeverLogged reuses patFixture, drives an executed write (a dry run logs nothing), and asserts Read complete / Write complete / panic recovered markers; tripwire, not a present-leak detector
+- [Phase 05]: 05-06: DEFERRED follow-up T-05-26 -- cmd/adoBizInt/audit.go still creates audit.jsonl 0644 and MkdirAll 0755; mitigated by the 0700 directory, file mode out of scope under D-18
 
 ### Pending Todos
 
@@ -203,7 +207,8 @@ Affecting the v2 scrum milestone, not v1:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| Hardening | Log opened 0600 / dir 0700 + PAT-redaction test — filed as HARD-06, Phase 5 plan 05-05 | Phase 5 | 2026-09-09 |
+| Hardening | Log opened 0600 / dir 0700 + PAT-redaction test — filed as HARD-06 | Resolved in 05-06 | 2026-09-09 |
+| Hardening | `cmd/adoBizInt/audit.go` creates `audit.jsonl` 0644 and its dir via `MkdirAll(..., 0755)` (T-05-26); mitigated by the 0700 dir `logging.Init` enforces, file mode deferred under D-18 | Follow-up | 2026-09-30 |
 | Scrum master | Sprint CRUD, capacity, velocity, burndown, backlog rank | v2 | 2026-09-03 |
 | Story management | Work item creation, comments, links | v2 | 2026-09-03 |
 | Platform | Native MCP server | v2 | 2026-09-03 |
@@ -211,6 +216,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:33:43.781Z
-Stopped at: Completed 05-05-wiql-project-macro-PLAN.md
+Last session: 2026-09-30T17:40:41.785Z
+Stopped at: Completed 05-06-log-permissions-pat-test-PLAN.md
 Resume file: None
