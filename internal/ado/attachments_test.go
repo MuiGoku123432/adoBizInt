@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -290,6 +291,46 @@ func TestDownloadAttachmentNeverClobbers(t *testing.T) {
 			t.Errorf("destDir = %v, want %v", got, want)
 		}
 	})
+}
+
+// TestDownloadAttachmentOwnerOnlyModes pins WR-02. Attachments can carry
+// customer data, so the file is 0600 and the directory 0700 on every download,
+// including a directory an earlier version created 0755. MkdirAll's mode only
+// applies at creation, the same point D-20 makes for the log directory.
+func TestDownloadAttachmentOwnerOnlyModes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not map Unix permission bits")
+	}
+	destDir := filepath.Join(t.TempDir(), "attachments")
+	if err := os.Mkdir(destDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(destDir, 0o755); err != nil { // defeat the umask
+		t.Fatal(err)
+	}
+	client := &Client{
+		workitemClient: &fakeWorkItemAPI{
+			t: t,
+			GetAttachmentContentFunc: func(context.Context, workitemtracking.GetAttachmentContentArgs) (io.ReadCloser, error) {
+				return io.NopCloser(strings.NewReader("payload")), nil
+			},
+		},
+	}
+
+	path, err := client.DownloadAttachment(context.Background(), uuid.New(), destDir, "Spec.txt")
+	if err != nil {
+		t.Fatalf("DownloadAttachment() error = %v, want nil", err)
+	}
+
+	for target, want := range map[string]os.FileMode{destDir: 0o700, path: 0o600} {
+		info, err := os.Stat(target)
+		if err != nil {
+			t.Fatalf("stat %s: %v", target, err)
+		}
+		if got := info.Mode().Perm(); got != want {
+			t.Errorf("%s mode = %o, want %o", target, got, want)
+		}
+	}
 }
 
 // TestGetWorkItemDetailAttachmentID pins D-05 and D-06: only an AttachedFile

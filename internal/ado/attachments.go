@@ -75,7 +75,15 @@ func (c *Client) DownloadAttachment(ctx context.Context, id uuid.UUID, destDir, 
 	}
 	defer body.Close()
 
+	// Owner-only on every call, not just at creation (WR-02): attachments can
+	// carry customer data, and installs from before Phase 5 have this directory
+	// at 0755. MkdirAll's mode applies only when it creates the directory, the
+	// same reason logging.Init chmods its own (D-20). CreateTemp makes the file
+	// 0600, and the hard link below keeps that mode.
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(destDir, 0o700); err != nil {
 		return "", err
 	}
 	tmp, err := os.CreateTemp(destDir, ".download-*")
