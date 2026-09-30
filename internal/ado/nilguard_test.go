@@ -134,8 +134,8 @@ func TestCollectedDefinitionsGuardNameAndID(t *testing.T) {
 }
 
 // parsePackageFiles parses every non-test .go file in this package, keyed by
-// file name, for the structural tests TestCollectedDefinitionsGuardNameAndID
-// and TestNoRawHTTPInADO.
+// file name, for the structural tests TestCollectedDefinitionsGuardNameAndID,
+// TestNoRawHTTPInADO and TestWIQLInterpolationStructural.
 func parsePackageFiles(t *testing.T) (*token.FileSet, map[string]*ast.File) {
 	t.Helper()
 	names, err := filepath.Glob("*.go")
