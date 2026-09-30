@@ -103,7 +103,20 @@ here.
   contract an agent branches on (Phase 3 D-06/D-07/D-08); moving this mapping
   later breaks callers already written against it.
 
-- **D-10:** Both WIQL interpolation sites are escaped with
+- **D-10 (REVISED 2026-09-30, supersedes the original D-10 below):** Both WIQL
+  sites — `internal/ado/workitems.go:149` and `internal/ado/dashboard.go:142` —
+  stop interpolating the project name and use the `@project` macro instead. The
+  SDK already carries the project in the request route, so the name never enters
+  query text. Chosen by the user at plan time because Uniti's organization rule
+  requires parameterized queries, never string concatenation; escaping would
+  still concatenate. The `cmd/` allow-list (D-09) still applies. Iteration-path
+  values that remain interpolated keep their existing `''` escaping through a
+  call, so D-12's structural test still holds. Because `@project` has not been
+  exercised against the live org, execution must include one live read per
+  site confirming results are unchanged before the phase counts as done.
+  — **Reversibility:** reversible — query text is internal to `internal/ado`.
+
+- **D-10 (ORIGINAL, superseded):** Both WIQL interpolation sites are escaped with
   `strings.ReplaceAll(project, "'", "''")` — `internal/ado/workitems.go:149` and
   `internal/ado/dashboard.go:142` — matching the escaping already applied to
   iteration paths a few lines above each. The allow-list does not remove this:
