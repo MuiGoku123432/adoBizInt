@@ -3,6 +3,9 @@ package ado
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -217,4 +220,128 @@ func TestDownloadAttachmentRemovesPartialFile(t *testing.T) {
 	if !body.closed {
 		t.Error("response body was not closed")
 	}
+}
+
+// TestGetWorkItemDetailAttachmentID pins D-05 and D-06: only an AttachedFile
+// relation with a name and a non-nil GUID in its last URL path segment becomes
+// an Attachment, and the ones that fail are dropped without a failure.
+func TestGetWorkItemDetailAttachmentID(t *testing.T) {
+	validID := uuid.MustParse("098a279a-60b9-40a8-868b-b7fd00c0a439")
+	base := "https://dev.azure.com/fabrikam/_apis/wit/attachments/"
+	attached := "AttachedFile"
+	hyperlink := "Hyperlink"
+	str := func(s string) *string { return &s }
+	attrs := func(name string, size float64) *map[string]interface{} {
+		return &map[string]interface{}{"name": name, "resourceSize": size}
+	}
+
+	relations := []workitemtracking.WorkItemRelation{
+		{Rel: &attached, Url: str(base + validID.String() + "?fileName=Spec.txt"), Attributes: attrs("Spec.txt", 7)},
+		{Rel: &attached, Url: str(base + "not-a-guid"), Attributes: attrs("NotGuid.txt", 1)},
+		{Rel: &attached, Url: nil, Attributes: attrs("NoURL.txt", 1)},
+		{Rel: &attached, Url: str(base + uuid.New().String()), Attributes: attrs("", 1)},
+		{Rel: &attached, Url: str(base + uuid.Nil.String()), Attributes: attrs("Zero.txt", 1)},
+		{Rel: &hyperlink, Url: str(base + uuid.New().String()), Attributes: attrs("Link.txt", 1)},
+	}
+
+	client := &Client{
+		workitemClient: &fakeWorkItemAPI{
+			t: t,
+			GetWorkItemFunc: func(context.Context, workitemtracking.GetWorkItemArgs) (*workitemtracking.WorkItem, error) {
+				return &workitemtracking.WorkItem{
+					Fields:    &map[string]interface{}{"System.Title": "Mixed relations"},
+					Relations: &relations,
+				}, nil
+			},
+		},
+	}
+
+	detail, err := client.GetWorkItemDetail(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("GetWorkItemDetail() error = %v, want nil", err)
+	}
+
+	want := []Attachment{{
+		ID:   validID,
+		Name: "Spec.txt",
+		URL:  base + validID.String() + "?fileName=Spec.txt",
+		Size: 7,
+	}}
+	if !reflect.DeepEqual(detail.Attachments, want) {
+		t.Errorf("Attachments = %+v, want %+v", detail.Attachments, want)
+	}
+}
+
+// TestNoRawHTTPInADO keeps the PAT inside the SDK connection. It fails if any
+// non-test file in this package imports net/http, reads AuthorizationString, or
+// declares a struct field of type *azuredevops.Connection.
+//
+// This is an AST walk rather than a grep for a reason that is specific to this
+// repository: STATE.md records three Phase 3 incidents where a "grep returns
+// nothing" criterion was satisfied and then quietly defeated by a prose comment
+// explaining the forbidden thing. Comments and string literals are not part of
+// the AST, so neither a doc line nor a message string can satisfy or defeat this
+// assertion. It is ROADMAP Phase 5 SC1 ("the PAT cannot reach an arbitrary
+// host") expressed structurally, and the struct-field rule keeps RESEARCH OQ4's
+// deleted Client.connection from coming back.
+func TestNoRawHTTPInADO(t *testing.T) {
+	names, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob package files: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	seen := map[string]bool{}
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		seen[name] = true
+
+		for _, imp := range file.Imports {
+			if imp.Path.Value == `"net/http"` {
+				t.Errorf("%s imports net/http; attachment and API traffic must go through the SDK", fset.Position(imp.Pos()))
+			}
+		}
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			switch n := n.(type) {
+			case *ast.SelectorExpr:
+				if n.Sel.Name == "AuthorizationString" {
+					t.Errorf("%s reads AuthorizationString; the PAT header belongs to the SDK", fset.Position(n.Pos()))
+				}
+			case *ast.StructType:
+				// Only struct fields: newConnection legitimately returns the
+				// connection, and its result list is also an *ast.Field.
+				for _, f := range n.Fields.List {
+					if isConnectionPointer(f.Type) {
+						t.Errorf("%s declares a *azuredevops.Connection struct field; no struct may hold the credential-bearing connection", fset.Position(f.Pos()))
+					}
+				}
+			}
+			return true
+		})
+	}
+
+	if !seen["attachments.go"] {
+		t.Errorf("parsed files %v do not include attachments.go; the structural assertion covered nothing", names)
+	}
+}
+
+// isConnectionPointer reports whether expr is the type *azuredevops.Connection.
+func isConnectionPointer(expr ast.Expr) bool {
+	star, ok := expr.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := star.X.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && pkg.Name == "azuredevops" && sel.Sel.Name == "Connection"
 }
