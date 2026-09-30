@@ -21,7 +21,7 @@ expected: Push dev to origin; the ci run for HEAD is green across build, vet, ra
 result: [pending]
 
 ### 2. PHASE-BLOCKING — live @project before/after comparison (05-05 T2)
-expected: With your own PAT,  and  for one configured project return the same counts from a binary built at 191b403 (pre-05-05) and one built at HEAD, and both report complete:true.
+expected: With your own PAT, `workitems list --json` and `dashboard counts --json` for one configured project return the same counts from a binary built at 191b403 (pre-05-05) and one built at HEAD, and both report complete:true.
 result: [pending]
 
 ### 3. Real TUI attachment download by ID (05-01 T3)
@@ -29,7 +29,7 @@ expected: Downloading a real attachment writes a file byte-identical to the ADO 
 result: [pending]
 
 ### 4. Live set-state with project in the update route (CR-01 fix)
-expected:  dry run and one --confirm against a work item in a configured project succeed; a work item from another project is refused with exit 3 and no audit record. Note the project match is case-sensitive against System.TeamProject.
+expected: `workitems set-state` dry run and one --confirm against a work item in a configured project succeed; a work item from another project is refused with exit 3 and no audit record. Note the project match is case-sensitive against System.TeamProject.
 result: [pending]
 
 ## Summary
