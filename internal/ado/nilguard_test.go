@@ -101,6 +101,8 @@ func TestGetReleasesSkipsNilID(t *testing.T) {
 // the AST, so neither a doc line nor a message string can satisfy or defeat this
 // assertion — only real code can.
 func TestCollectedDefinitionsGuardNameAndID(t *testing.T) {
+	// note: the glob-and-parse walk over non-test files is duplicated in
+	// TestNoRawHTTPInADO (attachments_test.go); extract it on a third use.
 	names, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatalf("glob package files: %v", err)
