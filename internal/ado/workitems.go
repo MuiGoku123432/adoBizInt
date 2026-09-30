@@ -2,15 +2,13 @@ package ado
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
+	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/webapi"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
 
@@ -62,12 +60,17 @@ type WorkItemDetail struct {
 
 // Attachment represents a work item attachment
 //
+// ID is the attachment GUID parsed from the relation URL, and it is the only
+// identifier DownloadAttachment accepts (D-01). URL is kept for a human to
+// paste into a browser; no code path fetches it (D-05).
+//
 // URL is a single lower-case word, not a letter-split "u_r_l": initialisms are
 // mapped deliberately rather than by mechanical camel-to-snake conversion.
 type Attachment struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-	Size int64  `json:"size"`
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+	URL  string    `json:"url"`
+	Size int64     `json:"size"`
 }
 
 // opGetWorkItems and opGetWorkItemsBatch label the SDK calls in any Failure the
@@ -479,6 +482,13 @@ func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail
 				attachment := Attachment{}
 				if rel.Url != nil {
 					attachment.URL = *rel.Url
+					// The GUID is the last path segment; attributes.id is an
+					// integer revision, not the attachment ID.
+					if u, err := url.Parse(*rel.Url); err == nil {
+						if id, err := uuid.Parse(path.Base(u.Path)); err == nil {
+							attachment.ID = id
+						}
+					}
 				}
 				if rel.Attributes != nil {
 					attrs := *rel.Attributes
@@ -489,7 +499,9 @@ func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail
 						attachment.Size = int64(size)
 					}
 				}
-				if attachment.Name != "" {
+				// D-06: an attachment without a usable GUID cannot be
+				// downloaded, so it is not offered.
+				if attachment.Name != "" && attachment.ID != uuid.Nil {
 					detail.Attachments = append(detail.Attachments, attachment)
 				}
 			}
@@ -606,38 +618,4 @@ func GetNextState(config map[string]map[string]string, workItemType, currentStat
 		}
 	}
 	return "", false
-}
-
-// DownloadAttachment downloads an attachment to the specified path
-func (c *Client) DownloadAttachment(ctx context.Context, url, destPath string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-	// connection.AuthorizationString is already "Basic base64..." format
-	req.Header.Set("Authorization", c.connection.AuthorizationString)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("download failed: %s", resp.Status)
-	}
-
-	// Create destination directory if needed
-	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
-		return err
-	}
-
-	out, err := os.Create(destPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	_, err = io.Copy(out, resp.Body)
-	return err
 }

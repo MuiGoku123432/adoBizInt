@@ -2,6 +2,7 @@ package ado
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
@@ -49,6 +50,7 @@ type fakeWorkItemAPI struct {
 	GetWorkItemsFunc          func(context.Context, workitemtracking.GetWorkItemsArgs) (*[]workitemtracking.WorkItem, error)
 	GetWorkItemFunc           func(context.Context, workitemtracking.GetWorkItemArgs) (*workitemtracking.WorkItem, error)
 	GetClassificationNodeFunc func(context.Context, workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error)
+	GetAttachmentContentFunc  func(context.Context, workitemtracking.GetAttachmentContentArgs) (io.ReadCloser, error)
 }
 
 func (f *fakeWorkItemAPI) UpdateWorkItem(ctx context.Context, args workitemtracking.UpdateWorkItemArgs) (*workitemtracking.WorkItem, error) {
@@ -89,6 +91,14 @@ func (f *fakeWorkItemAPI) GetClassificationNode(ctx context.Context, args workit
 		f.t.Fatalf("unexpected call to workItemAPI.GetClassificationNode")
 	}
 	return f.GetClassificationNodeFunc(ctx, args)
+}
+
+func (f *fakeWorkItemAPI) GetAttachmentContent(ctx context.Context, args workitemtracking.GetAttachmentContentArgs) (io.ReadCloser, error) {
+	f.t.Helper()
+	if f.GetAttachmentContentFunc == nil {
+		f.t.Fatalf("unexpected call to workItemAPI.GetAttachmentContent")
+	}
+	return f.GetAttachmentContentFunc(ctx, args)
 }
 
 type fakeGitAPI struct {

@@ -146,7 +146,7 @@ func TestJSONFieldNames(t *testing.T) {
 	})
 
 	t.Run("Attachment", func(t *testing.T) {
-		assertKeySet(t, Attachment{}, []string{"name", "url", "size"})
+		assertKeySet(t, Attachment{}, []string{"id", "name", "url", "size"})
 	})
 
 	// The envelope and the failure record are tagged in the same convention so

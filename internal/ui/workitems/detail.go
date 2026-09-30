@@ -29,7 +29,6 @@ type CloseDetailMsg struct{}
 // AttachmentDownloadedMsg is sent when an attachment download completes
 type AttachmentDownloadedMsg struct {
 	Name string
-	Path string
 	Err  error
 }
 
@@ -186,10 +185,13 @@ func (m DetailModel) downloadAttachment(index int) tea.Cmd {
 	att := m.item.Attachments[index]
 	client := m.client
 	return func() tea.Msg {
-		home, _ := os.UserHomeDir()
-		destPath := filepath.Join(home, ".config", "adoBizInt", "attachments", att.Name)
-		err := client.DownloadAttachment(context.Background(), att.URL, destPath)
-		return AttachmentDownloadedMsg{Name: att.Name, Path: destPath, Err: err}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return AttachmentDownloadedMsg{Name: att.Name, Err: err}
+		}
+		destDir := filepath.Join(home, ".config", "adoBizInt", "attachments")
+		err = client.DownloadAttachment(context.Background(), att.ID, destDir, att.Name)
+		return AttachmentDownloadedMsg{Name: att.Name, Err: err}
 	}
 }
 
