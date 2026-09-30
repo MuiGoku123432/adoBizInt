@@ -101,23 +101,9 @@ func TestGetReleasesSkipsNilID(t *testing.T) {
 // the AST, so neither a doc line nor a message string can satisfy or defeat this
 // assertion — only real code can.
 func TestCollectedDefinitionsGuardNameAndID(t *testing.T) {
-	// note: the glob-and-parse walk over non-test files is duplicated in
-	// TestNoRawHTTPInADO (attachments_test.go); extract it on a third use.
-	names, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("glob package files: %v", err)
-	}
-
-	fset := token.NewFileSet()
+	fset, files := parsePackageFiles(t)
 	found := 0
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
+	for _, file := range files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -145,6 +131,31 @@ func TestCollectedDefinitionsGuardNameAndID(t *testing.T) {
 	if found != 2 {
 		t.Errorf("found %d collecting loops, want exactly 2 (GetPipelineRuns and GetReleases); review any new one for the Name/Id guard", found)
 	}
+}
+
+// parsePackageFiles parses every non-test .go file in this package, keyed by
+// file name, for the structural tests TestCollectedDefinitionsGuardNameAndID
+// and TestNoRawHTTPInADO.
+func parsePackageFiles(t *testing.T) (*token.FileSet, map[string]*ast.File) {
+	t.Helper()
+	names, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatalf("glob package files: %v", err)
+	}
+
+	fset := token.NewFileSet()
+	files := map[string]*ast.File{}
+	for _, name := range names {
+		if strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		files[name] = file
+	}
+	return fset, files
 }
 
 // appendsIdent reports whether body contains an append call that passes the

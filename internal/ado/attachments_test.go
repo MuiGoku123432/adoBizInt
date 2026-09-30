@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -285,23 +283,8 @@ func TestGetWorkItemDetailAttachmentID(t *testing.T) {
 // host") expressed structurally, and the struct-field rule keeps RESEARCH OQ4's
 // deleted Client.connection from coming back.
 func TestNoRawHTTPInADO(t *testing.T) {
-	names, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatalf("glob package files: %v", err)
-	}
-
-	fset := token.NewFileSet()
-	seen := map[string]bool{}
-	for _, name := range names {
-		if strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		file, err := parser.ParseFile(fset, name, nil, parser.SkipObjectResolution)
-		if err != nil {
-			t.Fatalf("parse %s: %v", name, err)
-		}
-		seen[name] = true
-
+	fset, files := parsePackageFiles(t)
+	for _, file := range files {
 		for _, imp := range file.Imports {
 			if imp.Path.Value == `"net/http"` {
 				t.Errorf("%s imports net/http; attachment and API traffic must go through the SDK", fset.Position(imp.Pos()))
@@ -327,8 +310,8 @@ func TestNoRawHTTPInADO(t *testing.T) {
 		})
 	}
 
-	if !seen["attachments.go"] {
-		t.Errorf("parsed files %v do not include attachments.go; the structural assertion covered nothing", names)
+	if files["attachments.go"] == nil {
+		t.Errorf("parsed files do not include attachments.go; the structural assertion covered nothing")
 	}
 }
 
