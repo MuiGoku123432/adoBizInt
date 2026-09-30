@@ -52,6 +52,12 @@ const maxSameNameCopies = 100
 //
 // The SDK's GetAttachmentContent owns the host, the auth header and the
 // connection timeout, so no argument here can send the PAT elsewhere (D-01).
+// That timeout is http.Client.Timeout, which covers reading the body, so
+// request_timeout (30s by default) is also the ceiling on one whole download:
+// an attachment that cannot stream within it fails and is removed. Raise
+// request_timeout to fetch larger files. With request_timeout: 0 there is no
+// deadline, and ctx is the only way to stop a stalled download; the TUI
+// cancels it when the detail modal closes (WR-03).
 // The name is checked by attachmentPath before any request is made (D-03).
 // There is no byte cap; it is deferred with the CLI verb (D-04). A refused name
 // is a plain error, the same as a network failure (D-07).

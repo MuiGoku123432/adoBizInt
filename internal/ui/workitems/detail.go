@@ -47,6 +47,10 @@ type DetailModel struct {
 	selectedAttachment int
 	downloading        bool
 	downloadStatus     string
+	// cancelDownload stops the in-flight download when the modal closes
+	// (WR-03). With request_timeout: 0 the connection has no deadline, so
+	// without it a stalled download would never return.
+	cancelDownload context.CancelFunc
 }
 
 // NewDetailModel creates a new detail modal for a work item
@@ -105,6 +109,10 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 
 	case AttachmentDownloadedMsg:
 		m.downloading = false
+		if m.cancelDownload != nil {
+			m.cancelDownload() // releases the context; the download is over
+			m.cancelDownload = nil
+		}
 		if msg.Err != nil {
 			m.downloadStatus = "Error: " + msg.Err.Error()
 		} else {
@@ -115,6 +123,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc", "q":
+			if m.cancelDownload != nil {
+				m.cancelDownload()
+			}
 			return m, func() tea.Msg { return CloseDetailMsg{} }
 		case "up", "k":
 			var cmd tea.Cmd
@@ -149,7 +160,9 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 			if m.item != nil && len(m.item.Attachments) > 0 && !m.downloading {
 				m.downloading = true
 				m.downloadStatus = "Downloading..."
-				return m, m.downloadAttachment(m.selectedAttachment)
+				ctx, cancel := context.WithCancel(context.Background())
+				m.cancelDownload = cancel
+				return m, m.downloadAttachment(ctx, m.selectedAttachment)
 			}
 		}
 	}
@@ -182,7 +195,7 @@ func (m *DetailModel) updateViewport() {
 	}
 }
 
-func (m DetailModel) downloadAttachment(index int) tea.Cmd {
+func (m DetailModel) downloadAttachment(ctx context.Context, index int) tea.Cmd {
 	att := m.item.Attachments[index]
 	client := m.client
 	return func() tea.Msg {
@@ -191,7 +204,7 @@ func (m DetailModel) downloadAttachment(index int) tea.Cmd {
 			return AttachmentDownloadedMsg{Name: att.Name, Err: err}
 		}
 		destDir := filepath.Join(home, ".config", "adoBizInt", "attachments")
-		path, err := client.DownloadAttachment(context.Background(), att.ID, destDir, att.Name)
+		path, err := client.DownloadAttachment(ctx, att.ID, destDir, att.Name)
 		return AttachmentDownloadedMsg{Name: att.Name, Path: path, Err: err}
 	}
 }
