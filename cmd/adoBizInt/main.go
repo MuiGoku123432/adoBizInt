@@ -103,6 +103,7 @@ func run() int {
 	// no meaning for a one-shot read, so a CLI flag must not be measured
 	// against it.
 	readBudget = cfg.FetchTimeout
+	configuredProjects = []string(cfg.Projects) // D-09: the --project allow-list, trusted only after validation
 
 	client, err := ado.NewClient(cfg)
 	if err != nil {

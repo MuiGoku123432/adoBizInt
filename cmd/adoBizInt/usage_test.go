@@ -11,6 +11,7 @@ import (
 // prevents `prs list` accepting --timeout while `releases approvals` silently
 // does not. Every verb is run with all three global flags set.
 func TestFlagsRegisteredOnEverySubcommand(t *testing.T) {
+	withConfiguredProjects(t, "alpha", "beta", "gamma")
 	for _, key := range wantCommands {
 		t.Run(key, func(t *testing.T) {
 			_, stderr := captureOutput(t)
@@ -26,6 +27,7 @@ func TestFlagsRegisteredOnEverySubcommand(t *testing.T) {
 
 // TestProjectListAccumulates pins both accepted spellings of --project.
 func TestProjectListAccumulates(t *testing.T) {
+	withConfiguredProjects(t, "alpha", "beta", "gamma")
 	_, _ = captureOutput(t)
 
 	fs, gf, _, _ := newFlagSet("prs list")

@@ -84,6 +84,7 @@ func stripFlag(args []string, flag string) []string {
 // is legitimate; on a mutation there is exactly one target, so a second value is
 // a parse error with nothing attempted (D-24, D-25).
 func TestWriteRepoArityIsExactlyOne(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	_, _ = captureOutput(t)
 
@@ -109,6 +110,7 @@ func TestNoPrsMergeAlias(t *testing.T) {
 // state change, so there is no pre-read state that makes it redundant. Its diff
 // is therefore never empty and exit 4 is unreachable for it.
 func TestQueueHasNoNoOpCondition(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	stdout, stderr := captureOutput(t)
 
@@ -132,6 +134,7 @@ func TestQueueHasNoNoOpCondition(t *testing.T) {
 // TestReleaseCommentReachesTheMutation pins P-03: --comment is carried into
 // Azure DevOps rather than dropped, and defaults to empty when omitted.
 func TestReleaseCommentReachesTheMutation(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -169,6 +172,7 @@ func TestReleaseCommentReachesTheMutation(t *testing.T) {
 // otherwise be invisible. ApproveReleaseFunc stays nil, so reaching it fails by
 // name.
 func TestRejectUsesTheRejectMethod(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	_, stderr := captureOutput(t)
 
@@ -195,6 +199,7 @@ func TestRejectUsesTheRejectMethod(t *testing.T) {
 // abandoned cannot be completed, so it refuses as a no-op rather than being sent
 // to ADO to be rejected.
 func TestAbandonedPullRequestRefusesCompletion(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	_, stderr := captureOutput(t)
 

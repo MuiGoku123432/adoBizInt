@@ -144,6 +144,7 @@ func TestFilterFlagsPostFilterItems(t *testing.T) {
 // it passes an empty slice — never the configured project list, which the read
 // method already falls back to on its own.
 func TestFilterFlagsProjectNarrowsTheRead(t *testing.T) {
+	withConfiguredProjects(t, "one")
 	t.Run("a supplied project reaches the read method", func(t *testing.T) {
 		stdout, stderr := captureOutput(t)
 		var got []string

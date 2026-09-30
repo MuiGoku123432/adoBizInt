@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -188,8 +190,29 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 		"emit the raw result envelope as one JSON document on stdout")
 	fs.DurationVar(&gf.timeout, "timeout", defaultTimeout,
 		"deadline for the whole read, e.g. 30s; 0s means the built-in default budget")
-	fs.Var(&gf.projects, "project",
-		"restrict the read to a project; repeatable or comma-separated")
+	// The allow-list check lives in the registration itself, so every read and
+	// write verb inherits it and it runs at the earliest moment the values
+	// exist (D-09). A rejection makes fs.Parse fail, which runRead and runWrite
+	// already map to exitUnknown: nothing ran. Fail closed across the whole
+	// value: no part is kept unless every part is configured.
+	fs.Func("project",
+		"restrict the read to a project; repeatable or comma-separated",
+		func(value string) error {
+			var parts stringList
+			_ = parts.Set(value) // never fails: it only splits and trims
+			for _, part := range parts {
+				if slices.Contains(configuredProjects, part) {
+					continue
+				}
+				if len(configuredProjects) == 0 {
+					return fmt.Errorf("not a configured project: %q (no projects are configured)", part)
+				}
+				return fmt.Errorf("not a configured project: %q (configured: %s)",
+					part, strings.Join(configuredProjects, ", "))
+			}
+			gf.projects = append(gf.projects, parts...)
+			return nil
+		})
 
 	ff := &filterFlags{}
 	sup := filterSupportByCommand[name]

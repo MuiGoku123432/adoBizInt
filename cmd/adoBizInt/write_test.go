@@ -94,6 +94,7 @@ func decodeWriteEnvelope(t *testing.T, raw []byte) writeRecord {
 // counted — UpdateWorkItemStateFunc is nil, so a mutation is a t.Fatalf naming
 // the method, not an assertion about a counter after the fact.
 func TestDryRunIssuesNoMutatingCall(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	_, stderr := captureOutput(t)
 
@@ -106,6 +107,7 @@ func TestDryRunIssuesNoMutatingCall(t *testing.T) {
 // TestDryRunEnvelopeReportsFieldLevelDiff pins D-01: the preview reports a real
 // current -> proposed diff established by a pre-read, not an echo of intent.
 func TestDryRunEnvelopeReportsFieldLevelDiff(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	stdout, stderr := captureOutput(t)
 
@@ -138,6 +140,7 @@ func TestDryRunEnvelopeReportsFieldLevelDiff(t *testing.T) {
 // rather than degrade to an echo with a marker: a caller scripting on $? alone
 // scripts straight past a marker.
 func TestFailedPreReadEmitsNoDryRunReport(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	cases := map[string]func(context.Context, int) (*ado.WorkItemDetail, error){
 		"pre-read errors": func(context.Context, int) (*ado.WorkItemDetail, error) {
 			return nil, wrappedErrorValue(500, "boom")
@@ -176,6 +179,7 @@ func TestFailedPreReadEmitsNoDryRunReport(t *testing.T) {
 // changed it" into "it was already so" is the exact conflation this project
 // exists to prevent.
 func TestRefusedNoOpExitsNoOpCodeOnBothPaths(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	for _, extra := range [][]string{{}, {"--confirm"}} {
 		name := "dry-run"
 		if len(extra) > 0 {
@@ -228,6 +232,7 @@ func TestRefusedNoOpExitsNoOpCodeOnBothPaths(t *testing.T) {
 // exit 0 or "failed" there would be the most consequential possible instance of
 // this project's core failure mode.
 func TestWriteOutcomeClassification(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	cases := []struct {
 		name        string
 		mutateErr   error
@@ -286,6 +291,7 @@ func TestWriteOutcomeClassification(t *testing.T) {
 // interrupt must NOT inherit the read path's exit 3 plus crash record: exit 3
 // asserts "nothing ran", and a write already in flight may well have landed.
 func TestInterruptedWriteReportsOutcomeUnknownNotNothingRan(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	stdout, stderr := captureOutput(t)
 
@@ -355,6 +361,7 @@ func TestExitCodesArePairwiseDistinct(t *testing.T) {
 // fallback would silently pick a configured project for a mutation the caller
 // never scoped, and the repeated-value row would fan a write out.
 func TestWriteParseErrorsExitUnknown(t *testing.T) {
+	withConfiguredProjects(t, "P", "Q")
 	cases := map[string][]string{
 		"missing positional": {"workitems", "set-state", "--project", "P", "--state", "Closed"},
 		"two positionals":    {"workitems", "set-state", "4821", "4822", "--project", "P", "--state", "Closed"},
@@ -447,6 +454,7 @@ func effortPreReadFake(t *testing.T, got *[]*float64) *fakeReadClient {
 // mechanism is fs.Visit (flags actually set) rather than a value comparison,
 // because a value comparison cannot tell 0-because-asked from 0-by-default.
 func TestExplicitZeroEffortIsDistinctFromOmitted(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tests := []struct {
 		name string
 		args []string
@@ -499,6 +507,7 @@ func TestExplicitZeroEffortIsDistinctFromOmitted(t *testing.T) {
 // UpdateWorkItemStateWithEffortFunc is nil here, so taking that route fails by
 // name.
 func TestOmittedEffortRoutesThroughTheNoEffortMethod(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	_, stderr := captureOutput(t)
 
@@ -534,6 +543,7 @@ func TestOmittedEffortRoutesThroughTheNoEffortMethod(t *testing.T) {
 // asserts. The diff a caller reads and the document ADO receives describe the
 // same sequence.
 func TestEffortChangesAreOrderedBeforeState(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	tempAuditSink(t)
 	stdout, stderr := captureOutput(t)
 
@@ -783,6 +793,7 @@ func rawChangesField(t *testing.T, raw []byte) string {
 // means a verb cannot enter the published surface without a fixture here, and
 // the t.Fatalf below is what says so.
 func TestWriteGuardMatrix(t *testing.T) {
+	withConfiguredProjects(t, "P", "Q")
 	fixtures := writeGuardFixtures()
 
 	// Reverse drift: a fixture for a verb no longer registered is dead weight

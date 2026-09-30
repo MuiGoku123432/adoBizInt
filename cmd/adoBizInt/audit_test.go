@@ -59,6 +59,7 @@ func decodeAuditRecord(t *testing.T, line string) map[string]any {
 // file append-only: a key added later leaves every older line permanently
 // without it, so the set is a one-way door and must fail loudly when it moves.
 func TestExecutedWriteAppendsAuditRecord(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	sink := tempAuditSink(t)
 	_, stderr := captureOutput(t)
 
@@ -100,6 +101,7 @@ func TestExecutedWriteAppendsAuditRecord(t *testing.T) {
 // crash records. Actor identity is omitted separately (D-15): there is one
 // identity, the PAT's, and its resolution is non-fatal.
 func TestAuditRecordOmitsArgvAndCredentialFields(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	sink := tempAuditSink(t)
 	captureOutput(t)
 
@@ -133,6 +135,7 @@ func TestAuditRecordOmitsArgvAndCredentialFields(t *testing.T) {
 // "the audit append is fatal" is weak, "the sink was proven writable before the
 // request left" is what SAFE-02 needs.
 func TestUnwritableAuditSinkPreventsMutation(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	dir := filepath.Join(t.TempDir(), "locked")
 	if err := os.MkdirAll(dir, 0500); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -170,6 +173,7 @@ func TestUnwritableAuditSinkPreventsMutation(t *testing.T) {
 // TestDryRunAndNoOpAppendNoAuditRecord pins D-14. The file answers "what changed
 // in ADO", and neither a preview nor a refused no-op changed anything.
 func TestDryRunAndNoOpAppendNoAuditRecord(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	cases := map[string]struct {
 		state string
 		extra []string
@@ -195,6 +199,7 @@ func TestDryRunAndNoOpAppendNoAuditRecord(t *testing.T) {
 // trail, so "only executed writes are audited" must not be read as "only writes
 // known to have succeeded".
 func TestOutcomeUnknownWriteIsAudited(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	sink := tempAuditSink(t)
 	_, stderr := captureOutput(t)
 
@@ -249,6 +254,7 @@ func failingAuditSink(t *testing.T) {
 // writeExitCodeFor at exit.go:87-91) pins IDEMPOTENCE of the downgrade only; the
 // reassignment is a no-op there and the row passes before and after the fix.
 func TestAuditAppendFailureReportsUnknown(t *testing.T) {
+	withConfiguredProjects(t, "P")
 	cases := []struct {
 		name      string
 		mutateErr error
