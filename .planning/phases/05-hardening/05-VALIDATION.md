@@ -40,23 +40,25 @@ created: "2026-09-30"
 
 Task IDs are filled in by the planner; requirement rows come from 05-RESEARCH.md § Validation Architecture.
 
-| Requirement | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|-------------|-----------------|-----------|-------------------|-------------|--------|
-| HARD-01 | Download fetches by attachment ID via `GetAttachmentContent` | unit (fake) | `go test -race ./internal/ado -run TestDownloadAttachmentFetchesByID` | ❌ W0 | ⬜ pending |
-| HARD-01 | No `net/http` import / `AuthorizationString` read in `internal/ado` | structural (go/ast) | `go test ./internal/ado -run TestNoRawHTTPInADO` | ❌ W0 | ⬜ pending |
-| HARD-01 | GUID parsed from relation URL; unparsable GUID not appended | unit | `go test ./internal/ado -run TestGetWorkItemDetailAttachmentID` | ❌ W0 | ⬜ pending |
-| HARD-01 | `Attachment` JSON keys `id,name,url,size` | unit | `go test ./internal/ado -run TestJSONFieldNames` | ✅ update | ⬜ pending |
-| HARD-02 | Hostile-name table: error or direct child of destDir | unit | `go test ./internal/ado -run TestAttachmentPath` | ❌ W0 | ⬜ pending |
-| HARD-02 | Rejected name → no fetch call | unit (fake) | `go test ./internal/ado -run TestDownloadAttachmentRefusesBeforeFetch` | ❌ W0 | ⬜ pending |
-| HARD-03 | Collecting loops guard `Name` and `Id` | structural | `go test ./internal/ado -run TestCollectedDefinitionsGuardNameAndID` | ❌ W0 | ⬜ pending |
-| HARD-03 | nil-`Id` definition skipped, no panic | unit (fake) | `go test -race ./internal/ado -run 'TestGetPipelineRunsSkipsNilID\|TestGetReleasesSkipsNilID'` | ❌ W0 | ⬜ pending |
-| HARD-04 | No project interpolation in any `FROM WorkItems` chain; `@project` used (D-10 revised) | structural | `go test ./internal/ado -run TestWIQLInterpolationStructural` | ❌ W0 | ⬜ pending |
-| HARD-04 | Captured query at both sites uses `@project`; logs carry no query text | unit (fake) | `go test ./internal/ado -run 'TestGetWorkItemsUsesProjectMacro\|TestDashboardUsesProjectMacro'` | ❌ W0 | ⬜ pending |
-| HARD-04 | Unknown `--project` → exit 3, no fake call (read and write) | unit (cmd fake) | `go test ./cmd/adoBizInt -run TestUnknownProjectRejected` | ❌ W0 | ⬜ pending |
-| HARD-04 | Existing `--project` tests pass with `withConfiguredProjects` | regression | `go test -race ./cmd/adoBizInt` | ✅ update | ⬜ pending |
-| HARD-05 | CI runs the four gates on push/PR | CI | `test -f .github/workflows/ci.yml` + observed green run | ❌ W0 | ⬜ pending |
-| HARD-06 | Log dir 0700 / file 0600 after `Init`, fresh and pre-existing | unit | `go test ./internal/logging -run TestInit` | ❌ W0 | ⬜ pending |
-| HARD-06 | Sentinel PAT (raw + Basic form) absent from logs across read, write, panic; capture non-empty | unit | `go test ./cmd/adoBizInt -run TestPATNeverLogged` | ❌ W0 | ⬜ pending |
+| Task | Requirement | Secure Behavior | Test Type | Automated Command | File Exists | Status |
+|------|-------------|-----------------|-----------|-------------------|-------------|--------|
+| 05-01 T1 | HARD-01 | Download fetches by attachment ID via `GetAttachmentContent` | unit (fake, end-to-end at `internal/ado`) | `go test -race ./internal/ado -run TestDownloadAttachmentFetchesByID` | ❌ W0 | ⬜ pending |
+| 05-01 T3 | HARD-01 | No `net/http` import / `AuthorizationString` read / `*azuredevops.Connection` field in `internal/ado` | structural (go/ast) | `go test ./internal/ado -run TestNoRawHTTPInADO` | ❌ W0 | ⬜ pending |
+| 05-01 T3 | HARD-01 | GUID parsed from relation URL; unparsable or nil GUID not appended | unit | `go test ./internal/ado -run TestGetWorkItemDetailAttachmentID` | ❌ W0 | ⬜ pending |
+| 05-01 T1 | HARD-01 | `Attachment` JSON keys `id,name,url,size` | unit | `go test ./internal/ado -run TestJSONFieldNames` | ✅ update | ⬜ pending |
+| 05-01 T2 | HARD-02 | Hostile-name table: error or direct child of destDir | unit | `go test ./internal/ado -run TestAttachmentPath` | ❌ W0 | ⬜ pending |
+| 05-01 T2 | HARD-02 | Rejected name → no fetch call, destDir left empty | unit (fake) | `go test ./internal/ado -run TestDownloadAttachmentRefusesBeforeFetch` | ❌ W0 | ⬜ pending |
+| 05-01 T2 | HARD-01 | Mid-body failure removes the partial file and closes the body | unit (fake) | `go test ./internal/ado -run TestDownloadAttachmentRemovesPartialFile` | ❌ W0 | ⬜ pending |
+| 05-02 T2 | HARD-03 | Collecting loops guard `Name` and `Id` (exactly 2) | structural | `go test ./internal/ado -run TestCollectedDefinitionsGuardNameAndID` | ❌ W0 | ⬜ pending |
+| 05-02 T1, T2 | HARD-03 | nil-`Id` definition skipped, no panic | unit (fake) | `go test -race ./internal/ado -run 'TestGetPipelineRunsSkipsNilID\|TestGetReleasesSkipsNilID'` | ❌ W0 | ⬜ pending |
+| 05-05 T2 | HARD-04 | No project interpolation in any `FROM WorkItems` chain; `@project` used (D-10 revised) | structural | `go test ./internal/ado -run TestWIQLInterpolationStructural` | ❌ W0 | ⬜ pending |
+| 05-05 T1, T2 | HARD-04 | Captured query at both sites uses `@project`; logs carry no query text | unit (fake) | `go test ./internal/ado -run 'TestGetWorkItemsUsesProjectMacro\|TestDashboardUsesProjectMacro'` | ❌ W0 | ⬜ pending |
+| 05-05 T1 | HARD-04 | Iteration paths escaped through `iterationClause`, order kept, empty → "" | unit | `go test ./internal/ado -run TestIterationClauseEscapesQuotes` | ❌ W0 | ⬜ pending |
+| 05-04 T1, T2 | HARD-04 | Unknown `--project` → exit 3, no fake call (read and write) | unit (cmd fake) | `go test ./cmd/adoBizInt -run TestUnknownProjectRejected` | ❌ W0 | ⬜ pending |
+| 05-04 T1 | HARD-04 | Existing `--project` tests pass with `withConfiguredProjects` | regression | `go test -race ./cmd/adoBizInt` | ✅ update | ⬜ pending |
+| 05-03 T1, T2 | HARD-05 | CI runs the four gates on push/PR; gofmt step fails on an unformatted file | CI + structural (YAML parse) | Ruby structural check in 05-03 T1 + gofmt-step proof in 05-03 T2 + observed green run (phase-blocking human-check on 05-03 T2) | ❌ W0 | ⬜ pending |
+| 05-06 T1 | HARD-06 | Log dir 0700 / file 0600 after `Init`, fresh, pre-existing and repeated | unit | `go test ./internal/logging -run TestInit` | ❌ W0 | ⬜ pending |
+| 05-06 T2 | HARD-06 | Sentinel PAT (raw, Basic header, base64) absent from logs across read, write, panic; capture non-empty per path | unit | `go test ./cmd/adoBizInt -run TestPATNeverLogged` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -79,9 +81,9 @@ Task IDs are filled in by the planner; requirement rows come from 05-RESEARCH.md
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Workflow triggers and goes green on GitHub | HARD-05 | Only a real push proves the trigger | Push the phase branch; confirm a green run. Optionally push an unformatted file, confirm red, revert. |
-| `@project` returns the same results as the old interpolated query | HARD-04 | Macro not yet exercised against the live org | Run `workitems list` and `dashboard` for one configured project before and after; compare counts. |
-| Attachment download works end to end by ID | HARD-01 | Needs a real attachment | Download one known attachment via the TUI/CLI; confirm file contents and location. |
+| Workflow triggers and goes green on GitHub | HARD-05 | Only a real push proves the trigger | **PHASE-BLOCKING:** Phase 5 is not complete without one green run on the phase branch. Covered by the `<human-check>` on 05-03 T2. Push the phase branch after the wave-2 plans land; confirm a green run. Optionally push an unformatted file, confirm red, revert (the optional part is not blocking). |
+| `@project` returns the same results as the old interpolated query | HARD-04 | Macro not yet exercised against the live org | **PHASE-BLOCKING (D-10 revised):** Phase 5 is not complete until this passes. One `<human-check>` on 05-05 T2 covers both `workitems list` and `dashboard counts`. Compare a base-commit binary against HEAD for one configured project. |
+| Attachment download works end to end by ID | HARD-01 | Needs a real attachment | `<human-check>` on 05-01 T3. Download one known attachment through the TUI; confirm file contents and location. |
 
 ---
 

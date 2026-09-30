@@ -57,7 +57,7 @@ Source: CONCERNS.md C2.
 - [ ] **HARD-01**: Attachment download takes an attachment identifier, not a caller-supplied URL, so the PAT cannot be sent to an arbitrary host
 - [ ] **HARD-02**: Attachment writes are contained to the intended directory
 - [ ] **HARD-03**: Nil-dereference guards on the ADO SDK pointer fields identified in CONCERNS.md MED4
-- [ ] **HARD-04**: WIQL project interpolation is escaped and validated against the configured project list
+- [ ] **HARD-04**: WIQL queries take the project as a parameter through the `@project` macro and never interpolate it into query text, and every `--project` value is validated against the configured project list (wording revised 2026-09-30 with Phase 5 D-10: escaping would still concatenate, against the organization's parameterized-query rule)
 - [ ] **HARD-05**: CI runs build, vet, test with race detection, and gofmt on every push
 - [ ] **HARD-06**: The log file is opened `0600` and its directory `0700`, and a regression test asserts the PAT string never appears in captured log output (CONCERNS.md MED2; raised by Phase 3 threat T-03-15, which writes a panic stack that may render the PAT into a world-readable file)
 

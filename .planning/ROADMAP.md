@@ -22,7 +22,7 @@ shipping no flag at all, which is why the test seam comes first.
 - [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline (awaiting human verification)
 - [x] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters (verified 2026-09-09)
 - [ ] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record
-- [ ] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL escaping, CI
+- [ ] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL @project, CI
 
 ## Phase Details
 
@@ -169,19 +169,25 @@ Plans:
   1. Attachment download takes an identifier, not a URL, and the PAT cannot reach an arbitrary host
   2. Attachment writes cannot escape the intended directory
   3. The nil-dereference sites in CONCERNS.md MED4 are guarded
-  4. WIQL project interpolation is escaped and validated against configured projects
+  4. WIQL queries take the project as a parameter through `@project`, with no project text interpolated, and `--project` is validated against configured projects
   5. CI runs build, vet, race tests and gofmt on every push and fails on regression
   6. The log file is opened 0600 with a 0700 directory, and a test asserts the PAT never appears in log output (HARD-06, raised by Phase 3 T-03-15)
 
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
 
-- [ ] 05-01: Attachment identifier, host allow-list, timeouts, size cap
-- [ ] 05-02: Path containment and nil guards
-- [ ] 05-03: WIQL escaping and project validation
-- [ ] 05-04: CI workflow and linter config
-- [ ] 05-05: Log file permissions and PAT-redaction regression test (HARD-06)
+**Wave 1**
+
+- [ ] 05-01-attachment-by-id-PLAN.md — Attachment download by GUID through the SDK, with path containment enforced in `internal/ado` (HARD-01, HARD-02). There is no host allow-list: D-01 removes the URL entirely. There is no size cap: D-04 defers it.
+- [ ] 05-02-nil-guards-PLAN.md — `Name == nil || Id == nil` guards at the two MED4 sites, plus a go/ast pin (HARD-03)
+- [ ] 05-03-ci-workflow-PLAN.md — GitHub Actions running build, vet, race tests and gofmt, with SHA-pinned actions and a read-only token. There is no linter config: D-15 defers it (HARD-05).
+- [ ] 05-04-project-allow-list-PLAN.md — `--project` validated against configured projects at parse time; unknown values exit 3 (HARD-04, D-09)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 05-05-wiql-project-macro-PLAN.md — Both WIQL sites use `@project` instead of interpolating the name, stop logging query text, and gain a go/ast pin (HARD-04, D-10 revised, D-11, D-12)
+- [ ] 05-06-log-permissions-pat-test-PLAN.md — Log directory `0700` and file `0600` on every start, plus a PAT-absence regression test (HARD-06)
 
 ## Deferred
 

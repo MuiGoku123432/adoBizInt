@@ -727,18 +727,25 @@ Not a rename phase, but two runtime-state items matter:
 | A3 | The `@project` macro resolves from the route project on `POST {org}/{project}/_apis/wit/wiql` (MS docs say so, but it has not been exercised against a live org this session) | Open Question 1 | If wrong, the query returns no items. It would need a live smoke test before being adopted. |
 | A4 | No Linux-only behaviour difference in the current test suite. It passes on darwin under Go 1.25.4 and 1.27.1 and cross-vets clean for `GOOS=linux`, but was not executed on Linux (Docker daemon not running). | Environment | The first CI run is the Linux verification. Treat a red first run as expected-possible. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All four were resolved during planning. They stay here with inline `RESOLVED:` markers
+rather than being deleted, so the audit trail stays honest.
 
 1. **D-10 escaping vs the organization's parameterized-query rule (`@project`)**
    - What we know: the organization instruction says "When generating SQL, always use parameterized queries — never string concatenation", and organization instructions take priority over individual preferences. WIQL documents `@project`, and its REST form needs the project in the URL. The SDK's `QueryByWiql` already puts `args.Project` into the route (`routeValues["project"] = *args.Project`), and both sites already pass `Project: &project` `[VERIFIED: SDK client.go QueryByWiql; workitems.go:150-153; dashboard.go:143-146]`.
    - What's unclear: whether the user regards WIQL as covered by the rule, and whether a live-org smoke test is available (A3).
    - Recommendation: the planner raises this with the user at a checkpoint. **If accepted:** use `[System.TeamProject] = @project` at both sites, keep `''` escaping for iteration paths (there is no macro for arbitrary lists), and keep D-12's test. It passes trivially at the project operand and still catches `iterationFilter`. **If D-10 is held:** implement escaping exactly as locked. Either way, D-09 validation and D-11 logging are unchanged.
+   - **RESOLVED (user decision, 2026-09-30): `@project`.** The user revised D-10 at plan time (05-CONTEXT.md, "D-10 (REVISED 2026-09-30)"). Both sites filter on `[System.TeamProject] = @project`, and the name travels only in `QueryByWiqlArgs.Project`. Iteration paths keep `''` escaping through `iterationClause`. D-09 validation and D-11 logging are unchanged. Implemented by 05-05 Tasks 1 and 2. Assumption A3, that `@project` resolves on the live org, is checked by the phase-blocking live-read human-check on 05-05 Task 2. The phase does not count as done until that check passes.
 
 2. **How strict the D-12 "call result" rule is.** Recommend allow-listing callees (the escaper and the iteration helper) rather than accepting any call, because otherwise `strings.TrimSpace(project)` passes. This tightens D-12 without contradicting it.
+   - **RESOLVED: allow-list the callee, more narrowly than recommended here.** The only non-literal operand permitted in a `FROM WorkItems` chain is a call to `iterationClause`. With `@project` there is no project operand left to escape, so `strings.ReplaceAll` is not allow-listed at chain level. `TestWIQLInterpolationStructural` in 05-05 Task 2 fails in each of these cases: any other operand; a missing `@project`; a `[System.TeamProject] = '` literal; a `FROM WorkItems` literal outside a checked chain; a site count other than 2.
 
 3. **`..\` and other names containing a separator.** Should they be rejected outright on every OS (`base != name` → reject) instead of accepted as a literal contained filename on Unix? Either choice satisfies HARD-02. Recommendation: accept D-03 as written and assert containment, unless the user prefers deterministic cross-OS rejection.
+   - **RESOLVED: accept D-03 as written, with no extra separator rule.** On every row, `TestAttachmentPath` (05-01 Task 2) asserts that the result is either an error or a direct child of `destDir`. The backslash rows assert only that invariant. They pass on Unix, where the backslash is a literal file-name byte, and on Windows, where `filepath.Base` strips the name to `..`, which is rejected. Recorded in the 05-01 "Planner decisions" table.
 
 4. **Delete `Client.connection` after 05-01.** Once `DownloadAttachment` stops reading it, the field is written in `NewClient` and read nowhere. Removing it means no struct in `internal/ado` holds a credential-bearing value, which strengthens HARD-01 and HARD-06. Recommendation: delete it in 05-01 as a direct consequence of D-01, not as a "while I'm here" change. `newConnection` and its tests stay.
+   - **RESOLVED: deleted in 05-01 Task 3.** The `connection` field and its `NewClient` assignment are removed. `newConnection` and its two tests stay. `TestNoRawHTTPInADO` (05-01 Task 3) also fails if any struct in `internal/ado` declares a `*azuredevops.Connection` field.
 
 ## Environment Availability
 
