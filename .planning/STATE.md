@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05
 current_phase_name: hardening
 status: executing
-stopped_at: Completed 05-02-nil-guards-PLAN.md
-last_updated: "2026-09-30T17:10:59.415Z"
+stopped_at: Completed 05-03-ci-workflow-PLAN.md
+last_updated: "2026-09-30T17:14:47.445Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 05 execution started
-state_head: 8467a6c09c9a0ad406d64fddc9e06f45660ff5eb
+state_head: b9aeeb7f0c2611ffd7ada1f37dcd15d7fd68f45b
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 26
-  completed_plans: 22
+  completed_plans: 23
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 05 (hardening) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Next: Phase 04 (guarded writes)
 Last activity: 2026-09-30 — Phase 05 execution started
@@ -81,6 +81,7 @@ Progress: [████████░░] 75%
 | Phase 04 P04 | 38 min | 2 tasks | 3 files |
 | Phase 05 P01 | 5 min | 3 tasks | 8 files |
 | Phase 05 P02 | 4 min | 2 tasks | 3 files |
+| Phase 05 P03 | 1 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,7 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 05]: 05-01: Client.connection deleted (OQ4); TestNoRawHTTPInADO forbids net/http, AuthorizationString and *azuredevops.Connection struct fields in internal/ado
 - [Phase 05]: 05-01: Backslash attachment names accepted as literal Unix file names (OQ3, D-03 as written); containment asserted on every row
 - [Phase 05]: 05-02: collecting-loop selector matches any append arg after the first; exact count 2 pins the two MED4 guards (D-13)
+- [Phase 05]: 05-03: CI action SHAs re-verified via gh api at execution; Task 2 proof-only (no commit); D-17 confirmed, suite passes with ADO_* unset and empty HOME
 
 ### Pending Todos
 
@@ -204,6 +206,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:10:59.350Z
-Stopped at: Completed 05-02-nil-guards-PLAN.md
+Last session: 2026-09-30T17:14:47.382Z
+Stopped at: Completed 05-03-ci-workflow-PLAN.md
 Resume file: None
