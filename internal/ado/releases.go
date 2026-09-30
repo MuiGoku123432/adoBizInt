@@ -101,7 +101,7 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 		var matchingDefs []release.ReleaseDefinition
 		var allDefNames []string
 		for _, rd := range releaseDefs.Value {
-			if rd.Name == nil {
+			if rd.Name == nil || rd.Id == nil {
 				continue
 			}
 			allDefNames = append(allDefNames, *rd.Name)
