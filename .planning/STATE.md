@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05
 current_phase_name: hardening
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-09-30T16:53:42.906Z"
-last_activity: 2026-09-13
-last_activity_desc: Phase 04 execution started
-state_head: 54961b4ad15d51be32d2a7fbe3136f15121d3734
+stopped_at: Completed 05-01-attachment-by-id-PLAN.md
+last_updated: "2026-09-30T17:03:59.568Z"
+last_activity: 2026-09-30
+last_activity_desc: Phase 05 execution started
+state_head: 1bb6daa2c8d2059e6b74aec766b08bf925108f26
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 26
-  completed_plans: 20
+  completed_plans: 21
 milestone_name: milestone
 ---
 
@@ -24,15 +24,15 @@ milestone_name: milestone
 See: .planning/PROJECT.md (updated 2026-09-03)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 04 — guarded-writes
+**Current focus:** Phase 05 — hardening
 
 ## Current Position
 
-Phase: 05 (hardening) — READY TO EXECUTE
-Plan: 4 of 4
+Phase: 05 (hardening) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
 Next: Phase 04 (guarded writes)
-Last activity: 2026-09-13 — Completed quick task 260913-uhj: fixed CR-01 (silent audit-append failure) and WR-03 (releases approve/reject non-functional)
+Last activity: 2026-09-30 — Phase 05 execution started
 
 Progress: [████████░░] 75%
 
@@ -79,6 +79,7 @@ Progress: [████████░░] 75%
 | Phase 04 P02 | 24 min | 3 tasks | 8 files |
 | Phase 04 P03 | 26 min | 3 tasks | 11 files |
 | Phase 04 P04 | 38 min | 2 tasks | 3 files |
+| Phase 05 P01 | 5 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 04]: No releaseAPI interface entry added: the Azure DevOps SDK exposes no by-id approval endpoint, so GetReleaseApprovalDetail filters the existing GetApprovals list by id — Keeps ROADMAP SC4 (no uncalled interface entry) satisfied by construction
 - [Phase 04]: runWrite generalised over a writeOp closure struct (resolve/plan/mutate) so all six write verbs share one guard body — A guard in a shared body cannot be forgotten on a new verb; six copies can drift
 - [Phase 04]: Structural prohibitions asserted with go/ast rather than grep-negative criteria — STATE.md records three Phase 3 incidents where a grep criterion was defeated by a prose comment; comments are not in the AST
+- [Phase 05]: 05-01: Client.connection deleted (OQ4); TestNoRawHTTPInADO forbids net/http, AuthorizationString and *azuredevops.Connection struct fields in internal/ado
+- [Phase 05]: 05-01: Backslash attachment names accepted as literal Unix file names (OQ3, D-03 as written); containment asserted on every row
 
 ### Pending Todos
 
@@ -199,6 +202,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-28T16:24:24.944Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-hardening/05-CONTEXT.md
+Last session: 2026-09-30T17:03:59.506Z
+Stopped at: Completed 05-01-attachment-by-id-PLAN.md
+Resume file: None

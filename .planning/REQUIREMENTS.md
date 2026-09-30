@@ -54,8 +54,8 @@ Source: CONCERNS.md C2.
 
 ### Hardening
 
-- [ ] **HARD-01**: Attachment download takes an attachment identifier, not a caller-supplied URL, so the PAT cannot be sent to an arbitrary host
-- [ ] **HARD-02**: Attachment writes are contained to the intended directory
+- [x] **HARD-01**: Attachment download takes an attachment identifier, not a caller-supplied URL, so the PAT cannot be sent to an arbitrary host
+- [x] **HARD-02**: Attachment writes are contained to the intended directory
 - [ ] **HARD-03**: Nil-dereference guards on the ADO SDK pointer fields identified in CONCERNS.md MED4
 - [ ] **HARD-04**: WIQL queries take the project as a parameter through the `@project` macro and never interpolate it into query text, and every `--project` value is validated against the configured project list (wording revised 2026-09-30 with Phase 5 D-10: escaping would still concatenate, against the organization's parameterized-query rule)
 - [ ] **HARD-05**: CI runs build, vet, test with race detection, and gofmt on every push
@@ -242,8 +242,8 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 | SAFE-02 | Phase 4 | Complete |
 | SAFE-03 | Phase 4 | Complete |
 | SAFE-04 | Phase 4 | Pending |
-| HARD-01 | Phase 5 | Pending |
-| HARD-02 | Phase 5 | Pending |
+| HARD-01 | Phase 5 | Complete |
+| HARD-02 | Phase 5 | Complete |
 | HARD-03 | Phase 5 | Pending |
 | HARD-04 | Phase 5 | Pending |
 | HARD-05 | Phase 5 | Pending |
