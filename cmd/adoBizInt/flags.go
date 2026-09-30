@@ -15,6 +15,20 @@ type globalFlags struct {
 	projects stringList
 }
 
+// configuredProjects is the D-09 allow-list every --project value is checked
+// against. run() assigns it from cfg.Projects only AFTER config validation
+// returns, exactly as it does readBudget, so the list the check trusts is the
+// one the validator accepted.
+//
+// The zero value is the fail-closed one: nil or empty rejects every supplied
+// --project value. An unset list must never mean "allow anything". Tests set it
+// through withConfiguredProjects.
+//
+// Matching is exact and case-sensitive (RESEARCH assumption A2). ADO itself
+// treats project names case-insensitively, but a near-miss must exit 3 rather
+// than land a read or a write on a project the caller did not name exactly.
+var configuredProjects []string
+
 // filterFlags holds the per-verb filter flags. Unlike globalFlags these are
 // registered only on the verbs whose payload supports them, because a flag that
 // parses but cannot mean anything is worse than a flag that does not exist: an

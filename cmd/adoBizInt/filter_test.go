@@ -179,6 +179,27 @@ func TestFilterFlagsProjectNarrowsTheRead(t *testing.T) {
 	})
 }
 
+// TestUnknownProjectRejected pins D-09: a --project value that is not in the
+// configured list exits 3 before any read runs.
+func TestUnknownProjectRejected(t *testing.T) {
+	withConfiguredProjects(t, "P")
+	stdout, stderr := captureOutput(t)
+
+	// No closure is set: any client call fails the test by name.
+	c := &fakeReadClient{t: t}
+
+	code := dispatch(context.Background(), c, []string{"workitems", "list", "--project", "bogus", "--json"})
+	if code != exitUnknown {
+		t.Fatalf("exit = %d, want %d (stderr: %q)", code, exitUnknown, stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Errorf("rejection wrote %q to stdout; want nothing", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), `"bogus"`) {
+		t.Errorf("stderr %q does not name the rejected value in quotes", stderr.String())
+	}
+}
+
 // branchesClient returns a fake whose GetBranches honours its repositories
 // argument the way the real one does (branches.go:92) and records it. The
 // fixture deliberately includes a repository outside any plausible config list,

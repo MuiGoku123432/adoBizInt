@@ -698,6 +698,16 @@ func withReadBudget(t *testing.T, d time.Duration) {
 	t.Cleanup(func() { readBudget = prev })
 }
 
+// withConfiguredProjects sets the --project allow-list for one test and
+// restores it afterwards, standing in for the assignment run() makes after
+// config validation.
+func withConfiguredProjects(t *testing.T, names ...string) {
+	t.Helper()
+	prev := configuredProjects
+	configuredProjects = names
+	t.Cleanup(func() { configuredProjects = prev })
+}
+
 // deadlineCapturingClient records the deadline of the context the read was
 // invoked with, which is how these tests observe the applied budget without
 // waiting for it to expire.
