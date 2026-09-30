@@ -157,30 +157,30 @@ func TestUpdateWorkItemStateWithEffortCallSitesForwardPointers(t *testing.T) {
 	}
 
 	for i, call := range calls {
-		if len(call.Args) != 6 {
-			t.Errorf("call site %d has %d args, want 6", i, len(call.Args))
+		if len(call.Args) != 7 {
+			t.Errorf("call site %d has %d args, want 7", i, len(call.Args))
 			continue
 		}
 		for j, field := range wantFields {
-			arg := call.Args[3+j]
+			arg := call.Args[4+j]
 
 			if unary, ok := arg.(*ast.UnaryExpr); ok && unary.Op == token.AND {
-				t.Errorf("call site %d arg %d is an address-of expression, which reintroduces BL-01", i, 4+j)
+				t.Errorf("call site %d arg %d is an address-of expression, which reintroduces BL-01", i, 5+j)
 				continue
 			}
 
 			sel, ok := arg.(*ast.SelectorExpr)
 			if !ok {
-				t.Errorf("call site %d arg %d is %T, want *ast.SelectorExpr on effortMsg", i, 4+j, arg)
+				t.Errorf("call site %d arg %d is %T, want *ast.SelectorExpr on effortMsg", i, 5+j, arg)
 				continue
 			}
 			ident, ok := sel.X.(*ast.Ident)
 			if !ok || ident.Name != "effortMsg" {
-				t.Errorf("call site %d arg %d selects on %v, want effortMsg", i, 4+j, sel.X)
+				t.Errorf("call site %d arg %d selects on %v, want effortMsg", i, 5+j, sel.X)
 				continue
 			}
 			if sel.Sel.Name != field {
-				t.Errorf("call site %d arg %d = effortMsg.%s, want effortMsg.%s", i, 4+j, sel.Sel.Name, field)
+				t.Errorf("call site %d arg %d = effortMsg.%s, want effortMsg.%s", i, 5+j, sel.Sel.Name, field)
 			}
 		}
 	}

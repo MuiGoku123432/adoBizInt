@@ -58,7 +58,7 @@ func TestPATNeverLogged(t *testing.T) {
 	// An executed write, not a dry run: a dry run logs nothing, which would make
 	// the write path vacuous here.
 	writer := preReadFake(t, "Active")
-	writer.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return nil }
+	writer.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error { return nil }
 	if code := dispatch(ctx, writer, setStateArgs("--confirm")); code != 0 {
 		t.Fatalf("write exited %d, want 0 (stderr: %q)", code, stderr.String())
 	}

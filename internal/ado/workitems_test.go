@@ -303,6 +303,30 @@ func TestFetchTimeoutMarksUnreachedWorkItems(t *testing.T) {
 	}
 }
 
+// TestGetWorkItemDetailReportsOwningProject pins CR-01's pre-read half: the
+// detail names the project that owns the item, which is what lets the CLI
+// refuse a set-state whose --project names a different one.
+func TestGetWorkItemDetailReportsOwningProject(t *testing.T) {
+	client := &Client{
+		workitemClient: &fakeWorkItemAPI{
+			t: t,
+			GetWorkItemFunc: func(context.Context, workitemtracking.GetWorkItemArgs) (*workitemtracking.WorkItem, error) {
+				return &workitemtracking.WorkItem{
+					Fields: &map[string]interface{}{"System.TeamProject": "Kinetic"},
+				}, nil
+			},
+		},
+	}
+
+	detail, err := client.GetWorkItemDetail(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("GetWorkItemDetail() error = %v, want nil", err)
+	}
+	if detail.Project != "Kinetic" {
+		t.Errorf("GetWorkItemDetail() Project = %q, want %q", detail.Project, "Kinetic")
+	}
+}
+
 func TestUpdateWorkItemStateIssuesExactPatch(t *testing.T) {
 	var got workitemtracking.UpdateWorkItemArgs
 	client := &Client{
@@ -315,15 +339,17 @@ func TestUpdateWorkItemStateIssuesExactPatch(t *testing.T) {
 		},
 	}
 
-	if err := client.UpdateWorkItemState(context.Background(), 42, "Active"); err != nil {
+	if err := client.UpdateWorkItemState(context.Background(), "Kinetic", 42, "Active"); err != nil {
 		t.Fatalf("UpdateWorkItemState() error = %v, want nil", err)
 	}
 
+	wantProject := "Kinetic"
 	wantID := 42
 	wantOp := webapi.OperationValues.Add
 	wantPath := "/fields/System.State"
 	want := workitemtracking.UpdateWorkItemArgs{
-		Id: &wantID,
+		Project: &wantProject,
+		Id:      &wantID,
 		Document: &[]webapi.JsonPatchOperation{
 			{
 				Op:    &wantOp,
@@ -351,7 +377,7 @@ func TestUpdateWorkItemStateWithEffortIssuesExactPatch(t *testing.T) {
 	}
 
 	originalEstimate, remaining, completed := 8.0, 3.5, 4.5
-	if err := client.UpdateWorkItemStateWithEffort(context.Background(), 84, "Closed", &originalEstimate, &remaining, &completed); err != nil {
+	if err := client.UpdateWorkItemStateWithEffort(context.Background(), "Kinetic", 84, "Closed", &originalEstimate, &remaining, &completed); err != nil {
 		t.Fatalf("UpdateWorkItemStateWithEffort() error = %v, want nil", err)
 	}
 
@@ -361,8 +387,10 @@ func TestUpdateWorkItemStateWithEffortIssuesExactPatch(t *testing.T) {
 	wantRemainingPath := "/fields/Microsoft.VSTS.Scheduling.RemainingWork"
 	wantCompletedPath := "/fields/Microsoft.VSTS.Scheduling.CompletedWork"
 	wantStatePath := "/fields/System.State"
+	wantProject := "Kinetic"
 	want := workitemtracking.UpdateWorkItemArgs{
-		Id: &wantID,
+		Project: &wantProject,
+		Id:      &wantID,
 		Document: &[]webapi.JsonPatchOperation{
 			{
 				Op:    &wantOp,
@@ -460,7 +488,7 @@ func TestUpdateWorkItemStateWithEffortOmitsNilFields(t *testing.T) {
 				},
 			}
 
-			if err := client.UpdateWorkItemStateWithEffort(context.Background(), 84, "Closed",
+			if err := client.UpdateWorkItemStateWithEffort(context.Background(), "Kinetic", 84, "Closed",
 				tc.originalEstimate, tc.remaining, tc.comp); err != nil {
 				t.Fatalf("UpdateWorkItemStateWithEffort() error = %v, want nil", err)
 			}

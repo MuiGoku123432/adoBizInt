@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
@@ -49,6 +50,7 @@ func preReadFake(t *testing.T, state string) *fakeReadClient {
 				d := &ado.WorkItemDetail{}
 				d.ID = id
 				d.State = state
+				d.Project = "P" // the project setStateArgs names (CR-01)
 				return d, nil
 			},
 		},
@@ -173,6 +175,47 @@ func TestFailedPreReadEmitsNoDryRunReport(t *testing.T) {
 	}
 }
 
+// TestSetStateRefusesWorkItemInAnotherProject pins CR-01. Work item ids are
+// unique across the organization, so the id alone does not scope a write to
+// --project. The pre-read reports the owning project, and a mismatch is refused
+// before the mutation and before the audit append, with exit 3 because nothing
+// ran. Both named projects are configured, so the allow-list cannot be what
+// refuses. UpdateWorkItemStateFunc stays nil: a mutation fails this test by name.
+func TestSetStateRefusesWorkItemInAnotherProject(t *testing.T) {
+	withConfiguredProjects(t, "P", "Z")
+	cases := map[string][]string{
+		"dry run": setStateArgs(),
+		"confirm": setStateArgs("--confirm"),
+	}
+
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			sink := tempAuditSink(t)
+			stdout, stderr := captureOutput(t)
+
+			c := preReadFake(t, "Active")
+			c.GetWorkItemDetailFunc = func(_ context.Context, id int) (*ado.WorkItemDetail, error) {
+				d := &ado.WorkItemDetail{}
+				d.ID = id
+				d.State = "Active"
+				d.Project = "Z"
+				return d, nil
+			}
+
+			if code := dispatch(context.Background(), c, args); code != exitUnknown {
+				t.Fatalf("cross-project set-state = %d, want %d (stderr: %q)", code, exitUnknown, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("cross-project set-state wrote %q to stdout; want nothing", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), `"Z"`) || !strings.Contains(stderr.String(), `"P"`) {
+				t.Errorf("stderr = %q, want both projects quoted", stderr.String())
+			}
+			assertAuditLineCount(t, sink, 0)
+		})
+	}
+}
+
 // TestRefusedNoOpExitsNoOpCodeOnBothPaths pins D-03 and D-08 together. The
 // refusal applies with AND without --confirm, because the pre-read gates both
 // paths; and it gets its own code rather than exit 0, because collapsing "I
@@ -253,7 +296,7 @@ func TestWriteOutcomeClassification(t *testing.T) {
 			stdout, stderr := captureOutput(t)
 
 			c := preReadFake(t, "Active")
-			c.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return tc.mutateErr }
+			c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error { return tc.mutateErr }
 
 			code := dispatch(context.Background(), c, setStateArgs("--confirm"))
 			if code != tc.wantCode {
@@ -298,7 +341,7 @@ func TestInterruptedWriteReportsOutcomeUnknownNotNothingRan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := preReadFake(t, "Active")
-	c.UpdateWorkItemStateFunc = func(context.Context, int, string) error {
+	c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error {
 		// The signal lands while the request is in flight.
 		cancel()
 		return context.Canceled
@@ -438,9 +481,14 @@ func effortPreReadFake(t *testing.T, got *[]*float64) *fakeReadClient {
 				d := &ado.WorkItemDetail{}
 				d.ID = id
 				d.State = "Active"
+				d.Project = "P"
 				return d, nil
 			},
-			UpdateWorkItemStateWithEffortFunc: func(_ context.Context, _ int, _ string, oe, rem, comp *float64) error {
+			UpdateWorkItemStateWithEffortFunc: func(_ context.Context, project string, _ int, _ string, oe, rem, comp *float64) error {
+				// CR-01: the effort route carries --project too.
+				if project != "P" {
+					t.Errorf("UpdateWorkItemStateWithEffort project = %q, want %q", project, "P")
+				}
 				*got = []*float64{oe, rem, comp}
 				return nil
 			},
@@ -520,9 +568,15 @@ func TestOmittedEffortRoutesThroughTheNoEffortMethod(t *testing.T) {
 				d := &ado.WorkItemDetail{}
 				d.ID = id
 				d.State = "Active"
+				d.Project = "P"
 				return d, nil
 			},
-			UpdateWorkItemStateFunc: func(_ context.Context, _ int, _ string) error {
+			UpdateWorkItemStateFunc: func(_ context.Context, project string, _ int, _ string) error {
+				// CR-01: the mutation is routed to --project, not left to
+				// whichever project owns the id.
+				if project != "P" {
+					t.Errorf("UpdateWorkItemState project = %q, want %q", project, "P")
+				}
 				called = true
 				return nil
 			},
@@ -645,13 +699,14 @@ func writeGuardFixtures() map[string]writeFixture {
 						d := &ado.WorkItemDetail{}
 						d.ID = id
 						d.State = "Active"
+						d.Project = "P"
 						if applied {
 							d.State = "Closed"
 						}
 						return d, nil
 					}}
 				if mutate != nil {
-					w.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return mutate() }
+					w.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error { return mutate() }
 				}
 				return wrapFake(t, w)
 			},

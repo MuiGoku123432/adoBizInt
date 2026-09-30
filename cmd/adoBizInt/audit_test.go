@@ -64,7 +64,7 @@ func TestExecutedWriteAppendsAuditRecord(t *testing.T) {
 	_, stderr := captureOutput(t)
 
 	c := preReadFake(t, "Active")
-	c.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return nil }
+	c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error { return nil }
 
 	if code := dispatch(context.Background(), c, setStateArgs("--confirm")); code != exitOK {
 		t.Fatalf("executed write = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
@@ -106,7 +106,7 @@ func TestAuditRecordOmitsArgvAndCredentialFields(t *testing.T) {
 	captureOutput(t)
 
 	c := preReadFake(t, "Active")
-	c.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return nil }
+	c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error { return nil }
 
 	if code := dispatch(context.Background(), c, setStateArgs("--confirm")); code != exitOK {
 		t.Fatalf("executed write = %d, want %d", code, exitOK)
@@ -150,7 +150,7 @@ func TestUnwritableAuditSinkPreventsMutation(t *testing.T) {
 
 	mutated := false
 	c := preReadFake(t, "Active")
-	c.UpdateWorkItemStateFunc = func(context.Context, int, string) error {
+	c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error {
 		mutated = true
 		return nil
 	}
@@ -204,7 +204,7 @@ func TestOutcomeUnknownWriteIsAudited(t *testing.T) {
 	_, stderr := captureOutput(t)
 
 	c := preReadFake(t, "Active")
-	c.UpdateWorkItemStateFunc = func(context.Context, int, string) error {
+	c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error {
 		return context.DeadlineExceeded
 	}
 
@@ -270,7 +270,7 @@ func TestAuditAppendFailureReportsUnknown(t *testing.T) {
 			stdout, stderr := captureOutput(t)
 
 			c := preReadFake(t, "Active")
-			c.UpdateWorkItemStateFunc = func(context.Context, int, string) error { return tc.mutateErr }
+			c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error { return tc.mutateErr }
 
 			code := dispatch(context.Background(), c, setStateArgs("--confirm"))
 			if code != exitOutcomeUnknown {

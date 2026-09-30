@@ -89,14 +89,14 @@ type writeClient interface {
 	// same read to refuse a no-op on the --confirm path.
 	GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error)
 
-	UpdateWorkItemState(ctx context.Context, itemID int, newState string) error
+	UpdateWorkItemState(ctx context.Context, project string, itemID int, newState string) error
 
 	// UpdateWorkItemStateWithEffort carries the three nullable effort values. A
 	// nil pointer means the caller did not name the field, so no JSON-Patch
 	// operation is emitted for it and ADO leaves it untouched (D-17/D-18). The
 	// write path routes here only when at least one effort flag was set, so an
 	// effort-free write never hands this method three nils.
-	UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error
+	UpdateWorkItemStateWithEffort(ctx context.Context, project string, itemID int, newState string, originalEstimate, remaining, completed *float64) error
 
 	// The three by-id pre-reads added for the non-work-item verbs. Unlike
 	// GetWorkItemDetail they never return (nil, nil) for a missing target —

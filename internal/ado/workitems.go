@@ -260,8 +260,12 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	return workItems, failures, nil
 }
 
-// UpdateWorkItemState updates the state of a work item
-func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState string) error {
+// UpdateWorkItemState updates the state of a work item.
+//
+// project is sent in the request route, the same way the other write methods
+// send theirs. An empty project leaves the route unscoped, which is what the
+// TUI passes: it has no --project to honour.
+func (c *Client) UpdateWorkItemState(ctx context.Context, project string, itemID int, newState string) error {
 	log := logging.Logger()
 
 	op := webapi.OperationValues.Add
@@ -275,6 +279,7 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 	}
 
 	_, err := c.workitemClient.UpdateWorkItem(ctx, workitemtracking.UpdateWorkItemArgs{
+		Project:  &project,
 		Id:       &itemID,
 		Document: &document,
 	})
@@ -298,7 +303,9 @@ func (c *Client) UpdateWorkItemState(ctx context.Context, itemID int, newState s
 // rather than omitting it. The nil check therefore gates the append, never the
 // value. A non-nil pointer to 0 is a real zero and must survive — closing a task
 // legitimately means RemainingWork 0.
-func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error {
+//
+// project is routed exactly as in UpdateWorkItemState.
+func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, project string, itemID int, newState string, originalEstimate, remaining, completed *float64) error {
 	log := logging.Logger()
 
 	addOp := webapi.OperationValues.Add
@@ -340,6 +347,7 @@ func (c *Client) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, 
 	})
 
 	_, err := c.workitemClient.UpdateWorkItem(ctx, workitemtracking.UpdateWorkItemArgs{
+		Project:  &project,
 		Id:       &itemID,
 		Document: &document,
 	})
@@ -399,6 +407,12 @@ func (c *Client) GetWorkItemDetail(ctx context.Context, id int) (*WorkItemDetail
 	}
 	if wiType, ok := itemFields["System.WorkItemType"].(string); ok {
 		detail.Type = wiType
+	}
+	// The owning project. Work item ids are unique across the organization, so
+	// the id does not say which project an item belongs to; the CLI write path
+	// compares this against --project before it mutates anything (CR-01).
+	if project, ok := itemFields["System.TeamProject"].(string); ok {
+		detail.Project = project
 	}
 	if state, ok := itemFields["System.State"].(string); ok {
 		detail.State = state

@@ -309,6 +309,17 @@ func setStateOp(c writeClient) writeOp {
 			if detail == nil {
 				return nil, fmt.Errorf("work item %d was not found", t.ID)
 			}
+			// CR-01. Work item ids are unique across the organization, so the
+			// id alone does not scope this write to --project: without this
+			// check the mutation lands on whichever project owns the item and
+			// the audit record names the one the caller typed. A mismatch is
+			// refused here, before the mutation and before the audit append,
+			// so it exits 3 like every other "nothing ran" refusal. The
+			// comparison is exact for the same reason the allow-list's is. An
+			// item whose project the server did not report is refused too.
+			if detail.Project != t.Project {
+				return nil, fmt.Errorf("work item %d belongs to project %q, not %q", t.ID, detail.Project, t.Project)
+			}
 			return diffWorkItem(detail, wf), nil
 		},
 		mutate: func(ctx context.Context, t writeTarget, wf *writeFlags) error {
@@ -317,10 +328,10 @@ func setStateOp(c writeClient) writeOp {
 			// dishonest: an effort-free write is not an effort write with
 			// nothing to say.
 			if wf.hasEffort() {
-				return c.UpdateWorkItemStateWithEffort(ctx, t.ID, wf.state,
+				return c.UpdateWorkItemStateWithEffort(ctx, t.Project, t.ID, wf.state,
 					wf.originalEstimate, wf.remaining, wf.completed)
 			}
-			return c.UpdateWorkItemState(ctx, t.ID, wf.state)
+			return c.UpdateWorkItemState(ctx, t.Project, t.ID, wf.state)
 		},
 	}
 }

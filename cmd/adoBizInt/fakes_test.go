@@ -148,9 +148,9 @@ type fakeWriteClient struct {
 	t *testing.T
 
 	GetWorkItemDetailFunc   func(ctx context.Context, id int) (*ado.WorkItemDetail, error)
-	UpdateWorkItemStateFunc func(ctx context.Context, itemID int, newState string) error
+	UpdateWorkItemStateFunc func(ctx context.Context, project string, itemID int, newState string) error
 
-	UpdateWorkItemStateWithEffortFunc func(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error
+	UpdateWorkItemStateWithEffortFunc func(ctx context.Context, project string, itemID int, newState string, originalEstimate, remaining, completed *float64) error
 
 	GetPullRequestDetailFunc        func(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error)
 	GetReleaseApprovalDetailFunc    func(ctx context.Context, project string, approvalID int) (*ado.ReleaseApprovalDetail, error)
@@ -171,20 +171,20 @@ func (f *fakeWriteClient) GetWorkItemDetail(ctx context.Context, id int) (*ado.W
 	return f.GetWorkItemDetailFunc(ctx, id)
 }
 
-func (f *fakeWriteClient) UpdateWorkItemState(ctx context.Context, itemID int, newState string) error {
+func (f *fakeWriteClient) UpdateWorkItemState(ctx context.Context, project string, itemID int, newState string) error {
 	f.t.Helper()
 	if f.UpdateWorkItemStateFunc == nil {
 		f.t.Fatalf("writeClient.UpdateWorkItemState called with no UpdateWorkItemStateFunc set")
 	}
-	return f.UpdateWorkItemStateFunc(ctx, itemID, newState)
+	return f.UpdateWorkItemStateFunc(ctx, project, itemID, newState)
 }
 
-func (f *fakeWriteClient) UpdateWorkItemStateWithEffort(ctx context.Context, itemID int, newState string, originalEstimate, remaining, completed *float64) error {
+func (f *fakeWriteClient) UpdateWorkItemStateWithEffort(ctx context.Context, project string, itemID int, newState string, originalEstimate, remaining, completed *float64) error {
 	f.t.Helper()
 	if f.UpdateWorkItemStateWithEffortFunc == nil {
 		f.t.Fatalf("writeClient.UpdateWorkItemStateWithEffort called with no UpdateWorkItemStateWithEffortFunc set")
 	}
-	return f.UpdateWorkItemStateWithEffortFunc(ctx, itemID, newState, originalEstimate, remaining, completed)
+	return f.UpdateWorkItemStateWithEffortFunc(ctx, project, itemID, newState, originalEstimate, remaining, completed)
 }
 
 func (f *fakeWriteClient) GetPullRequestDetail(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error) {

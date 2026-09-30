@@ -263,7 +263,7 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 	// Create async command to update the state
 	client := m.client
 	return func() tea.Msg {
-		err := client.UpdateWorkItemState(context.Background(), id, nextState)
+		err := client.UpdateWorkItemState(context.Background(), "", id, nextState)
 		return StateUpdateMsg{ItemID: id, NewState: nextState, Err: err}
 	}
 }
@@ -334,6 +334,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					// the corresponding work item field is left untouched.
 					err := client.UpdateWorkItemStateWithEffort(
 						context.Background(),
+						"",
 						effortMsg.TargetTaskID,
 						"Closed", // Close the dev task
 						effortMsg.OriginalEstimate,
@@ -346,7 +347,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 				// Now update the User Story state
-				err := client.UpdateWorkItemState(context.Background(), effortMsg.ItemID, effortMsg.NewState)
+				err := client.UpdateWorkItemState(context.Background(), "", effortMsg.ItemID, effortMsg.NewState)
 				return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: err}
 			}
 		}
@@ -357,6 +358,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// corresponding work item field is left untouched.
 			err := client.UpdateWorkItemStateWithEffort(
 				context.Background(),
+				"",
 				effortMsg.ItemID,
 				effortMsg.NewState,
 				effortMsg.OriginalEstimate,
