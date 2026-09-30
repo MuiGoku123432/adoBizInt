@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
@@ -22,18 +24,30 @@ import (
 // download calls it now, and the deferred CLI attachment verb will call it
 // later. The guard is the feature, so keep it in one place.
 //
-// The name is formatted with %q in every error so control characters from the
-// server cannot reach the operator's terminal.
+// Anyone who can attach a file in the organization chooses the name, so a name
+// holding any control character (NUL, ESC, CR, LF, the C1 range) is refused
+// outright rather than written into a file name the TUI later prints (WR-04).
+// The name is formatted with %q in every error for the same reason. On Windows
+// a name that resolves to a device (CON, NUL, COM1 ...) or an NTFS alternate
+// data stream (a colon) is refused too.
 func attachmentPath(name, destDir string) (string, error) {
 	if !filepath.IsAbs(destDir) {
 		return "", fmt.Errorf("attachment destination %q is not an absolute directory", destDir)
 	}
-	if strings.ContainsRune(name, 0) {
-		return "", fmt.Errorf("attachment name %q contains a NUL byte", name)
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return "", fmt.Errorf("attachment name %q contains a control character", name)
+		}
 	}
 	base := filepath.Base(name) // Base("") is "."
 	if base == "." || base == ".." || filepath.IsAbs(base) {
 		return "", fmt.Errorf("attachment name %q is not a usable file name", name)
+	}
+	if runtime.GOOS == "windows" {
+		stem, _, _ := strings.Cut(base, ".")
+		if strings.ContainsRune(base, ':') || windowsDeviceNames[strings.ToUpper(strings.TrimRight(stem, " "))] {
+			return "", fmt.Errorf("attachment name %q names a Windows device or stream", name)
+		}
 	}
 	dir := filepath.Clean(destDir)
 	path := filepath.Join(dir, base)
@@ -41,6 +55,16 @@ func attachmentPath(name, destDir string) (string, error) {
 		return "", fmt.Errorf("attachment name %q escapes %s", name, dir)
 	}
 	return path, nil
+}
+
+// windowsDeviceNames are the reserved names Windows resolves to a device
+// whatever the extension, so "nul.txt" opens NUL rather than a file.
+var windowsDeviceNames = map[string]bool{
+	"CON": true, "PRN": true, "AUX": true, "NUL": true,
+	"COM1": true, "COM2": true, "COM3": true, "COM4": true, "COM5": true,
+	"COM6": true, "COM7": true, "COM8": true, "COM9": true,
+	"LPT1": true, "LPT2": true, "LPT3": true, "LPT4": true, "LPT5": true,
+	"LPT6": true, "LPT7": true, "LPT8": true, "LPT9": true,
 }
 
 // maxSameNameCopies bounds the " (n)" suffixes DownloadAttachment tries before

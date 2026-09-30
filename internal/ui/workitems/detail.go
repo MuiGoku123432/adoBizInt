@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -116,7 +117,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		if msg.Err != nil {
 			m.downloadStatus = "Error: " + msg.Err.Error()
 		} else {
-			m.downloadStatus = "Downloaded to " + msg.Path
+			m.downloadStatus = fmt.Sprintf("Downloaded to %q", msg.Path)
 		}
 		m.updateViewport()
 
@@ -277,7 +278,15 @@ func (m DetailModel) buildContent(width int) string {
 			if i == m.selectedAttachment {
 				prefix = "> " // Show cursor for selected attachment
 			}
-			b.WriteString(fmt.Sprintf("%s%s (%s)\n", prefix, att.Name, sizeStr))
+			// The name is server-controlled: drop control runes so it cannot
+			// carry terminal escape sequences into the TUI (WR-04).
+			name := strings.Map(func(r rune) rune {
+				if unicode.IsControl(r) {
+					return -1
+				}
+				return r
+			}, att.Name)
+			b.WriteString(fmt.Sprintf("%s%s (%s)\n", prefix, name, sizeStr))
 		}
 	}
 

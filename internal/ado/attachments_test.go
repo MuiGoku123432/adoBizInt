@@ -94,6 +94,10 @@ func TestAttachmentPath(t *testing.T) {
 		// filepath.Base strips it. Either answer satisfies HARD-02 (RESEARCH OQ3),
 		// so these rows assert containment only.
 		osDep bool
+		// Names that resolve to a device or an NTFS alternate data stream on
+		// Windows and must be refused there; elsewhere they are ordinary names,
+		// so these rows assert containment only (WR-04).
+		windowsErr bool
 	}{
 		"plain name":          {name: "Spec.txt", want: "Spec.txt"},
 		"nested traversal":    {name: "../../.ssh/authorized_keys", want: "authorized_keys"},
@@ -108,6 +112,16 @@ func TestAttachmentPath(t *testing.T) {
 		"backslash parent":    {name: `..\`, osDep: true},
 		"backslash traversal": {name: `..\..\evil`, osDep: true},
 		"all backslashes":     {name: `\\\`, osDep: true},
+		// WR-04: a server-supplied name must not carry terminal control
+		// sequences onto disk or into the TUI.
+		"ESC sequence":     {name: "\x1b]52;c;ZXZpbA==\x07.txt", wantErr: true},
+		"carriage return":  {name: "a\rb.txt", wantErr: true},
+		"line feed":        {name: "a\nb.txt", wantErr: true},
+		"C1 CSI":           {name: "a\u009b31mb.txt", wantErr: true},
+		"device name":      {name: "CON", windowsErr: true},
+		"device with ext":  {name: "nul.txt", windowsErr: true},
+		"numbered device":  {name: "com1.log", windowsErr: true},
+		"alternate stream": {name: "a.txt:hidden", windowsErr: true},
 	}
 
 	for label, tc := range cases {
@@ -123,6 +137,12 @@ func TestAttachmentPath(t *testing.T) {
 				t.Fatalf("attachmentPath(%q) = %q, not a direct child of %q", tc.name, got, dir)
 			}
 			if tc.osDep {
+				return
+			}
+			if tc.windowsErr {
+				if runtime.GOOS == "windows" && err == nil {
+					t.Fatalf("attachmentPath(%q) = %q, want an error on Windows", tc.name, got)
+				}
 				return
 			}
 			if tc.wantErr {
