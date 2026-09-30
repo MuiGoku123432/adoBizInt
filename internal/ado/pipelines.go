@@ -154,7 +154,7 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 		var matchingDefs []build.BuildDefinitionReference
 		var allDefNames []string
 		for _, d := range definitions.Value {
-			if d.Name == nil {
+			if d.Name == nil || d.Id == nil {
 				continue
 			}
 			allDefNames = append(allDefNames, *d.Name)
