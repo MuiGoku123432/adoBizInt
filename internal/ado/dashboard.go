@@ -2,7 +2,6 @@ package ado
 
 import (
 	"context"
-	"strings"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
@@ -119,7 +118,6 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	var failures []Failure
 
 	// Get recent iterations (sprints active in last 90 days)
-	iterationFilter := ""
 	iterations, err := c.GetRecentIterations(ctx, project)
 	if err != nil {
 		log.Warn("Failed to get iterations for dashboard, using date filter only", "project", project, "error", err)
@@ -130,22 +128,19 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		// the same authority as a correct one, so it is recorded rather than left
 		// silent (T-02-05).
 		failures = appendFailure(failures, project, opDashboardIterations, err)
-	} else if len(iterations) > 0 {
-		escapedPaths := make([]string, len(iterations))
-		for i, path := range iterations {
-			escapedPaths[i] = "'" + strings.ReplaceAll(path, "'", "''") + "'"
-		}
-		iterationFilter = " AND [System.IterationPath] IN (" + strings.Join(escapedPaths, ", ") + ")"
 	}
 
-	// Get work item count using WIQL query with filters
-	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = '" + project + "' AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationFilter
+	// Get work item count using WIQL query with filters. The project never
+	// enters the query text: @project resolves server-side from args.Project,
+	// which the SDK sends in the request route (D-10 revised).
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project AND [System.State] NOT IN ('Done', 'Closed', 'Removed')" + iterationClause(iterations)
 	query := workitemtracking.QueryByWiqlArgs{
 		Wiql:    &workitemtracking.Wiql{Query: &wiql},
 		Project: &project,
 	}
 
-	log.Info("Executing dashboard WIQL query", "project", project, "query", wiql)
+	// The query text is not logged (D-11).
+	log.Info("Executing dashboard WIQL query", "project", project, "iterations", len(iterations))
 
 	workItems, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
