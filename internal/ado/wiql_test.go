@@ -3,7 +3,9 @@ package ado
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"log/slog"
 	"strconv"
@@ -157,9 +159,11 @@ func TestDashboardUsesProjectMacro(t *testing.T) {
 }
 
 // TestWIQLInterpolationStructural keeps every WIQL query in package ado in the
-// parameterized shape D-10 revised requires. A site is an outermost + chain with
-// a string literal operand containing "FROM WorkItems" (matched without regard
-// to case, as WIQL keywords are). For every site:
+// parameterized shape D-10 revised requires. A site is an outermost + chain
+// whose string literals, joined, contain "FROM WorkItem" (matched without
+// regard to case, as WIQL keywords are), so a literal split across two
+// operands still marks one, and FROM WorkItemLinks counts as well as FROM
+// WorkItems. For every site:
 //
 //   - each operand is a string literal or a call to iterationClause, the one
 //     allow-listed escaper (D-12, RESEARCH OQ2). A bare identifier such as
@@ -173,9 +177,15 @@ func TestDashboardUsesProjectMacro(t *testing.T) {
 // assigned on its own makes the package-wide count disagree with the in-site
 // count (RESEARCH Pitfall 4, defeat vector 1).
 //
-// The site count must be exactly 2 (getProjectWorkItems and getProjectCounts):
-// a third WIQL site, or a split literal that hides one, must fail until it is
-// reviewed (D-12).
+// The check is also anchored on the sink (WR-06): every Wiql{Query: &x} must
+// take x from exactly one := whose right side is a checked site, so a query
+// whose source text comes from a variable, or one extended by += after the
+// site, fails even though no literal names the source.
+//
+// The site count and the QueryByWiql call count must both be exactly 2
+// (getProjectWorkItems and getProjectCounts): a third WIQL query must fail
+// until it is reviewed (D-12). TestWIQLCheckCatchesBypasses proves the walk
+// reports each bypass shape.
 //
 // This is an AST walk rather than a grep for a reason that is specific to this
 // repository: STATE.md records three Phase 3 incidents where a "grep returns
@@ -184,8 +194,26 @@ func TestDashboardUsesProjectMacro(t *testing.T) {
 // line can neither satisfy nor defeat this assertion — only real code can.
 func TestWIQLInterpolationStructural(t *testing.T) {
 	fset, files := parsePackageFiles(t)
+	sites, sinks, problems := checkWIQL(fset, files)
+	for _, p := range problems {
+		t.Error(p)
+	}
+	if sites != 2 {
+		t.Errorf("found %d WIQL + chains, want exactly 2 (getProjectWorkItems and getProjectCounts); review any new site against D-10 revised and D-12", sites)
+	}
+	if sinks != 2 {
+		t.Errorf("found %d QueryByWiql calls, want exactly 2; a new query must be reviewed against D-10 revised and D-12", sinks)
+	}
+}
 
-	sites, inSite, total := 0, 0, 0
+// checkWIQL is TestWIQLInterpolationStructural's walk. It returns the number of
+// WIQL + chains, the number of QueryByWiql calls, and every violation, so
+// TestWIQLCheckCatchesBypasses can prove it fails on the shapes it claims to
+// catch.
+func checkWIQL(fset *token.FileSet, files map[string]*ast.File) (int, int, []string) {
+	var problems []string
+	sites := map[ast.Expr]bool{}
+	inSite, total := 0, 0
 	for _, file := range files {
 		// A separate pass: the site pass below stops descending at each site.
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -203,16 +231,19 @@ func TestWIQLInterpolationStructural(t *testing.T) {
 			var operands []ast.Expr
 			flattenAdd(bin, &operands)
 
-			isSite := false
+			// A chain is a site when its literals JOINED name the source, so a
+			// literal split across "FROM " + "WorkItems" cannot hide one (WR-06).
+			var joined strings.Builder
 			for _, op := range operands {
-				if isWIQLLiteral(op) {
-					isSite = true
+				if lit, ok := op.(*ast.BasicLit); ok {
+					v, _ := stringValue(lit)
+					joined.WriteString(v)
 				}
 			}
-			if !isSite {
+			if !isWIQLText(joined.String()) {
 				return true
 			}
-			sites++
+			sites[bin] = true
 
 			var text strings.Builder
 			for _, op := range operands {
@@ -220,7 +251,7 @@ func TestWIQLInterpolationStructural(t *testing.T) {
 				case *ast.BasicLit:
 					v, ok := stringValue(op)
 					if !ok {
-						t.Errorf("%s: WIQL chain operand %s is not a string literal", fset.Position(op.Pos()), op.Value)
+						problems = append(problems, fmt.Sprintf("%s: WIQL chain operand %s is not a string literal", fset.Position(op.Pos()), op.Value))
 						continue
 					}
 					if isWIQLLiteral(op) {
@@ -229,17 +260,17 @@ func TestWIQLInterpolationStructural(t *testing.T) {
 					text.WriteString(v)
 				case *ast.CallExpr:
 					if fun, ok := op.Fun.(*ast.Ident); !ok || fun.Name != "iterationClause" {
-						t.Errorf("%s: WIQL chain operand calls something other than iterationClause; only iterationClause may add non-literal text", fset.Position(op.Pos()))
+						problems = append(problems, fmt.Sprintf("%s: WIQL chain operand calls something other than iterationClause; only iterationClause may add non-literal text", fset.Position(op.Pos())))
 					}
 				default:
-					t.Errorf("%s: WIQL chain operand is %T; only string literals and iterationClause calls are allowed (D-12)", fset.Position(op.Pos()), op)
+					problems = append(problems, fmt.Sprintf("%s: WIQL chain operand is %T; only string literals and iterationClause calls are allowed (D-12)", fset.Position(op.Pos()), op))
 				}
 			}
 			if !strings.Contains(text.String(), "@project") {
-				t.Errorf("%s: WIQL chain does not filter on @project (D-10 revised)", fset.Position(bin.Pos()))
+				problems = append(problems, fmt.Sprintf("%s: WIQL chain does not filter on @project (D-10 revised)", fset.Position(bin.Pos())))
 			}
 			if strings.Contains(text.String(), "[System.TeamProject] = '") {
-				t.Errorf("%s: WIQL chain quotes a project into [System.TeamProject]; use @project (D-10 revised)", fset.Position(bin.Pos()))
+				problems = append(problems, fmt.Sprintf("%s: WIQL chain quotes a project into [System.TeamProject]; use @project (D-10 revised)", fset.Position(bin.Pos())))
 			}
 			// Sub-chains of a site are part of it; do not count them again.
 			return false
@@ -247,10 +278,129 @@ func TestWIQLInterpolationStructural(t *testing.T) {
 	}
 
 	if total != inSite {
-		t.Errorf("found %d FROM WorkItems literals but only %d inside checked + chains; a WIQL query is built outside a + chain (fmt.Sprintf, a composite literal, or a standalone assignment)", total, inSite)
+		problems = append(problems, fmt.Sprintf("found %d FROM WorkItems literals but only %d inside checked + chains; a WIQL query is built outside a + chain (fmt.Sprintf, a composite literal, or a standalone assignment)", total, inSite))
 	}
-	if sites != 2 {
-		t.Errorf("found %d WIQL + chains, want exactly 2 (getProjectWorkItems and getProjectCounts); review any new site against D-10 revised and D-12", sites)
+
+	// The sink half (WR-06). The text test above can only see chains that name
+	// the source; a query whose source comes from a variable is invisible to
+	// it. So every Wiql{Query: &x} must take x from exactly one assignment,
+	// and that assignment must be a checked site. A second assignment (a +=
+	// after the site) fails, as does a Wiql built without a Query.
+	sinks := 0
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				switch n := n.(type) {
+				case *ast.CallExpr:
+					if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "QueryByWiql" {
+						sinks++
+					}
+				case *ast.CompositeLit:
+					if sel, ok := n.Type.(*ast.SelectorExpr); ok && sel.Sel.Name == "Wiql" {
+						if p := checkWiqlQuery(fn.Body, n, sites); p != "" {
+							problems = append(problems, fmt.Sprintf("%s: %s", fset.Position(n.Pos()), p))
+						}
+					}
+				}
+				return true
+			})
+		}
+	}
+	return len(sites), sinks, problems
+}
+
+// checkWiqlQuery reports why lit's Query does not come from a checked site, or
+// "" when it does.
+func checkWiqlQuery(body *ast.BlockStmt, lit *ast.CompositeLit, sites map[ast.Expr]bool) string {
+	var name string
+	for _, el := range lit.Elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Query" {
+			if addr, ok := kv.Value.(*ast.UnaryExpr); ok && addr.Op == token.AND {
+				if id, ok := addr.X.(*ast.Ident); ok {
+					name = id.Name
+				}
+			}
+		}
+	}
+	if name == "" {
+		return "Wiql literal has no Query: &name; the query text must come from a named, checked + chain"
+	}
+
+	var assigned []ast.Expr
+	ast.Inspect(body, func(n ast.Node) bool {
+		as, ok := n.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, lhs := range as.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name == name {
+				var rhs ast.Expr
+				if len(as.Rhs) == len(as.Lhs) && as.Tok == token.DEFINE {
+					rhs = ast.Unparen(as.Rhs[i])
+				}
+				assigned = append(assigned, rhs)
+			}
+		}
+		return true
+	})
+	if len(assigned) != 1 {
+		return fmt.Sprintf("WIQL query %s is assigned %d times, want exactly one := from a checked + chain", name, len(assigned))
+	}
+	if !sites[assigned[0]] {
+		return fmt.Sprintf("WIQL query %s is not built by a checked + chain naming FROM WorkItems", name)
+	}
+	return ""
+}
+
+// TestWIQLCheckCatchesBypasses pins WR-06: checkWIQL must report each shape
+// that would put the project back into WIQL text, and must accept the shape
+// the two real sites use, or the structural test proves nothing.
+func TestWIQLCheckCatchesBypasses(t *testing.T) {
+	cases := map[string]struct {
+		body    string
+		wantErr bool
+	}{
+		"parameterized site": {wantErr: false, body: `
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project" + iterationClause(nil)`},
+		"split literal": {wantErr: true, body: `
+	wiql := "SELECT [System.Id] FROM " + "WorkItems WHERE [System.TeamProject] = '" + project + "'"`},
+		"WorkItemLinks source": {wantErr: true, body: `
+	wiql := "SELECT [System.Id] FROM WorkItemLinks WHERE [Source].[System.TeamProject] = '" + project + "'"`},
+		"source split by a variable": {wantErr: true, body: `
+	wiql := "SELECT [System.Id] FROM " + source + " WHERE [System.TeamProject] = @project"`},
+		"appended after the site": {wantErr: true, body: `
+	wiql := "SELECT [System.Id] FROM WorkItems WHERE [System.TeamProject] = @project" + iterationClause(nil)
+	wiql += " AND [System.Title] = '" + title + "'"`},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			src := "package ado\n\nfunc f(project, source, title string) {" + tc.body + `
+	_ = workitemtracking.QueryByWiqlArgs{Wiql: &workitemtracking.Wiql{Query: &wiql}}
+	_, _ = c.workitemClient.QueryByWiql(ctx, query)
+}
+`
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "snippet.go", src, parser.SkipObjectResolution)
+			if err != nil {
+				t.Fatalf("parse snippet: %v", err)
+			}
+			_, _, problems := checkWIQL(fset, map[string]*ast.File{"snippet.go": file})
+			if tc.wantErr && len(problems) == 0 {
+				t.Error("checkWIQL reported nothing, want a violation")
+			}
+			if !tc.wantErr && len(problems) != 0 {
+				t.Errorf("checkWIQL reported %v, want none", problems)
+			}
+		})
 	}
 }
 
@@ -272,7 +422,7 @@ func flattenAdd(e ast.Expr, out *[]ast.Expr) {
 	}
 }
 
-// isWIQLLiteral reports whether n is a string literal naming the WorkItems
+// isWIQLLiteral reports whether n is a string literal naming a work item
 // source, which is what marks a WIQL query.
 func isWIQLLiteral(n ast.Node) bool {
 	lit, ok := n.(*ast.BasicLit)
@@ -280,7 +430,14 @@ func isWIQLLiteral(n ast.Node) bool {
 		return false
 	}
 	v, ok := stringValue(lit)
-	return ok && strings.Contains(strings.ToLower(v), "from workitems")
+	return ok && isWIQLText(v)
+}
+
+// isWIQLText reports whether s names a work item source. The prefix match
+// covers FROM WorkItemLinks as well as FROM WorkItems; both are WIQL and both
+// are project-scoped.
+func isWIQLText(s string) bool {
+	return strings.Contains(strings.ToLower(s), "from workitem")
 }
 
 // stringValue returns the unquoted value of a string literal.
