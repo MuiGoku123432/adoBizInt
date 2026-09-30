@@ -29,6 +29,7 @@ type CloseDetailMsg struct{}
 // AttachmentDownloadedMsg is sent when an attachment download completes
 type AttachmentDownloadedMsg struct {
 	Name string
+	Path string // where the file was written; may differ from Name (WR-01)
 	Err  error
 }
 
@@ -107,7 +108,7 @@ func (m DetailModel) Update(msg tea.Msg) (DetailModel, tea.Cmd) {
 		if msg.Err != nil {
 			m.downloadStatus = "Error: " + msg.Err.Error()
 		} else {
-			m.downloadStatus = "Downloaded: " + msg.Name
+			m.downloadStatus = "Downloaded to " + msg.Path
 		}
 		m.updateViewport()
 
@@ -190,8 +191,8 @@ func (m DetailModel) downloadAttachment(index int) tea.Cmd {
 			return AttachmentDownloadedMsg{Name: att.Name, Err: err}
 		}
 		destDir := filepath.Join(home, ".config", "adoBizInt", "attachments")
-		err = client.DownloadAttachment(context.Background(), att.ID, destDir, att.Name)
-		return AttachmentDownloadedMsg{Name: att.Name, Err: err}
+		path, err := client.DownloadAttachment(context.Background(), att.ID, destDir, att.Name)
+		return AttachmentDownloadedMsg{Name: att.Name, Path: path, Err: err}
 	}
 }
 

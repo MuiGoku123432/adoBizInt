@@ -2,8 +2,10 @@ package ado
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,8 +43,12 @@ func attachmentPath(name, destDir string) (string, error) {
 	return path, nil
 }
 
-// DownloadAttachment fetches the attachment with the given GUID and writes it
-// to destDir/name.
+// maxSameNameCopies bounds the " (n)" suffixes DownloadAttachment tries before
+// giving up on a name that is already taken.
+const maxSameNameCopies = 100
+
+// DownloadAttachment fetches the attachment with the given GUID into destDir
+// and returns the path it wrote.
 //
 // The SDK's GetAttachmentContent owns the host, the auth header and the
 // connection timeout, so no argument here can send the PAT elsewhere (D-01).
@@ -50,36 +56,58 @@ func attachmentPath(name, destDir string) (string, error) {
 // There is no byte cap; it is deferred with the CLI verb (D-04). A refused name
 // is a plain error, the same as a network failure (D-07).
 //
-// If the copy or the final close fails, the partial file is removed so a
-// truncated download never looks complete.
-func (c *Client) DownloadAttachment(ctx context.Context, id uuid.UUID, destDir, name string) error {
+// The body goes to a temporary file in destDir, which is linked into place only
+// once it is complete, so nothing under the attachment's name is ever partial
+// and a failed download never touches a file already there. An existing file
+// is never overwritten either (WR-01): work items routinely carry several
+// attachments with one name (every pasted screenshot is image.png), so a taken
+// name gets " (1)", " (2)" ... before its extension. os.Link is used rather
+// than os.Rename because Link refuses an existing target and Rename replaces it.
+func (c *Client) DownloadAttachment(ctx context.Context, id uuid.UUID, destDir, name string) (string, error) {
 	path, err := attachmentPath(name, destDir)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	body, err := c.workitemClient.GetAttachmentContent(ctx, workitemtracking.GetAttachmentContentArgs{Id: &id})
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer body.Close()
 
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
-		return err
+		return "", err
 	}
-	out, err := os.Create(path)
+	tmp, err := os.CreateTemp(destDir, ".download-*")
 	if err != nil {
-		return err
+		return "", err
 	}
-	if _, err := io.Copy(out, body); err != nil {
-		out.Close()
-		os.Remove(path)
-		return err
+	// Removed on every path: before a successful Link it is a partial
+	// download, and after one the content lives on under its final name.
+	defer os.Remove(tmp.Name())
+	if _, err := io.Copy(tmp, body); err != nil {
+		tmp.Close()
+		return "", err
 	}
 	// Close is checked rather than deferred: it reports a failed flush.
-	if err := out.Close(); err != nil {
-		os.Remove(path)
-		return err
+	if err := tmp.Close(); err != nil {
+		return "", err
 	}
-	return nil
+
+	ext := filepath.Ext(path)
+	stem := strings.TrimSuffix(path, ext)
+	for n := 0; n < maxSameNameCopies; n++ {
+		candidate := path
+		if n > 0 {
+			candidate = fmt.Sprintf("%s (%d)%s", stem, n, ext)
+		}
+		err := os.Link(tmp.Name(), candidate)
+		if err == nil {
+			return candidate, nil
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("attachment name %q is taken %d times over in %s", name, maxSameNameCopies, filepath.Dir(path))
 }

@@ -59,7 +59,7 @@ func TestDownloadAttachmentFetchesByID(t *testing.T) {
 	}
 
 	destDir := t.TempDir()
-	if err := client.DownloadAttachment(context.Background(), att.ID, destDir, att.Name); err != nil {
+	if _, err := client.DownloadAttachment(context.Background(), att.ID, destDir, att.Name); err != nil {
 		t.Fatalf("DownloadAttachment() error = %v, want nil", err)
 	}
 
@@ -158,7 +158,7 @@ func TestDownloadAttachmentRefusesBeforeFetch(t *testing.T) {
 			destDir := t.TempDir()
 			client := &Client{workitemClient: &fakeWorkItemAPI{t: t}}
 
-			if err := client.DownloadAttachment(context.Background(), uuid.New(), destDir, name); err == nil {
+			if _, err := client.DownloadAttachment(context.Background(), uuid.New(), destDir, name); err == nil {
 				t.Fatalf("DownloadAttachment(%q) error = nil, want a refusal", name)
 			}
 			entries, err := os.ReadDir(destDir)
@@ -207,7 +207,7 @@ func TestDownloadAttachmentRemovesPartialFile(t *testing.T) {
 	}
 	destDir := t.TempDir()
 
-	err := client.DownloadAttachment(context.Background(), uuid.New(), destDir, "Spec.txt")
+	_, err := client.DownloadAttachment(context.Background(), uuid.New(), destDir, "Spec.txt")
 
 	if !errors.Is(err, errMidBody) {
 		t.Fatalf("DownloadAttachment() error = %v, want %v", err, errMidBody)
@@ -215,9 +215,81 @@ func TestDownloadAttachmentRemovesPartialFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(destDir, "Spec.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("partial file stat error = %v, want not-exist", err)
 	}
+	// The temporary file is removed too, not just kept out of the final name.
+	if entries, err := os.ReadDir(destDir); err != nil || len(entries) != 0 {
+		t.Errorf("destDir after a failed download = %v (err %v), want empty", entries, err)
+	}
 	if !body.closed {
 		t.Error("response body was not closed")
 	}
+}
+
+// TestDownloadAttachmentNeverClobbers pins WR-01. Work items routinely carry
+// several attachments with one name (every pasted screenshot is image.png), so
+// a download must never truncate or delete a file already in destDir: a failed
+// download leaves the earlier copy intact, and a successful one takes the next
+// free "name (n).ext" and reports the path it actually wrote.
+func TestDownloadAttachmentNeverClobbers(t *testing.T) {
+	serve := func(body io.ReadCloser) *Client {
+		return &Client{
+			workitemClient: &fakeWorkItemAPI{
+				t: t,
+				GetAttachmentContentFunc: func(context.Context, workitemtracking.GetAttachmentContentArgs) (io.ReadCloser, error) {
+					return body, nil
+				},
+			},
+		}
+	}
+	readDir := func(t *testing.T, dir string) map[string]string {
+		t.Helper()
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("read destDir: %v", err)
+		}
+		got := map[string]string{}
+		for _, e := range entries {
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatalf("read %s: %v", e.Name(), err)
+			}
+			got[e.Name()] = string(b)
+		}
+		return got
+	}
+
+	t.Run("failed download keeps the earlier copy", func(t *testing.T) {
+		destDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(destDir, "Spec.txt"), []byte("good"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		body := &failingBody{prefix: strings.NewReader("part"), err: errors.New("mid-body")}
+
+		if _, err := serve(body).DownloadAttachment(context.Background(), uuid.New(), destDir, "Spec.txt"); err == nil {
+			t.Fatal("DownloadAttachment() error = nil, want the mid-body failure")
+		}
+		if got, want := readDir(t, destDir), map[string]string{"Spec.txt": "good"}; !reflect.DeepEqual(got, want) {
+			t.Errorf("destDir = %v, want %v", got, want)
+		}
+	})
+
+	t.Run("second download takes the next free name", func(t *testing.T) {
+		destDir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(destDir, "Spec.txt"), []byte("first"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		path, err := serve(io.NopCloser(strings.NewReader("second"))).DownloadAttachment(context.Background(), uuid.New(), destDir, "Spec.txt")
+		if err != nil {
+			t.Fatalf("DownloadAttachment() error = %v, want nil", err)
+		}
+		if want := filepath.Join(destDir, "Spec (1).txt"); path != want {
+			t.Errorf("DownloadAttachment() path = %q, want %q", path, want)
+		}
+		want := map[string]string{"Spec.txt": "first", "Spec (1).txt": "second"}
+		if got := readDir(t, destDir); !reflect.DeepEqual(got, want) {
+			t.Errorf("destDir = %v, want %v", got, want)
+		}
+	})
 }
 
 // TestGetWorkItemDetailAttachmentID pins D-05 and D-06: only an AttachedFile
