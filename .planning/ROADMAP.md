@@ -173,7 +173,7 @@ Plans:
   5. CI runs build, vet, race tests and gofmt on every push and fails on regression
   6. The log file is opened 0600 with a 0700 directory, and a test asserts the PAT never appears in log output (HARD-06, raised by Phase 3 T-03-15)
 
-**Plans**: 4/6 plans executed
+**Plans**: 5/6 plans executed
 
 Plans:
 
@@ -186,7 +186,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-05-wiql-project-macro-PLAN.md — Both WIQL sites use `@project` instead of interpolating the name, stop logging query text, and gain a go/ast pin (HARD-04, D-10 revised, D-11, D-12)
+- [x] 05-05-wiql-project-macro-PLAN.md — Both WIQL sites use `@project` instead of interpolating the name, stop logging query text, and gain a go/ast pin (HARD-04, D-10 revised, D-11, D-12)
 - [ ] 05-06-log-permissions-pat-test-PLAN.md — Log directory `0700` and file `0600` on every start, plus a PAT-absence regression test (HARD-06)
 
 ## Deferred

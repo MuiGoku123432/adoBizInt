@@ -57,7 +57,7 @@ Source: CONCERNS.md C2.
 - [x] **HARD-01**: Attachment download takes an attachment identifier, not a caller-supplied URL, so the PAT cannot be sent to an arbitrary host
 - [x] **HARD-02**: Attachment writes are contained to the intended directory
 - [x] **HARD-03**: Nil-dereference guards on the ADO SDK pointer fields identified in CONCERNS.md MED4
-- [ ] **HARD-04**: WIQL queries take the project as a parameter through the `@project` macro and never interpolate it into query text, and every `--project` value is validated against the configured project list (wording revised 2026-09-30 with Phase 5 D-10: escaping would still concatenate, against the organization's parameterized-query rule)
+- [x] **HARD-04**: WIQL queries take the project as a parameter through the `@project` macro and never interpolate it into query text, and every `--project` value is validated against the configured project list (wording revised 2026-09-30 with Phase 5 D-10: escaping would still concatenate, against the organization's parameterized-query rule)
 - [x] **HARD-05**: CI runs build, vet, test with race detection, and gofmt on every push
 - [ ] **HARD-06**: The log file is opened `0600` and its directory `0700`, and a regression test asserts the PAT string never appears in captured log output (CONCERNS.md MED2; raised by Phase 3 threat T-03-15, which writes a panic stack that may render the PAT into a world-readable file)
 
@@ -245,7 +245,7 @@ Decided in the 2026-09-03 design session. Recorded to prevent re-adding.
 | HARD-01 | Phase 5 | Complete |
 | HARD-02 | Phase 5 | Complete |
 | HARD-03 | Phase 5 | Complete |
-| HARD-04 | Phase 5 | Pending |
+| HARD-04 | Phase 5 | Complete |
 | HARD-05 | Phase 5 | Complete |
 | HARD-06 | Phase 5 | Pending |
 
