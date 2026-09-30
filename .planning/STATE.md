@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 05
 current_phase_name: hardening
 status: executing
-stopped_at: Completed 05-01-attachment-by-id-PLAN.md
-last_updated: "2026-09-30T17:03:59.568Z"
+stopped_at: Completed 05-02-nil-guards-PLAN.md
+last_updated: "2026-09-30T17:10:59.415Z"
 last_activity: 2026-09-30
 last_activity_desc: Phase 05 execution started
-state_head: 1bb6daa2c8d2059e6b74aec766b08bf925108f26
+state_head: 8467a6c09c9a0ad406d64fddc9e06f45660ff5eb
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 26
-  completed_plans: 21
+  completed_plans: 22
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 05 (hardening) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Next: Phase 04 (guarded writes)
 Last activity: 2026-09-30 — Phase 05 execution started
@@ -80,6 +80,7 @@ Progress: [████████░░] 75%
 | Phase 04 P03 | 26 min | 3 tasks | 11 files |
 | Phase 04 P04 | 38 min | 2 tasks | 3 files |
 | Phase 05 P01 | 5 min | 3 tasks | 8 files |
+| Phase 05 P02 | 4 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,7 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 04]: Structural prohibitions asserted with go/ast rather than grep-negative criteria — STATE.md records three Phase 3 incidents where a grep criterion was defeated by a prose comment; comments are not in the AST
 - [Phase 05]: 05-01: Client.connection deleted (OQ4); TestNoRawHTTPInADO forbids net/http, AuthorizationString and *azuredevops.Connection struct fields in internal/ado
 - [Phase 05]: 05-01: Backslash attachment names accepted as literal Unix file names (OQ3, D-03 as written); containment asserted on every row
+- [Phase 05]: 05-02: collecting-loop selector matches any append arg after the first; exact count 2 pins the two MED4 guards (D-13)
 
 ### Pending Todos
 
@@ -202,6 +204,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:03:59.506Z
-Stopped at: Completed 05-01-attachment-by-id-PLAN.md
+Last session: 2026-09-30T17:10:59.350Z
+Stopped at: Completed 05-02-nil-guards-PLAN.md
 Resume file: None

@@ -173,14 +173,14 @@ Plans:
   5. CI runs build, vet, race tests and gofmt on every push and fails on regression
   6. The log file is opened 0600 with a 0700 directory, and a test asserts the PAT never appears in log output (HARD-06, raised by Phase 3 T-03-15)
 
-**Plans**: 1/6 plans executed
+**Plans**: 2/6 plans executed
 
 Plans:
 
 **Wave 1**
 
 - [x] 05-01-attachment-by-id-PLAN.md — Attachment download by GUID through the SDK, with path containment enforced in `internal/ado` (HARD-01, HARD-02). There is no host allow-list: D-01 removes the URL entirely. There is no size cap: D-04 defers it.
-- [ ] 05-02-nil-guards-PLAN.md — `Name == nil || Id == nil` guards at the two MED4 sites, plus a go/ast pin (HARD-03)
+- [x] 05-02-nil-guards-PLAN.md — `Name == nil || Id == nil` guards at the two MED4 sites, plus a go/ast pin (HARD-03)
 - [ ] 05-03-ci-workflow-PLAN.md — GitHub Actions running build, vet, race tests and gofmt, with SHA-pinned actions and a read-only token. There is no linter config: D-15 defers it (HARD-05).
 - [ ] 05-04-project-allow-list-PLAN.md — `--project` validated against configured projects at parse time; unknown values exit 3 (HARD-04, D-09)
 
