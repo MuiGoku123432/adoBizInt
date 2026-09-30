@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -181,23 +184,84 @@ func TestFilterFlagsProjectNarrowsTheRead(t *testing.T) {
 }
 
 // TestUnknownProjectRejected pins D-09: a --project value that is not in the
-// configured list exits 3 before any read runs.
+// configured list exits 3 before any read or write is attempted.
+//
+// The rejection is fail-closed across the whole invocation, so a bogus value
+// fails the command wherever it sits beside valid ones, and a nil configured
+// list rejects everything. Matching is exact and case-sensitive (RESEARCH
+// assumption A2): `p` against a configured `P` must exit 3, never be folded
+// onto the near-miss project.
+//
+// Rejected rows set no fake closure, so any client call fails the row by name.
+// Every row points the audit sink at a temp path, and a rejected row asserts
+// the file was never created: the check precedes auditOpen (D-13).
 func TestUnknownProjectRejected(t *testing.T) {
-	withConfiguredProjects(t, "P")
-	stdout, stderr := captureOutput(t)
+	cases := []struct {
+		name       string
+		configured []string
+		args       []string
+		wantExit   int
+		wantStderr string   // rejected rows: the quoted offending value
+		wantRead   []string // accepted rows: the projects the read received
+	}{
+		{name: "unknown project", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "bogus"}, wantExit: exitUnknown, wantStderr: `"bogus"`},
+		{name: "bogus after a valid value in one flag", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "P,bogus"}, wantExit: exitUnknown, wantStderr: `"bogus"`},
+		{name: "bogus before a valid repeated flag", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "bogus", "--project", "P"}, wantExit: exitUnknown, wantStderr: `"bogus"`},
+		{name: "bogus before a valid value in one flag", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "bogus,P"}, wantExit: exitUnknown, wantStderr: `"bogus"`},
+		{name: "case mismatch is not folded", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "p"}, wantExit: exitUnknown, wantStderr: `"p"`},
+		{name: "nothing configured rejects everything", configured: nil,
+			args: []string{"workitems", "list", "--project", "P"}, wantExit: exitUnknown, wantStderr: `"P"`},
+		{name: "write verb set-state", configured: []string{"P"},
+			args: []string{"workitems", "set-state", "4821", "--project", "bogus", "--state", "Closed", "--json"}, wantExit: exitUnknown, wantStderr: `"bogus"`},
+		{name: "write verb prs approve", configured: []string{"P"},
+			args: []string{"prs", "approve", "4821", "--project", "bogus", "--repo", "R"}, wantExit: exitUnknown, wantStderr: `"bogus"`},
 
-	// No closure is set: any client call fails the test by name.
-	c := &fakeReadClient{t: t}
+		{name: "configured project reaches the read", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "P", "--json"}, wantExit: exitOK, wantRead: []string{"P"}},
+		{name: "empty value contributes nothing", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", "", "--json"}, wantExit: exitOK, wantRead: []string{}},
+		{name: "separator-only value contributes nothing", configured: []string{"P"},
+			args: []string{"workitems", "list", "--project", " , ", "--json"}, wantExit: exitOK, wantRead: []string{}},
+	}
 
-	code := dispatch(context.Background(), c, []string{"workitems", "list", "--project", "bogus", "--json"})
-	if code != exitUnknown {
-		t.Fatalf("exit = %d, want %d (stderr: %q)", code, exitUnknown, stderr.String())
-	}
-	if stdout.Len() != 0 {
-		t.Errorf("rejection wrote %q to stdout; want nothing", stdout.String())
-	}
-	if !strings.Contains(stderr.String(), `"bogus"`) {
-		t.Errorf("stderr %q does not name the rejected value in quotes", stderr.String())
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withConfiguredProjects(t, tc.configured...)
+			auditFile := tempAuditSink(t)
+			stdout, stderr := captureOutput(t)
+
+			if tc.wantExit == exitOK {
+				var got []string
+				code := dispatch(context.Background(), workItemsClient(t, "", &got), tc.args)
+				if code != exitOK {
+					t.Fatalf("exit = %d, want %d (stderr: %q)", code, exitOK, stderr.String())
+				}
+				// emptyIfNil never passes nil, so nil here means the read never ran.
+				if got == nil || !slices.Equal(got, tc.wantRead) {
+					t.Errorf("GetWorkItems called with projects %q, want %q", got, tc.wantRead)
+				}
+				return
+			}
+
+			c := &fakeReadClient{t: t, fakeWriteClient: &fakeWriteClient{t: t}}
+			if code := dispatch(context.Background(), c, tc.args); code != tc.wantExit {
+				t.Fatalf("exit = %d, want %d (stderr: %q)", code, tc.wantExit, stderr.String())
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("rejection wrote %q to stdout; want nothing", stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.wantStderr) {
+				t.Errorf("stderr %q does not name the rejected value %s", stderr.String(), tc.wantStderr)
+			}
+			if _, err := os.Stat(auditFile); !errors.Is(err, os.ErrNotExist) {
+				t.Errorf("audit file stat err = %v, want not-exist: the rejection must precede auditOpen", err)
+			}
+		})
 	}
 }
 
