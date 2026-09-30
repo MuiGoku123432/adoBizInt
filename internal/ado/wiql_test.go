@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
 )
 
@@ -91,5 +92,63 @@ func TestIterationClauseEscapesQuotes(t *testing.T) {
 				t.Errorf("iterationClause(%q) = %q, want %q", tc.paths, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestDashboardUsesProjectMacro pins D-10 revised and D-11 at the dashboard
+// WIQL site, with the same four assertions as TestGetWorkItemsUsesProjectMacro.
+func TestDashboardUsesProjectMacro(t *testing.T) {
+	// note: this log capture is duplicated in TestGetWorkItemsUsesProjectMacro;
+	// extract it on a third use.
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	var gotQuery, gotProject string
+	client := &Client{
+		projects: []string{quoteProject},
+		workitemClient: &fakeWorkItemAPI{
+			t: t,
+			GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+				return nil, nil
+			},
+			QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
+				if args.Wiql == nil || args.Wiql.Query == nil || args.Project == nil {
+					t.Fatal("QueryByWiql called without a query or a project")
+				}
+				gotQuery, gotProject = *args.Wiql.Query, *args.Project
+				return &workitemtracking.WorkItemQueryResult{}, nil
+			},
+		},
+		gitClient: &fakeGitAPI{
+			t: t,
+			GetPullRequestsByProjectFunc: func(_ context.Context, _ git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+				return &[]git.GitPullRequest{}, nil
+			},
+		},
+	}
+
+	if _, err := client.GetDashboardCounts(context.Background(), nil); err != nil {
+		t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
+	}
+
+	if !strings.Contains(gotQuery, "[System.TeamProject] = @project") {
+		t.Errorf("query = %q, want it to filter on [System.TeamProject] = @project", gotQuery)
+	}
+	for _, name := range []string{quoteProject, "O''Brien"} {
+		if strings.Contains(gotQuery, name) {
+			t.Errorf("query = %q, contains the project name %q; it must travel only in the route", gotQuery, name)
+		}
+	}
+	if gotProject != quoteProject {
+		t.Errorf("args.Project = %q, want %q so @project resolves to it", gotProject, quoteProject)
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "Executing dashboard WIQL query") {
+		t.Errorf("log capture is vacuous: no %q line in %q", "Executing dashboard WIQL query", logs)
+	}
+	if strings.Contains(logs, "FROM WorkItems") {
+		t.Errorf("log output contains query text (D-11): %q", logs)
 	}
 }
