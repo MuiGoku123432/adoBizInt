@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -178,9 +181,9 @@ func panickingClient(t *testing.T) *fakeReadClient {
 	}
 }
 
-// TestPanicExitsThree pins that a panic anywhere inside the guarded body is
-// recovered and mapped to the outcome-unknown code, rather than killing the
-// process with the runtime's own exit status and an unstructured dump.
+// TestPanicExitsThree pins that a panic inside a read is recovered and mapped to
+// exit 3 (nothing ran), rather than killing the process with the runtime's own
+// exit status and an unstructured dump.
 func TestPanicExitsThree(t *testing.T) {
 	withReadBudget(t, 2*time.Minute)
 	captureOutput(t)
@@ -326,5 +329,171 @@ func TestPanicWithFailedLoggingWritesNoStackToStderr(t *testing.T) {
 func TestGuardPassesThroughWhenNothingPanics(t *testing.T) {
 	if got := guard(func() int { return exitPartial }); got != exitPartial {
 		t.Errorf("guard(returns %d) = %d, want %d", exitPartial, got, exitPartial)
+	}
+}
+
+// TestPanicAfterWriteIssuedExitsOutcomeUnknown pins D-12: once a write's
+// request may have left, a panic must not report exit 3 ("nothing ran"). It is
+// outcome unknown (exit 5), the same answer Phase 4 D-22 gives an interrupt in
+// that window. The crash record still goes to stdout as the only document
+// (D-18): no write envelope precedes it.
+func TestPanicAfterWriteIssuedExitsOutcomeUnknown(t *testing.T) {
+	withConfiguredProjects(t, "P")
+	tempAuditSink(t)
+	stdout, stderr := captureOutput(t)
+
+	c := preReadFake(t, "Active")
+	c.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error {
+		panic("deliberate panic mid-write")
+	}
+
+	code := guard(func() int { return dispatch(context.Background(), c, setStateArgs("--confirm")) })
+	if code != exitOutcomeUnknown {
+		t.Fatalf("post-request panic = %d, want %d (stderr: %q)", code, exitOutcomeUnknown, stderr.String())
+	}
+
+	top := decodeCrash(t, stdout.Bytes())
+	if _, ok := top["error"]; !ok || len(top) != 1 {
+		t.Fatalf("top-level keys = %v, want exactly [error]", keysOf(top))
+	}
+	var env crashEnvelope
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		t.Fatalf("stdout does not decode: %v", err)
+	}
+	if env.Error.Kind != crashKindPanic {
+		t.Errorf("kind = %q, want %q", env.Error.Kind, crashKindPanic)
+	}
+	for _, want := range []string{"deliberate panic mid-write", "outcome unknown"} {
+		if !strings.Contains(env.Error.Message, want) {
+			t.Errorf("message = %q, want it to contain %q", env.Error.Message, want)
+		}
+	}
+	if env.Error.LogPath == "" {
+		t.Errorf("log_path is empty; the record must name where the stack went")
+	}
+	if n := strings.Count(stdout.String(), "\n"); n != 1 {
+		t.Errorf("stdout holds %d newlines, want exactly one document: %q", n, stdout.String())
+	}
+}
+
+// TestPanicBeforeWriteIssuedExitsThree is the D-12 lower boundary: a panic in
+// the pre-read happens before any request could have changed ADO, so it still
+// exits 3 (nothing ran) and leaves no audit record.
+func TestPanicBeforeWriteIssuedExitsThree(t *testing.T) {
+	withConfiguredProjects(t, "P")
+	sink := tempAuditSink(t)
+	stdout, _ := captureOutput(t)
+
+	c := preReadFake(t, "Active")
+	c.GetWorkItemDetailFunc = func(context.Context, int) (*ado.WorkItemDetail, error) {
+		panic("deliberate panic in pre-read")
+	}
+
+	code := guard(func() int { return dispatch(context.Background(), c, setStateArgs("--confirm")) })
+	if code != exitUnknown {
+		t.Fatalf("pre-request panic = %d, want %d", code, exitUnknown)
+	}
+
+	top := decodeCrash(t, stdout.Bytes())
+	if _, ok := top["error"]; !ok || len(top) != 1 {
+		t.Fatalf("top-level keys = %v, want exactly [error]", keysOf(top))
+	}
+	var env crashEnvelope
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		t.Fatalf("stdout does not decode: %v", err)
+	}
+	if env.Error.Kind != crashKindPanic {
+		t.Errorf("kind = %q, want %q", env.Error.Kind, crashKindPanic)
+	}
+	assertAuditLineCount(t, sink, 0)
+}
+
+// TestWriteRecoverPrecedesMutate pins D-12's boundary structurally. The
+// recover's POSITION is the request-issued signal: it must be the statement
+// immediately before op.mutate, and it must follow defer sink.Close() so that,
+// with defers running last-in first-out, the sink is still open when it runs.
+//
+// note: this is the second inline parser.ParseFile in package main, after
+// TestValidateGuardsCLIAndTUI in main_test.go; a shared helper waits for a
+// third use (rule of three).
+func TestWriteRecoverPrecedesMutate(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "write.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse write.go: %v", err)
+	}
+
+	var runWrite *ast.FuncDecl
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "runWrite" {
+			runWrite = fn
+		}
+	}
+	if runWrite == nil {
+		t.Fatalf("func runWrite not found in write.go")
+	}
+
+	isSelector := func(e ast.Expr, x, sel string) bool {
+		s, ok := e.(*ast.SelectorExpr)
+		if !ok || s.Sel.Name != sel {
+			return false
+		}
+		id, ok := s.X.(*ast.Ident)
+		return ok && id.Name == x
+	}
+	contains := func(n ast.Node, match func(*ast.CallExpr) bool) bool {
+		hit := false
+		ast.Inspect(n, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok && match(call) {
+				hit = true
+			}
+			return !hit
+		})
+		return hit
+	}
+
+	iClose, iRecover, iMutate := -1, -1, -1
+	var recoverLit *ast.FuncLit
+	set := func(what string, idx *int, i int) {
+		if *idx != -1 {
+			t.Fatalf("%s found in more than one statement of runWrite", what)
+		}
+		*idx = i
+	}
+	for i, stmt := range runWrite.Body.List {
+		if d, ok := stmt.(*ast.DeferStmt); ok {
+			if isSelector(d.Call.Fun, "sink", "Close") {
+				set("defer sink.Close()", &iClose, i)
+			}
+			if lit, ok := d.Call.Fun.(*ast.FuncLit); ok && contains(lit, func(c *ast.CallExpr) bool {
+				id, ok := c.Fun.(*ast.Ident)
+				return ok && id.Name == "recover"
+			}) {
+				set("deferred recover", &iRecover, i)
+				recoverLit = lit
+			}
+		}
+		if contains(stmt, func(c *ast.CallExpr) bool { return isSelector(c.Fun, "op", "mutate") }) {
+			set("op.mutate", &iMutate, i)
+		}
+	}
+	if iClose == -1 || iRecover == -1 || iMutate == -1 {
+		t.Fatalf("defer sink.Close() at %d, deferred recover at %d, op.mutate at %d; each must be found", iClose, iRecover, iMutate)
+	}
+	if iClose >= iRecover {
+		t.Errorf("deferred recover (%d) must follow defer sink.Close() (%d) so it runs while the sink is open", iRecover, iClose)
+	}
+	if iRecover != iMutate-1 {
+		t.Errorf("deferred recover is statement %d, op.mutate %d; the recover must be immediately before the mutate", iRecover, iMutate)
+	}
+
+	if !contains(recoverLit, func(c *ast.CallExpr) bool {
+		id, ok := c.Fun.(*ast.Ident)
+		if !ok || id.Name != "handlePanic" || len(c.Args) != 2 {
+			return false
+		}
+		code, ok := c.Args[1].(*ast.Ident)
+		return ok && code.Name == "exitOutcomeUnknown"
+	}) {
+		t.Errorf("the deferred recover must call handlePanic(..., exitOutcomeUnknown)")
 	}
 }
