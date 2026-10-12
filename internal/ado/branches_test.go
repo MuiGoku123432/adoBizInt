@@ -125,12 +125,26 @@ func TestGetBranchesReportsRepoFailure(t *testing.T) {
 		}
 	}
 
+	// D-06b: a disabled repository is still enumerated by GetRepositories, and
+	// its branch-stats call answers 404 with typeKey GitRepositoryNotFoundException
+	// (live capture, 2026-10-12, 130 repositories across both projects).
+	typedError := func(status int, typeKey, message string) azuredevops.WrappedError {
+		return azuredevops.WrappedError{Message: &message, TypeKey: &typeKey, StatusCode: &status}
+	}
+	tf401019 := "TF401019: The Git repository with name or identifier repository-one does not exist or you do not have permissions for the operation you are attempting."
+	disabled := typedError(404, "GitRepositoryNotFoundException", tf401019)
+
 	tests := []struct {
 		name     string
 		err      error
 		recorded bool
 		kind     FailureKind
 	}{
+		{name: "disabled repository is skipped", err: disabled},
+		{name: "disabled repository pointer form is skipped", err: &disabled},
+		{name: "404 with another typeKey is recorded", err: typedError(404, "ProjectDoesNotExistException", tf401019), recorded: true, kind: FailureOther},
+		{name: "repository-not-found typeKey under 400 is recorded", err: typedError(400, "GitRepositoryNotFoundException", tf401019), recorded: true, kind: FailureOther},
+		{name: "repository-not-found typeKey on a rejected token stays auth", err: typedError(403, "GitRepositoryNotFoundException", tf401019), recorded: true, kind: FailureAuth},
 		{name: "live VS403403 capture is an empty repository", err: liveError(vs403)},
 		{name: "VS403403 pointer form is an empty repository", err: wrappedErrorPointer(400, vs403)},
 		{
