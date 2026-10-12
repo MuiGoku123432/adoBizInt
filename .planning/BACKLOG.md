@@ -67,3 +67,28 @@ overwrite is exactly the accident the guard exists to catch.
 Whether prior TUI-driven closes have already zeroed effort fields on real work items.
 None of them were audited, so there is no local record to check. Azure DevOps work item
 History is the only source of truth.
+
+---
+
+## BL-02 — Open v1.0 review warnings and follow-ups
+
+**Surfaced:** Phase 4 verification and Phase 5 review, live CLI smoke test, 2026-10-12
+**Severity:** Low to medium. Each fails loudly or safely; none allows a silent mutation.
+
+Phase 4 review findings still open on HEAD (`04-REVIEW.md`):
+
+- **WR-02:** with the user identity unresolved at startup, `prs approve` cannot detect an existing approval. The dry run shows `reviewer.vote: 0 -> 10` for an already-approved PR, and `--confirm` re-casts the vote and audits it as a change.
+- **WR-05:** a flag value of `-h` (e.g. `--comment -h`) prints help and exits 0 even with `--confirm`. Nothing is written.
+- **WR-06:** a stdout write failure after the mutation (e.g. piping into `head`) returns exit 3 "nothing ran", although the write happened and was audited.
+- **WR-01:** `hoistLeadingPositionals` has no tests, and its comment claims flag-first ordering works when it does not (currently fails with exit 3).
+- **WR-04:** `audit.go:15-17` comment wrongly says Phase 5 covers the audit file's permissions (see T-05-26).
+
+Follow-ups found during Phase 5 and the 2026-10-12 live smoke test:
+
+- `branches list` always exits 1: five empty repositories return `VS403403: Cannot find any branches`, which Phase 2's empty-repository rule (HTTP 404 only) does not suppress.
+- `audit.jsonl` and `priorities.yaml` are created 0644, and the audit sink can create the config dir 0755 if `logging.Init` fails (T-05-26, IN-07).
+- `--project P,P` duplicates pass the allow-list and both copies reach the read.
+- `go.mod` still marks `google/uuid` as `// indirect` (IN-01); CI `persist-credentials` default (IN-02).
+- `~/.config/adoBizInt/adoBizInt.log` is never rotated (426 MB on 2026-10-12).
+- TUI `Error:` lines render raw server/SDK error text (`internal/ui/workitems/detail.go:118`).
+- Deferred live checks for the next milestone's first smoke test: one TUI attachment download, one `set-state --confirm` with the project in the PATCH route, and the Phase 1 eager-identity failure/recovery path.
