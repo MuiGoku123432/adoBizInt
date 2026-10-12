@@ -78,7 +78,7 @@ History is the only source of truth.
 Phase 4 review findings still open on HEAD (`04-REVIEW.md`):
 
 - **WR-02:** with the user identity unresolved at startup, `prs approve` cannot detect an existing approval. The dry run shows `reviewer.vote: 0 -> 10` for an already-approved PR, and `--confirm` re-casts the vote and audits it as a change.
-- **WR-05:** a flag value of `-h` (e.g. `--comment -h`) prints help and exits 0 even with `--confirm`. Nothing is written.
+- ~~**WR-05:** a flag value of `-h` (e.g. `--comment -h`) prints help and exits 0 even with `--confirm`. Nothing is written.~~ — **closed** by Phase 6 plan 06-01 (D-08): a help token is recognised only in flag position, so --comment -h is a comment value
 - **WR-06:** a stdout write failure after the mutation (e.g. piping into `head`) returns exit 3 "nothing ran", although the write happened and was audited.
 - **WR-01:** `hoistLeadingPositionals` has no tests, and its comment claims flag-first ordering works when it does not (currently fails with exit 3).
 - **WR-04:** `audit.go:15-17` comment wrongly says Phase 5 covers the audit file's permissions (see T-05-26).

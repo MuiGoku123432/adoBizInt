@@ -1,13 +1,17 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 )
 
-// helpTokens are the spellings that request usage rather than a read.
+// helpTokens are the spellings that request usage when they stand as the noun
+// or the verb. Inside a verb's own arguments stdlib flag decides instead, so a
+// help token there is help only in flag position (D-07).
 var helpTokens = map[string]bool{
 	"--help": true,
 	"-help":  true,
@@ -133,7 +137,11 @@ func usageVerb(name string, fs *flag.FlagSet) {
 // handleUsage resolves every request that must not reach Azure DevOps: help at
 // any of the three levels, an unknown noun, an unknown verb, and a bare noun.
 //
-// It runs before config.Load and cfg.Validate in run(). config.go:151 aborts
+// Verb-level help is a help flag in flag position, decided by stdlib parsing,
+// so a help token used as a flag's value is the value (D-07, D-08):
+// `workitems list --search help` is a search, not a help request.
+//
+// It still runs before config.Load and cfg.Validate in run() (D-09). config.go:151 aborts
 // validation when PAT is empty, so `adoBizInt --help` failing because no
 // credential is configured would be hostile — and it is exactly the trap a
 // first-time user hits.
@@ -175,15 +183,44 @@ func handleUsage(args []string) (int, bool) {
 		return exitUnknown, true
 	}
 
-	// A valid subcommand: verb-level help is handled here rather than by the
-	// FlagSet, so it too runs before config is loaded.
-	for _, arg := range args[2:] {
-		if helpTokens[arg] {
-			fs, _, _, _ := newFlagSet(noun + " " + verb)
-			usageVerb(noun+" "+verb, fs)
-			return exitOK, true
-		}
+	// A valid subcommand. stdlib flag decides flag position versus flag value
+	// over the verb's own FlagSet, so a help token consumed as a flag's value is
+	// that value (D-07, D-08). This runs before config.Load, so verb help still
+	// needs no config or PAT (D-09).
+	//
+	// The probe applies no value: the --project allow-list is empty before
+	// config loads and would reject every value, and the real parse in dispatch
+	// enforces it. Usage is printed from a fresh FlagSet, because PrintDefaults
+	// over wrapped values loses the type names and emits "panic calling String"
+	// lines (RESEARCH Pitfall 3). hoistLeadingPositionals is applied so a target
+	// written before the flags does not stop the parse (RESEARCH Pitfall 2).
+	name := noun + " " + verb
+	probe, _, _, _ := newFlagSet(name)
+	probe.SetOutput(io.Discard)
+	probe.Usage = func() {}
+	probe.VisitAll(func(f *flag.Flag) { f.Value = helpProbeValue{f.Value} })
+	if err := probe.Parse(hoistLeadingPositionals(args[2:])); errors.Is(err, flag.ErrHelp) {
+		fs, _, _, _ := newFlagSet(name)
+		usageVerb(name, fs)
+		return exitOK, true
 	}
 
+	// Any other outcome, including a parse error, is dispatch's to report
+	// after config loads.
 	return exitOK, false
+}
+
+// helpProbeValue makes a flag value-inert for handleUsage's help probe: Set
+// records nothing, so the probe neither applies nor validates a value. It is
+// single-use, private to this file, and the only flag.Value wrapper in the
+// package.
+type helpProbeValue struct{ flag.Value }
+
+func (helpProbeValue) Set(string) error { return nil }
+
+// IsBoolFlag forwards the wrapped flag's arity. Without it every flag would
+// take a value, and `--json --help` would read --help as --json's value.
+func (v helpProbeValue) IsBoolFlag() bool {
+	b, ok := v.Value.(interface{ IsBoolFlag() bool })
+	return ok && b.IsBoolFlag()
 }
