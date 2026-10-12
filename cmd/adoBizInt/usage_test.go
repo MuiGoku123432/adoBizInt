@@ -336,6 +336,44 @@ func TestHelpTokenInFlagPositionIsHelp(t *testing.T) {
 	}
 }
 
+// TestReadRejectsStrayPositional pins D-17. A token stdlib could not read as a
+// flag stopped the parse, so it and every flag after it were silently dropped:
+// `workitems list help --json` produced human output. Now nothing runs and the
+// exit is 3.
+func TestReadRejectsStrayPositional(t *testing.T) {
+	check := func(t *testing.T, args []string, wantStderr ...string) {
+		t.Helper()
+		stdout, stderr := captureOutput(t)
+
+		// No closure set: reaching a read fails the subtest by name.
+		if code := dispatch(context.Background(), &fakeReadClient{t: t}, args); code != exitUnknown {
+			t.Errorf("dispatch(%q) = %d, want %d", args, code, exitUnknown)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("dispatch(%q) wrote %q to stdout, want nothing", args, stdout.String())
+		}
+		for _, want := range wantStderr {
+			if !strings.Contains(stderr.String(), want) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr.String(), want)
+			}
+		}
+	}
+
+	for _, key := range wantCommands {
+		verb := strings.Split(key, " ")
+		t.Run(key+" stray first", func(t *testing.T) {
+			check(t, append(append([]string{}, verb...), "stray", "--json"), key, `"stray"`)
+		})
+		t.Run(key+" stray last", func(t *testing.T) {
+			check(t, append(append([]string{}, verb...), "--json", "stray"), key, `"stray"`)
+		})
+	}
+
+	t.Run("workitems list help --json", func(t *testing.T) {
+		check(t, []string{"workitems", "list", "help", "--json"}, `"help"`, "--help")
+	})
+}
+
 // TestEveryWriteVerbAppearsInNounUsage iterates writeSupportByCommand — the same
 // map the dispatcher gates flag registration on — rather than a hand-maintained
 // list of verb names. A write verb added to the dispatch table without being
