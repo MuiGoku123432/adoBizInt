@@ -100,13 +100,15 @@ func pipelineNameMatches(name string, configuredPipelines []string) bool {
 
 // opGetPipelineRuns and opGetPipelineDefinitions label the SDK calls in any
 // Failure these reads record. The per-definition latest-build lookup builds its
-// label as opGetLatestBuild + " for " + the definition name, the same shape
-// GetBranches uses for its per-repository label, so the warning line names the
-// broken pipeline.
+// label as opGetLatestBuild + " for " + the definition name, and the detail
+// lookup as opGetDefinitionDetail + " for " + the definition name — the same
+// shape GetBranches uses for its per-repository label, so the warning line
+// names the broken pipeline.
 const (
 	opGetPipelineRuns        = "get pipeline definitions for runs"
 	opGetPipelineDefinitions = "get pipeline definitions"
 	opGetLatestBuild         = "get latest build"
+	opGetDefinitionDetail    = "get definition detail"
 )
 
 // GetPipelineRuns fetches ALL matching pipeline definitions and their latest runs.
@@ -276,7 +278,9 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 }
 
 // GetPipelineDefinitions fetches pipeline definitions for configured pipelines.
-// Per-project failures are reported in the returned envelope.
+// Items holds the matching definitions whose detail lookup answered. A
+// definition whose detail lookup failed is absent from Items and named in
+// Failures (D-02, D-13), as is every project whose definition listing failed.
 func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) (Result[PipelineDefinition], error) {
 	log := logging.Logger()
 
@@ -334,6 +338,13 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 				continue
 			}
 
+			// Unmatched definitions above are data filters; a matching one the
+			// fetch deadline has already overtaken is an unreached call (D-12).
+			if err := ctx.Err(); err != nil {
+				failures = appendFailure(failures, project, opGetDefinitionDetail+" for "+*d.Name, err)
+				continue
+			}
+
 			def := PipelineDefinition{
 				Project: project,
 				Name:    *d.Name,
@@ -354,14 +365,20 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 				Project:      &project,
 				DefinitionId: d.Id,
 			})
-			if err == nil && fullDef != nil {
-				if fullDef.Repository != nil {
-					if fullDef.Repository.Id != nil {
-						def.RepositoryID = *fullDef.Repository.Id
-					}
-					if fullDef.Repository.DefaultBranch != nil {
-						def.DefaultBranch = strings.TrimPrefix(*fullDef.Repository.DefaultBranch, "refs/heads/")
-					}
+			if err != nil {
+				log.Error("Failed to get definition detail", "project", project, "definition", *d.Name, "error", err)
+				// Omitted rather than returned with a blank repository_id, which
+				// the trigger modal would later surface as an unrelated
+				// branch-fetch error. The loop keeps going (D-08).
+				failures = appendFailure(failures, project, opGetDefinitionDetail+" for "+*d.Name, err)
+				continue
+			}
+			if fullDef != nil && fullDef.Repository != nil {
+				if fullDef.Repository.Id != nil {
+					def.RepositoryID = *fullDef.Repository.Id
+				}
+				if fullDef.Repository.DefaultBranch != nil {
+					def.DefaultBranch = strings.TrimPrefix(*fullDef.Repository.DefaultBranch, "refs/heads/")
 				}
 			}
 
