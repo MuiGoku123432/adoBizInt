@@ -19,7 +19,7 @@ shipping no flag at all, which is why the test seam comes first.
 ## Phases
 
 - [x] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable (completed 2026-10-12)
-- [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline (awaiting human verification)
+- [x] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline (completed 2026-10-12)
 - [x] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters (verified 2026-09-09)
 - [x] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record (completed 2026-10-12)
 - [x] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL @project, CI (completed 2026-10-12)

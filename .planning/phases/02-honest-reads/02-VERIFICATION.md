@@ -1,9 +1,10 @@
 ---
 phase: 02-honest-reads
-verified: 2026-10-12T14:59:29Z
-status: gaps_found
-score: 3/6 success criteria verified
+verified: 2026-10-12T16:08:14Z
+status: passed
+score: 5/6 success criteria verified
 covered_files:
+
   - .planning/REQUIREMENTS.md
   - .planning/phases/02-honest-reads/02-01-SUMMARY.md
   - .planning/phases/02-honest-reads/02-01-tracer-honest-read-PLAN.md
@@ -15,87 +16,98 @@ covered_files:
   - .planning/phases/02-honest-reads/02-04-json-field-contract-PLAN.md
   - .planning/phases/02-honest-reads/02-05-SUMMARY.md
   - .planning/phases/02-honest-reads/02-05-tui-failure-surfacing-PLAN.md
+  - .planning/phases/02-honest-reads/02-06-PLAN.md
+  - .planning/phases/02-honest-reads/02-06-SUMMARY.md
+  - .planning/phases/02-honest-reads/02-07-PLAN.md
+  - .planning/phases/02-honest-reads/02-07-SUMMARY.md
   - internal/ado/branches.go
+  - internal/ado/branches_test.go
   - internal/ado/client.go
   - internal/ado/dashboard.go
   - internal/ado/pipelines.go
+  - internal/ado/pipelines_test.go
   - internal/ado/pullrequests.go
   - internal/ado/releases.go
+  - internal/ado/releases_test.go
   - internal/ado/result.go
   - internal/ado/workitems.go
+  - internal/ado/workitems_test.go
   - internal/config/config.go
   - internal/ui/dashboard/dashboard.go
   - internal/ui/fetchctx/fetchctx.go
   - internal/ui/styles/styles.go
-covered_digest: "v1:sha256:97242a8e6e64d55c4c7ef94d176a96763667d55fb1663fbbf6b70115f4f7bf6b"
+
+covered_digest: "v1:sha256:08bf70abc65e383eca1b6f619971273c12a24212ff43e0e47355515abbf3329c"
 behavior_unverified: 1
 overrides_applied: 0
-verdict: GAPS-FOUND
+verdict: HUMAN-NEEDED
 requirements:
-  TRUST-01: blocked   # GetPipelineRuns and GetReleases still drop per-definition errors with continue
-  TRUST-02: satisfied # project-level 401/403 classified; per-definition 401 is part of gap 1
-  TRUST-03: blocked   # the same two reads report complete:true over a failed sub-request
-  TRUST-04: satisfied
-  OUT-02: satisfied
+  TRUST-01: satisfied # per-definition GetBuilds/GetReleases/GetDefinition failures recorded (02-06); iteration lookup recorded (02-07)
+  TRUST-02: satisfied # per-definition 401/403 classified auth via classifyFailure (value and pointer forms tested)
+  TRUST-03: satisfied # complete:false over any failed sub-request; branches no longer complete:false over empty/disabled repos (D-06a/D-06b, live 886 items complete:true)
+  TRUST-04: satisfied # D-12 pre-flight now inside all three N+1 loops
+  OUT-02: satisfied   # TestJSONFieldNames green; no struct/tag changes in 02-06/02-07
 re_verification:
   previous_status: gaps_found
-  previous_score: 5/6
+  previous_score: 3/6
+  previous_verified: 2026-10-12T14:59:29Z
   gaps_closed:
-    - "A partial result is explicitly flagged incomplete, and flagged truthfully (dashboard headline now derived from the degraded/unanswered split)"
-    - "REQUIREMENTS.md traceability reflects phase completion (TRUST-01..04 split into per-ID rows, all Complete)"
+    - "Every aggregate read reports which projects failed and why, rather than dropping errors with continue (SC1) / A partial result is explicitly flagged incomplete (SC3): per-definition N+1 swallows in GetPipelineRuns, GetReleases and GetPipelineDefinitions now recorded (02-06)"
+    - "An empty repository is not reported as a branch failure: recognised by 400 + VS403403: (D-06a), disabled repositories by 404 + typeKey GitRepositoryNotFoundException (D-06b) (02-07 + f73cfa4)"
+    - "Sub-request failures inside an otherwise-succeeding project are reported, including a degraded iteration filter (T-02-05): opGetWorkItemsIterations recorded (02-07)"
   gaps_remaining: []
   regressions: []
-  new_gaps_found_on_rescan:
-    - "Per-definition build/release fetch failures swallowed (pre-existing since 3aca6cb0; missed by 02-RESEARCH inventory and by the 2026-09-07 verification)"
-    - "Empty-repository suppression keyed on 404 is falsified by live evidence (VS403403 arrives with a non-404 status)"
-    - "Work-item iteration lookup degradation is silent, unlike the dashboard's"
-gaps:
-  - truth: "Every aggregate read reports which projects failed and why, rather than dropping errors with continue (SC1) / A partial result is explicitly flagged incomplete (SC3)"
-    status: failed
-    reason: "GetPipelineRuns and GetReleases each issue a second, per-definition call (N+1) whose error is logged at Debug and dropped with continue. The definition is appended with its default status (neverRun / noReleases) and no Failure is recorded, so a failed call renders as an empty state and the envelope reports complete:true. Verifier probe via go test -overlay: GetBuilds returning 401 -> items=1 status=\"neverRun\" failures=0 complete=true; GetReleases returning context.DeadlineExceeded -> items=1 status=\"noReleases\" failures=0 complete=true. This is also the D-12 path: when fetch_timeout expires inside the per-definition loop (the N+1 fan-out D-09 names at pipelines.go:137 / releases.go:103), every unreached definition is reported as never-run under complete:true, and the CLI exits 0. Root cause: 02-RESEARCH.md swallow table rows 3 and 5 classified pipelines.go:170 and releases.go:132 as 'data filters, do not touch'; both are err != nil swallows."
-    artifacts:
-      - path: "internal/ado/pipelines.go:198-203"
-        issue: "if err != nil { log.Debug(...); allRuns = append(allRuns, run); continue } — no appendFailure; run.Status stays \"neverRun\""
-      - path: "internal/ado/releases.go:148-153"
-        issue: "if err != nil { log.Debug(...); allReleases = append(allReleases, rel); continue } — no appendFailure; rel.Status stays \"noReleases\""
-    missing:
-      - "appendFailure(failures, project, \"<op> for \"+defName, err) at both sites, with an operation label that names the definition (same pattern as GetBranches' per-repository label)"
-      - "Decide whether the failed definition still appears as a row; if it does, its status must not be neverRun/noReleases (e.g. leave the row out, or give it an explicit unknown status) so a failure never renders as an empty state"
-      - "A ctx.Err() pre-flight check inside each per-definition loop so a mid-loop fetch_timeout records timeout failures instead of issuing doomed calls (D-12)"
-      - "Tests: TestGetPipelineRunsReportsDefinitionFailure and TestGetReleasesReportsDefinitionFailure (auth and timeout kinds, asserting failures != 0 and Complete == false)"
-  - truth: "An empty repository is not reported as a branch failure, because it is distinguished by status code from a real fetch error (02-02 PLAN must_have)"
-    status: partial
-    reason: "Assumption A4 (an empty repo yields 404 to a branch-stats fetch) is falsified by live evidence. On 2026-10-12 `branches list` against the live org returned complete:false with 5 failures, all VS403403 'Cannot find any branches' for empty repositories (identical on the pre-Phase-5 build). The SDK's UnwrapError always sets StatusCode (azuredevops client.go:366/388/394/405), and branches.go suppresses exactly 404, so the service's status for VS403403 is not 404. Verifier probe: status 404 -> 0 failures, complete:true; status 400 or 409 -> 1 failure kind=other, complete:false. Effect: the safe direction (noise, not a lost failure), but on this org `branches list` is permanently complete:false and exits 1 (exitPartial), which trains an agent to ignore the very signal TRUST-03 exists to provide. 02-02-SUMMARY and 02-05-SUMMARY both named this as the first place to look if the warning line proved noisy; it has."
-    artifacts:
-      - path: "internal/ado/branches.go:47,104-108"
-        issue: "emptyRepositoryStatus = 404 does not match the status ADO actually returns for VS403403"
-    missing:
-      - "Capture the real HTTP status and WrappedError.TypeKey/ErrorCode for VS403403 from one live call (the log records only the message)"
-      - "Suppress on that structural signal (status plus TypeKey or ErrorCode, never message text per D-06), keeping a 401/403 on the same call classified as auth"
-      - "Update the 404 case in branches_test.go to the observed shape"
-  - truth: "Sub-request failures inside an otherwise-succeeding project are reported too (D-02), including a degraded iteration filter (T-02-05)"
-    status: partial
-    reason: "getProjectWorkItems (workitems.go:138-141) logs a failed GetRecentIterations and continues with the iteration clause dropped, recording nothing. The dashboard treats the identical degradation as a Failure (02-03, T-02-05); the work-item list does not. Probe: classification-node 500 -> failures=0 complete=true. The list then over-includes items outside recent sprints rather than omitting any, so this is not a failure rendered as emptiness; it is an unflagged substitution of the query, the exact thing T-02-05 was recorded to prevent."
-    artifacts:
-      - path: "internal/ado/workitems.go:138-141"
-        issue: "GetRecentIterations error logged at Warn and discarded"
-    missing:
-      - "Record the degradation as a Failure (mirroring opDashboardIterations) or record an explicit decision that the work-item list accepts it silently"
+prohibitions:
+
+  - statement: "02-06: Must NOT stop issuing per-definition calls after one definition returns an auth failure (D-08)"
+    verification: judgment
+    status: verified
+    flagged: false
+    evidence: "All three per-definition error branches append and continue (pipelines.go:219-220, :373-374; releases.go:167-168); no early return on auth"
+  - statement: "02-06: Must NOT add a field, json tag, or new Status value to PipelineRun, Release or PipelineDefinition"
+    verification: judgment
+    status: verified
+    flagged: false
+    evidence: "git diff 428ea39..HEAD on pipelines.go/releases.go adds no struct field, tag or status literal; TestJSONFieldNames 17/17"
+  - statement: "02-06: Must NOT add a nil-Id guard to the GetPipelineDefinitions loop; nilguard_test.go not edited"
+    verification: judgment
+    status: verified
+    flagged: false
+    evidence: "Loop still guards d.Name only (pipelines.go:331-334); nilguard_test.go absent from git diff --stat 428ea39..HEAD; TestCollectedDefinitionsGuardNameAndID passes"
+  - statement: "02-07: Must NOT classify, suppress or recognise failures outside the branch-stats call by message text"
+    verification: judgment
+    status: verified
+    flagged: false
+    evidence: "The only err.Error() match in non-test internal/ado code is branches.go:82 (unreadableRepository)"
+  - statement: "02-07: Must NOT change result.go, classifyFailure, statusCodeOf, the WIQL text, iterationClause, GetRecentIterations, or the dashboard"
+    verification: judgment
+    status: unverified
+    flagged: true
+    evidence: "Breached in letter, not in effect, by the orchestrator's post-plan D-06b commit f73cfa4 (not by 02-07 itself): statusCodeOf was split into wrappedErrorOf + statusCodeOf. classifyFailure is untouched and TestClassifyFailure (16) passes. One theoretical difference: if an error chain held a value-form WrappedError with nil StatusCode AND a pointer-form one with a status, the old code fell through to the pointer and the new code does not. WrappedError has no Unwrap, so this needs a custom multi-error chain; not reachable from the SDK. Non-authoritative LLM verdict: acceptable. Human acknowledgement recommended."
 behavior_unverified_items:
+
   - truth: "The TUI renders failures rather than silently showing an empty table"
     test: "Run the tool with a deliberately invalid/expired PAT that is valid for at least one configured project and rejected for another; open each of the six views."
     expected: "An auth banner replaces the table for the rejected project; partial warnings appear where some projects answered; no view shows a bare empty table."
     why_human: "View() returns a lipgloss-styled string. Substring assertions exist in all six packages but a substring assertion is not a visual check. 02-VALIDATION.md marks this row NOT DONE. The user has chosen to record it as verification debt."
+human_verification:
+
+  - test: "TUI failure rendering (verification debt, user-acknowledged): run with a PAT valid for one configured project and rejected for another; open all six views."
+    expected: "Auth banner replaces the table for the rejected project; partial warnings where some projects answered; no bare empty table. A per-definition 401/403 now shows the pipelines/releases auth banner rather than a grey never-run/no-releases row."
+    why_human: "View() output is a lipgloss-styled string; substring tests are not a visual check."
+  - test: "Acknowledge the result.go refactor in f73cfa4 (wrappedErrorOf extracted from statusCodeOf) against 02-07's prohibition on changing result.go."
+    expected: "Accept as a behavior-preserving extraction made under D-06b, or ask for it to be reverted into branches.go."
+    why_human: "Judgment-tier prohibition breached in letter by a post-plan orchestrator commit; the verifier's verdict is non-authoritative."
 ---
 
 # Phase 2: Honest Reads — Verification Report
 
 **Phase Goal:** A caller can distinguish an empty result from a failed one
-**Verified:** 2026-10-12 (re-verification on `dev` @ `ccba07b`)
-**Status:** gaps_found
-**Re-verification:** Yes — after gap closure. Both 2026-09-07 gaps are closed. A rescan found a pre-existing silent swallow in two aggregate reads that both the research inventory and the first verification missed.
+**Verified:** 2026-10-12T16:08:14Z (re-verification 2 on `dev` @ `bd3f348`)
+**Status:** human_needed
+**Re-verification:** Yes (second today), after gap-closure plans 02-06 and 02-07 plus the orchestrator's D-06b follow-up. All three gaps from the first 2026-10-12 re-verification are closed in code and tests. The only open item is the user-acknowledged TUI visual check.
 
-The original 2026-09-07 report and its Gap Closure section are preserved unchanged below, followed by the 2026-10-12 re-verification.
+The original 2026-09-07 report, its Gap Closure section, and the first 2026-10-12 re-verification are preserved unchanged below, followed by Re-verification 2.
 
 ---
 
@@ -347,3 +359,110 @@ Two smaller gaps share the theme of a sub-request outcome that is not stated acc
 
 _Re-verified: 2026-10-12T14:59:29Z_
 _Verifier: Claude (gsd-verifier). Read-only apart from this file; not committed._
+
+---
+
+## Re-verification 2 (2026-10-12, after 02-06/02-07)
+
+**Scope:** HEAD of `dev` (`bd3f348`). This covers 02-06 (`ae99ba8`..`a1d29ad`), 02-07 (`07546af`..`0c67c57`) and the orchestrator's D-06b follow-up (`8995e2e`, `f73cfa4`). The three gaps above were re-checked in code and tests, not against the SUMMARY files. The verifier made no live ADO calls. The live results cited here are the orchestrator's read-only run against the Windstream org on HEAD.
+
+### Gate
+
+| Check | Result |
+|-------|--------|
+| `go build ./...` | pass |
+| `go vet ./...` | pass |
+| `go test -race -count=1 ./...` | pass: 12 packages ok, 750 `--- PASS`, 0 `--- FAIL` (was 724) |
+| `test -z "$(gofmt -l .)"` | pass (empty) |
+
+### Gap-closure check
+
+| Prior gap | Status on HEAD | Evidence |
+|-----------|----------------|----------|
+| 1. Per-definition N+1 failures were dropped with `continue` in GetPipelineRuns and GetReleases (SC1, SC3) | ✓ CLOSED | `pipelines.go:214-221` and `releases.go:162-169` now call `appendFailure(failures, project, opGetLatestBuild/opGetLatestRelease+" for "+defName, err)` and `continue` without appending the row. The same class of swallow in GetPipelineDefinitions' `GetDefinition` call (`pipelines.go:368-375`), which the first re-verification missed, is closed the same way. A D-12 `ctx.Err()` pre-flight now sits inside all three per-definition loops (`pipelines.go:185`, `:343`; `releases.go:137`). Tests: `TestGetPipelineRunsReportsDefinitionFailure`, `TestGetReleasesReportsDefinitionFailure` and `TestGetPipelineDefinitionsReportsDetailFailure` (auth and timeout subtests each; value-form 401 and pointer-form 403) assert that the broken definition is absent from Items, that exactly one Failure names it with the right kind, and that `Complete == false`. The three `...MarksUnreachedDefinitions` tests assert one SDK call and a timeout Failure after a 100ms deadline. All pass under `-race`. |
+| 2. Empty-repository suppression keyed on 404 contradicted live VS403403 evidence | ✓ CLOSED | `unreadableRepository` (`branches.go:75-87`) suppresses only on (a) status 400 AND `strings.HasPrefix(err.Error(), "VS403403:")` (D-06a), or (b) status 404 AND `TypeKey == "GitRepositoryNotFoundException"` (D-06b). Anything else is recorded with the repository named. `TestGetBranchesReportsRepoFailure` has 14 rows. They cover the live capture in value and pointer form, the disabled repository in value and pointer form, and the negatives: other 400, VS403403 under 404, VS403403 with no SDK status, a 404 with another typeKey, the not-found typeKey under 400, 401, VS403403 or the not-found typeKey on a 403 (stays auth), a timeout, and a 500. Live, on HEAD: `branches list` exit 0, `complete:true`, 0 failures, 886 items (was `complete:false`, 5 failures, then 130 after D-06a alone). |
+| 3. Work-item iteration lookup degradation was silent | ✓ CLOSED | `getProjectWorkItems` records `opGetWorkItemsIterations` (`workitems.go:155`) and returns `failures` on all four return paths (`:174`, `:179`, `:194`, `:274`). `GetWorkItems` appends `projectFailures` before its own err check (`:125`), so the degradation survives a QueryByWiql failure too. `TestGetWorkItemsReportsIterationFailure` (2 subtests) asserts the degraded items are kept, there is one Failure with the right project, operation and kind, `Complete == false`, and the same holds when the query returns nothing. |
+
+### Observable truths (roadmap success criteria) on HEAD
+
+| # | Truth | Status | Evidence |
+|---|-------|--------|----------|
+| 1 | Every aggregate read reports which projects failed and why, rather than dropping errors with `continue` | ✓ VERIFIED | Gap 1 and gap 3 closed (above). A rescan of every `if err != nil` in the six aggregate read files (`branches`, `dashboard`, `pipelines`, `pullrequests`, `releases`, `workitems`) found no error branch without `appendFailure` or a `return`. The only branch-stats suppressions are the two structural shapes in `unreadableRepository`. |
+| 2 | An expired PAT produces a distinct fatal error, never an empty list | ✓ VERIFIED | The per-definition caveat from the first re-verification is gone. A 401/403 on the N+1 call is now recorded as `auth` (value-form 401 in the pipelines test, pointer-form 403 in the releases test). `exitCodeFor` returns `exitAuth` on any auth Failure (`cmd/adoBizInt/exit.go:19-29`). `TestClassifyFailure` (16) and `TestGet*ClassifiesRejectedToken` (7) still pass. |
+| 3 | A partial result is explicitly flagged incomplete | ✓ VERIFIED | `newResult` derives `Complete: len(failures) == 0` (`result.go:121`). The three reads that returned `complete:true` over a failed sub-request now return `complete:false`. In the other direction, `branches list` no longer reports `complete:false` over a complete read (live, 886 items, `complete:true`). Legitimate empty states are unchanged: a verifier `go test -overlay` probe with GetBuilds/GetReleases answering zero results gave `status=neverRun` / `status=noReleases`, `failures=0`, `complete=true`. |
+| 4 | Every ADO call carries a deadline and `connection.Timeout` is set | ✓ VERIFIED | Unchanged from the first re-verification, plus the D-12 pre-flight now runs inside the three N+1 loops, so a mid-loop expiry records timeouts instead of issuing doomed calls (3 `...MarksUnreachedDefinitions` tests). `TestFetchTimeoutMarksUnreached*` (6 reads) pass. |
+| 5 | Exported `ado` structs carry `json:` tags with stable lower-cased names | ✓ VERIFIED | `TestJSONFieldNames` passes. The diff since `428ea39` adds no struct field, tag or `Status` literal to `PipelineRun`, `Release` or `PipelineDefinition`. |
+| 6 | The TUI renders failures rather than silently showing an empty table | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | All six views still wire `authBanner`/`partialWarning`, and `TestUpdateAuthFailureBlocksThe*` (6) passes. The grey "never run"/"no releases" row for a failed fetch, noted under the first re-verification, can no longer occur because the row is omitted. No human visual check has been done; the user records it as verification debt. |
+
+**Score:** 5/6 verified (1 present, behavior-unverified; 0 failed).
+
+### Key links (manual; `verify.key-links` cannot parse prose `from:` fields)
+
+| From | To | Status |
+|------|----|--------|
+| GetBuilds error branch | `appendFailure(... opGetLatestBuild+" for "+defName, err)` | ✓ WIRED (`pipelines.go:186`, `:219`) |
+| GetReleases error branch | `appendFailure(... opGetLatestRelease+" for "+defName, err)` | ✓ WIRED (`releases.go:138`, `:167`) |
+| GetDefinition error branch | `appendFailure(... opGetDefinitionDetail+" for "+*d.Name, err)` | ✓ WIRED (`pipelines.go:344`, `:373`) |
+| Non-empty Failures | `exitCodeFor` / view banners | ✓ WIRED (`result.go:121`, `exit.go:19-29`) |
+| Branch-stats error branch | `unreadableRepository` → `wrappedErrorOf` | ✓ WIRED (`branches.go:82`, `:147`). The 02-07 plan named `statusCodeOf`; after f73cfa4 both share `wrappedErrorOf`. |
+| Iteration error branch | `GetWorkItems` failure aggregation | ✓ WIRED (`workitems.go:155` → `:125`) |
+
+All 10 plan artifacts (6 from 02-06, 4 from 02-07) pass `verify.artifacts`.
+
+### Behavioral evidence
+
+| Probe | Result | Status |
+|-------|--------|--------|
+| Named gap tests above (run in the single full `-race` suite) | all PASS | ✓ |
+| Overlay probe: GetBuilds and GetReleases answer zero results | `neverRun` / `noReleases` rows, `failures=0`, `complete=true` | ✓ legitimate empty state preserved (the 02-06 plan truth has no committed test; probe only, scratchpad overlay, `git status` unchanged) |
+| Live, orchestrator, HEAD: `branches list` | exit 0, `complete:true`, 0 failures, 886 items | ✓ |
+| Live, orchestrator, HEAD: `pipelines runs`, `pipelines definitions`, `releases list`, `workitems list`, `dashboard counts` | all exit 0, `complete:true`, 0 failures | ✓ (no per-definition failure occurred live, so the failure path rests on the unit tests) |
+
+### Prohibitions
+
+Four of the five plan prohibitions hold (see frontmatter). One is flagged. 02-07 says "Must NOT change result.go ... statusCodeOf", and the orchestrator's D-06b commit `f73cfa4` extracted `wrappedErrorOf` from `statusCodeOf`. `classifyFailure` is untouched and its 16 cases pass. The only behavioral difference is a chain holding both a status-less value-form and a status-bearing pointer-form `WrappedError`, which the SDK cannot produce (`WrappedError` has no `Unwrap`). The verifier's verdict is that this is acceptable, but the verdict is non-authoritative and listed for human acknowledgement.
+
+### Requirements coverage
+
+| Requirement | Status | Evidence |
+|-------------|--------|----------|
+| TRUST-01 | ✓ SATISFIED | Gaps 1 and 3 closed; no remaining error-swallowing `continue` in aggregate reads |
+| TRUST-02 | ✓ SATISFIED | Per-definition 401/403 classified `auth` (value and pointer forms) |
+| TRUST-03 | ✓ SATISFIED | `complete:false` over every failed sub-request; `complete:true` over empty and disabled repositories (live 886 items) |
+| TRUST-04 | ✓ SATISFIED | D-12 pre-flight inside the N+1 loops |
+| OUT-02 | ✓ SATISFIED | `TestJSONFieldNames`; JSON contract untouched |
+
+REQUIREMENTS.md already marks all five `[x]`/Complete (lines 15-18, 41, 226-230), and that is now consistent with the code. No orphaned Phase 2 requirement IDs.
+
+### Anti-patterns and info
+
+| File | Line | Finding | Severity |
+|------|------|---------|----------|
+| `internal/ado/branches.go` | 124-147 | The per-repository loop has no in-loop `ctx.Err()` pre-flight, unlike the three N+1 loops 02-06 fixed. After a mid-loop expiry, each remaining repository still issues a call. The call fails fast on the done context and is recorded as `timeout` (no `WrappedError`, so `unreadableRepository` is false), so nothing is lost; it is only extra doomed calls. | ℹ️ Info |
+| `internal/ado/branches.go` | 60-70 | D-06b treats any 404 + `GitRepositoryNotFoundException` as disabled. A repository deleted between `GetRepositories` and the branch-stats call is also skipped silently. That matches the user's decision and is reversible. | ℹ️ Info |
+| `internal/ado/pipelines_test.go`, `releases_test.go` | n/a | No committed test pins the legitimate `neverRun`/`noReleases` empty state (02-06 truth 9); the verifier probe confirmed it | ℹ️ Info |
+| `internal/ui/dashboard/dashboard.go` | 126-128, 89 | Carried from earlier: the `applyResult` doc comment still says "understated", and `m.complete` is unread by production code | ℹ️ Info |
+
+No `TBD`/`FIXME`/`XXX`/`TODO`/`HACK` markers in `branches.go`, `pipelines.go`, `releases.go`, `workitems.go` or `result.go`.
+
+### Deferred check
+
+Nothing to defer: no gaps remain.
+
+### Human verification
+
+1. **TUI failure rendering (verification debt, user-acknowledged).** Run with a PAT valid for one configured project and rejected for another, then open all six views. Expect an auth banner in place of the table for the rejected project, partial warnings where some projects answered, and no bare empty table. A per-definition 401/403 now raises the pipelines/releases auth banner rather than a grey row. This needs a human because `View()` is a lipgloss-styled string.
+2. **Acknowledge the `result.go` refactor in `f73cfa4`** against 02-07's prohibition. Either accept it as a behavior-preserving extraction under D-06b, or ask for `wrappedErrorOf` to move into `branches.go`.
+
+### Summary
+
+All three gaps from the first 2026-10-12 re-verification are closed in code and tests on `bd3f348`, and the full gate is green (750 passes, 0 failures under `-race`). A failed per-definition lookup in GetPipelineRuns, GetReleases or GetPipelineDefinitions is now named, classified and excluded from Items, with `complete:false`. Empty and disabled repositories are recognised by narrow structural shapes, so `branches list` is `complete:true` live. The work-item list flags a dropped sprint filter. Within the automated reach, the phase goal (a caller can distinguish an empty result from a failed one) is achieved. Status is `human_needed` only for the user-acknowledged TUI visual check and one flagged judgment-tier prohibition.
+
+---
+
+_Re-verified (2): 2026-10-12T16:08:14Z_
+_Verifier: Claude (gsd-verifier). Read-only apart from this file; not committed._
+
+### Override accepted (2026-10-12)
+
+- **02-07 prohibition "Must NOT change result.go … statusCodeOf"** — broken in letter by the orchestrator's D-06b follow-up `f73cfa4`, which extracted `wrappedErrorOf` from `statusCodeOf` so `unreadableRepository` reuses the value/pointer `WrappedError` extraction instead of duplicating it. `classifyFailure` is untouched and its 16 cases pass; the only behavioural delta needs an error chain carrying both SDK error shapes, which the SDK does not produce. **Accepted by the user on 2026-10-12** (reuse over a second implementation, per the user's engineering standards).
