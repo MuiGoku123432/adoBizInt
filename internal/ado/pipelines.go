@@ -99,15 +99,21 @@ func pipelineNameMatches(name string, configuredPipelines []string) bool {
 }
 
 // opGetPipelineRuns and opGetPipelineDefinitions label the SDK calls in any
-// Failure these reads record.
+// Failure these reads record. The per-definition latest-build lookup builds its
+// label as opGetLatestBuild + " for " + the definition name, the same shape
+// GetBranches uses for its per-repository label, so the warning line names the
+// broken pipeline.
 const (
 	opGetPipelineRuns        = "get pipeline definitions for runs"
 	opGetPipelineDefinitions = "get pipeline definitions"
+	opGetLatestBuild         = "get latest build"
 )
 
 // GetPipelineRuns fetches ALL matching pipeline definitions and their latest runs.
-// Returns one entry per pipeline definition, showing latest run status if
-// available. Per-project failures are reported in the returned envelope.
+// Items holds one entry per matching definition whose latest-build lookup
+// answered; "neverRun" means the lookup answered with no builds. A definition
+// whose lookup failed is absent from Items and named in Failures (D-02, D-13),
+// as is every project whose definition listing failed.
 func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result[PipelineRun], error) {
 	log := logging.Logger()
 
@@ -171,6 +177,14 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 			defID := *def.Id
 			defName := *def.Name
 
+			// The fetch deadline can expire inside this N+1 fan-out, not only
+			// between projects: record the definitions not yet reached rather
+			// than issuing calls that are already doomed (D-12).
+			if err := ctx.Err(); err != nil {
+				failures = appendFailure(failures, project, opGetLatestBuild+" for "+defName, err)
+				continue
+			}
+
 			// Create base run entry for this pipeline
 			run := PipelineRun{
 				Project:      project,
@@ -196,9 +210,11 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 				QueryOrder:  &queryOrder,
 			})
 			if err != nil {
-				log.Debug("Failed to get builds for definition", "project", project, "definition", defName, "error", err)
-				// Still add the definition with neverRun status
-				allRuns = append(allRuns, run)
+				log.Error("Failed to get latest build", "project", project, "definition", defName, "error", err)
+				// The definition is left out of Items so a failed lookup can never
+				// read as neverRun, and the loop moves on to the remaining
+				// definitions: D-08 rejected short-circuiting on auth failure.
+				failures = appendFailure(failures, project, opGetLatestBuild+" for "+defName, err)
 				continue
 			}
 
