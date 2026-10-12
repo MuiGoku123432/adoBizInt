@@ -23,7 +23,7 @@ shipping no flag at all, which is why the test seam comes first.
 - [x] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters (verified 2026-09-09)
 - [x] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record (completed 2026-10-12)
 - [x] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL @project, CI (completed 2026-10-12)
-- [ ] **Phase 6: Core-value cleanup** - Close audit warnings W2 (help token in flag values), W3 (empty projects list), W4 (undisclosed list scope)
+- [ ] **Phase 6: Core-value cleanup** - Close audit warnings W1 (panic mid-write), W2 (help token in flag values), W3 (empty projects list), W4 (undisclosed list scope)
 
 ## Phase Details
 
@@ -194,14 +194,15 @@ Plans:
 
 ### Phase 6: Core-value cleanup
 
-**Goal**: The three v1.0 audit warnings that let an agent mistake a non-read or a filtered read for a complete answer are closed
+**Goal**: The four v1.0 audit warnings that let an agent mistake a non-read, a misconfigured or filtered read, or an in-flight write for a complete answer are closed
 **Depends on**: Phase 5
-**Requirements**: CLI-05, CLI-06, OUT-04, TRUST-03 (hardening of satisfied requirements; source: `.planning/v1.0-MILESTONE-AUDIT.md` W2, W3, W4)
+**Requirements**: CLI-05, CLI-06, OUT-04, OUT-05, TRUST-03, SAFE-02, SAFE-04 (hardening of satisfied requirements; source: `.planning/v1.0-MILESTONE-AUDIT.md` W1–W4)
 **Success Criteria** (what must be TRUE):
 
   1. A help token used as a flag value (e.g. `--search help`) is treated as the value, not as a help request; only a help token in flag position prints help (W2)
   2. A configuration with no projects is rejected at startup with exit 3, so no read can report `complete: true` over zero projects (W3)
   3. The fixed server-side scope of `workitems list` (excluded states, recent iterations) and `prs list` (active only) is disclosed in help and in the JSON envelope, so an agent can tell "not in scope" from "does not exist" (W4)
+  4. A panic after a write's request was issued exits 5 (outcome unknown) with a best-effort audit record, not exit 3 (W1)
 
 **Plans**: TBD
 
