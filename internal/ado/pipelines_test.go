@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -304,4 +305,124 @@ func assertAllUnreached(t *testing.T, name string, failures []Failure, complete 
 	if complete {
 		t.Errorf("%s() Complete = %v, want false", name, complete)
 	}
+}
+
+// assertDefinitionFailure is the per-definition counterpart of
+// assertAllUnreached: exactly one failure, against the project, of the given
+// kind, whose operation names the definition that failed, and an incomplete
+// result. The per-definition tests of all three N+1 reads share it.
+func assertDefinitionFailure(t *testing.T, name string, failures []Failure, complete bool, project string, kind FailureKind, definition string) {
+	t.Helper()
+	if len(failures) != 1 {
+		t.Fatalf("%s() Failures = %+v, want exactly one entry naming %q", name, failures, definition)
+	}
+	failure := failures[0]
+	if failure.Project != project || failure.Kind != kind || !strings.Contains(failure.Operation, definition) {
+		t.Errorf("%s() Failures[0] = {Project:%q Kind:%q Operation:%q}, want project %q, kind %q and an operation naming %q",
+			name, failure.Project, failure.Kind, failure.Operation, project, kind, definition)
+	}
+	if complete {
+		t.Errorf("%s() Complete = %v, want false", name, complete)
+	}
+}
+
+// twoPipelineDefinitions answers GetDefinitions with one healthy and one broken
+// matching definition, in that order, for the per-definition failure tests.
+func twoPipelineDefinitions(_ context.Context, _ build.GetDefinitionsArgs) (*build.GetDefinitionsResponseValue, error) {
+	okID, brokenID := 17, 18
+	return &build.GetDefinitionsResponseValue{Value: []build.BuildDefinitionReference{
+		{Id: &okID, Name: strPtr("pipeline-ok")},
+		{Id: &brokenID, Name: strPtr("pipeline-broken")},
+	}}, nil
+}
+
+// Regression (gap 1): a failed per-definition build lookup used to append the
+// definition as "neverRun" and record nothing, so a rejected token or a timeout
+// read as an empty state under complete:true. The definition is now absent from
+// Items and named in Failures.
+func TestGetPipelineRunsReportsDefinitionFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantKind FailureKind
+	}{
+		{name: "auth", err: wrappedErrorValue(401, "TF400813: The user is not authorized"), wantKind: FailureAuth},
+		{name: "timeout", err: context.DeadlineExceeded, wantKind: FailureTimeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{
+				projects:  []string{"project-one"},
+				pipelines: []string{"pipeline-ok", "pipeline-broken"},
+				buildClient: &fakeBuildAPI{
+					t:                  t,
+					GetDefinitionsFunc: twoPipelineDefinitions,
+					GetBuildsFunc: func(_ context.Context, args build.GetBuildsArgs) (*build.GetBuildsResponseValue, error) {
+						if (*args.Definitions)[0] == 18 {
+							return nil, tt.err
+						}
+						buildID := 501
+						status := build.BuildStatusValues.Completed
+						return &build.GetBuildsResponseValue{Value: []build.Build{{Id: &buildID, Status: &status}}}, nil
+					},
+				},
+			}
+
+			result, err := client.GetPipelineRuns(context.Background(), nil)
+			if err != nil {
+				t.Fatalf("GetPipelineRuns() error = %v, want nil", err)
+			}
+			if len(result.Items) != 1 || result.Items[0].PipelineName != "pipeline-ok" {
+				t.Errorf("GetPipelineRuns() Items = %+v, want only pipeline-ok — a failed lookup must not render as a neverRun row", result.Items)
+			}
+			assertDefinitionFailure(t, "GetPipelineRuns", result.Failures, result.Complete, "project-one", tt.wantKind, "pipeline-broken")
+		})
+	}
+}
+
+// TestGetPipelineRunsMarksUnreachedDefinitions is D-12 inside the per-definition
+// loop: once the fetch deadline expires, the definitions not yet reached are
+// recorded as timeouts and no further GetBuilds call is issued.
+func TestGetPipelineRunsMarksUnreachedDefinitions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	calls := 0
+	client := &Client{
+		projects:  []string{"project-one"},
+		pipelines: []string{"pipeline-ok", "pipeline-broken"},
+		buildClient: &fakeBuildAPI{
+			t:                  t,
+			GetDefinitionsFunc: twoPipelineDefinitions,
+			GetBuildsFunc: func(ctx context.Context, _ build.GetBuildsArgs) (*build.GetBuildsResponseValue, error) {
+				calls++
+				if calls > 1 {
+					t.Errorf("GetBuilds call %d issued after the fetch deadline expired; want no doomed calls", calls)
+					return nil, ctx.Err()
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(5 * time.Second):
+					t.Error("fetch deadline did not expire within 5s")
+				}
+				// note: same one-build answer as TestGetPipelineRunsReportsDefinitionFailure; two uses stay inline.
+				buildID := 501
+				status := build.BuildStatusValues.Completed
+				return &build.GetBuildsResponseValue{Value: []build.Build{{Id: &buildID, Status: &status}}}, nil
+			},
+		},
+	}
+
+	result, err := client.GetPipelineRuns(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetPipelineRuns() error = %v, want nil", err)
+	}
+	if calls != 1 {
+		t.Errorf("GetBuilds calls = %d, want 1", calls)
+	}
+	if len(result.Items) != 1 || result.Items[0].PipelineName != "pipeline-ok" {
+		t.Errorf("GetPipelineRuns() Items = %+v, want only pipeline-ok", result.Items)
+	}
+	assertDefinitionFailure(t, "GetPipelineRuns", result.Failures, result.Complete, "project-one", FailureTimeout, "pipeline-broken")
 }
