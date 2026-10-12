@@ -181,6 +181,14 @@ func (c *Config) Validate() error {
 	if len(c.Projects) == 0 {
 		return &ConfigError{Field: "projects", Message: "at least one project is required"}
 	}
+	// D-11: a blank name would reach the read as a project with no name. Names
+	// are validated, never trimmed or rewritten, so what the operator configured
+	// is what the read uses.
+	for _, p := range c.Projects {
+		if strings.TrimSpace(p) == "" {
+			return &ConfigError{Field: "projects", Message: "project names must not be blank"}
+		}
+	}
 	// A fan-out budget at or below the poll interval cancels itself exactly as the
 	// next tick fires, producing a view that fails permanently and looks like an outage.
 	if c.FetchTimeout <= c.PollInterval {
