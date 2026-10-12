@@ -57,6 +57,35 @@ const (
 	emptyRepositoryCode   = "VS403403:"
 )
 
+// disabledRepositoryStatus and disabledRepositoryTypeKey identify a disabled
+// repository (D-06b). GetRepositories still enumerates disabled repositories,
+// the 2020 SDK's GitRepository carries no isDisabled field to skip them by, and
+// their branch-stats call answers 404 with typeKey GitRepositoryNotFoundException
+// (live capture, 2026-10-12: 2 Kinetic, 128 Process). The repository was listed
+// moments earlier, so "not found" here means disabled; the structured typeKey is
+// matched, never the message. The old blanket 404 rule hid these by accident.
+const (
+	disabledRepositoryStatus  = 404
+	disabledRepositoryTypeKey = "GitRepositoryNotFoundException"
+)
+
+// unreadableRepository reports whether a branch-stats error is an empty
+// repository (D-06a) or a disabled one (D-06b), neither of which is a broken
+// read. Every other error, including any 401/403, is recorded by the caller.
+func unreadableRepository(err error) bool {
+	wrapped, ok := wrappedErrorOf(err)
+	if !ok || wrapped.StatusCode == nil {
+		return false
+	}
+	switch *wrapped.StatusCode {
+	case emptyRepositoryStatus:
+		return strings.HasPrefix(err.Error(), emptyRepositoryCode)
+	case disabledRepositoryStatus:
+		return wrapped.TypeKey != nil && *wrapped.TypeKey == disabledRepositoryTypeKey
+	}
+	return false
+}
+
 // GetBranches fetches branches for every repository in the specified projects,
 // sorted by most recent commit first. When repositories is non-empty only those
 // repository names are fetched. Per-project and per-repository failures are
@@ -113,11 +142,9 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 			if err != nil {
 				// Empty repositories have no branch stats to report
 				log.Warn("Failed to get branch stats", "project", project, "repository", *repo.Name, "error", err)
-				// D-06a: an empty repository is recognised by status 400 plus the
-				// documented VS403403 code. Any other 400, a 401/403, a timeout or
-				// an error without a status is still recorded.
-				status, ok := statusCodeOf(err)
-				if !ok || status != emptyRepositoryStatus || !strings.HasPrefix(err.Error(), emptyRepositoryCode) {
+				// Empty (D-06a) and disabled (D-06b) repositories are not broken
+				// reads; anything else, including a 401/403 or a timeout, is recorded.
+				if !unreadableRepository(err) {
 					failures = appendFailure(failures, project, opGetBranchStats+" for "+*repo.Name, err)
 				}
 				continue

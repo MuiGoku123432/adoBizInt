@@ -176,25 +176,34 @@ func classifyFailure(err error) FailureKind {
 	return FailureOther
 }
 
-// statusCodeOf extracts the HTTP status from an SDK error.
+// wrappedErrorOf extracts the SDK's WrappedError from err.
 //
 // azuredevops.Client.UnwrapError returns a *WrappedError on two paths
 // (client.go:366, :403) and a bare WrappedError value on two others
 // (client.go:389, :411). WrappedError.Error() has a value receiver, so both
 // forms satisfy error and errors.As will not convert between them — both
 // targets must be tried.
-func statusCodeOf(err error) (int, bool) {
+func wrappedErrorOf(err error) (azuredevops.WrappedError, bool) {
 	var value azuredevops.WrappedError
-	if errors.As(err, &value) && value.StatusCode != nil {
-		return *value.StatusCode, true
+	if errors.As(err, &value) {
+		return value, true
 	}
 
 	var pointer *azuredevops.WrappedError
-	if errors.As(err, &pointer) && pointer != nil && pointer.StatusCode != nil {
-		return *pointer.StatusCode, true
+	if errors.As(err, &pointer) && pointer != nil {
+		return *pointer, true
 	}
 
-	return 0, false
+	return azuredevops.WrappedError{}, false
+}
+
+// statusCodeOf extracts the HTTP status from an SDK error.
+func statusCodeOf(err error) (int, bool) {
+	wrapped, ok := wrappedErrorOf(err)
+	if !ok || wrapped.StatusCode == nil {
+		return 0, false
+	}
+	return *wrapped.StatusCode, true
 }
 
 // StatusCodeOf is the exported wrapper over statusCodeOf. The CLI's write exit
