@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -495,5 +496,112 @@ func TestWriteRecoverPrecedesMutate(t *testing.T) {
 		return ok && code.Name == "exitOutcomeUnknown"
 	}) {
 		t.Errorf("the deferred recover must call handlePanic(..., exitOutcomeUnknown)")
+	}
+}
+
+// panicOnFirstWrite panics on its first Write and forwards every later Write to
+// out. Swapped in as stdoutWriter, it panics while the write report is being
+// emitted, after the normal audit append, and still captures the crash record.
+type panicOnFirstWrite struct {
+	out     *bytes.Buffer
+	tripped bool
+}
+
+func (w *panicOnFirstWrite) Write(p []byte) (int, error) {
+	if !w.tripped {
+		w.tripped = true
+		panic("deliberate panic emitting the write report")
+	}
+	return w.out.Write(p)
+}
+
+// TestPanicAfterWriteIssuedIsAudited pins D-13 and SAFE-02: every write that may
+// have landed leaves a trace, even when the process panics, and never two. The
+// best-effort record carries the write's own fields only, never the panic text,
+// so the five-key D-15 shape and the T-04-01 no-argv rule hold.
+func TestPanicAfterWriteIssuedIsAudited(t *testing.T) {
+	panicMutate := func(context.Context, string, int, string) error { panic("deliberate panic mid-write") }
+
+	cases := []struct {
+		name        string
+		ctx         context.Context
+		failSink    bool
+		mutate      func(context.Context, string, int, string) error
+		panicStdout bool
+		wantLines   int
+		wantOutcome string
+		wantStderr  string
+	}{
+		{name: "mutate panics", ctx: context.Background(), mutate: panicMutate, wantLines: 1, wantOutcome: outcomeUnknown},
+		{name: "append fails, still unknown", ctx: context.Background(), failSink: true, mutate: panicMutate, wantStderr: "Write may have landed but was NOT recorded"},
+		{
+			name: "panic after the normal append writes no second record", ctx: context.Background(),
+			mutate:      func(context.Context, string, int, string) error { return nil },
+			panicStdout: true, wantLines: 1, wantOutcome: outcomeExecuted,
+		},
+		{name: "cancelled parent still unknown", ctx: cancelledParent(), mutate: panicMutate, wantLines: 1, wantOutcome: outcomeUnknown},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withConfiguredProjects(t, "P")
+			sink := tempAuditSink(t)
+			if tc.failSink {
+				failingAuditSink(t)
+			}
+			stdout, stderr := captureOutput(t)
+			if tc.panicStdout {
+				prev := stdoutWriter
+				stdoutWriter = &panicOnFirstWrite{out: stdout}
+				t.Cleanup(func() { stdoutWriter = prev })
+			}
+
+			c := preReadFake(t, "Active")
+			c.UpdateWorkItemStateFunc = tc.mutate
+
+			code := guard(func() int { return dispatch(tc.ctx, c, setStateArgs("--confirm")) })
+			if code != exitOutcomeUnknown {
+				t.Fatalf("exit = %d, want %d (stderr: %q)", code, exitOutcomeUnknown, stderr.String())
+			}
+
+			var env crashEnvelope
+			if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+				t.Fatalf("stdout %q is not one crash document: %v", stdout.String(), err)
+			}
+			if top := decodeCrash(t, stdout.Bytes()); len(top) != 1 || env.Error.Kind != crashKindPanic {
+				t.Errorf("stdout = %s, want exactly one panic crash record", stdout.String())
+			}
+			if tc.wantStderr != "" && !strings.Contains(stderr.String(), tc.wantStderr) {
+				t.Errorf("stderr = %q, want it to contain %q", stderr.String(), tc.wantStderr)
+			}
+			if tc.failSink {
+				return
+			}
+
+			lines := assertAuditLineCount(t, sink, tc.wantLines)
+			if strings.Contains(lines[0], "deliberate panic") {
+				t.Errorf("audit record carries the panic text: %s", lines[0])
+			}
+			got := decodeAuditRecord(t, lines[0])
+			keys := make([]string, 0, len(got))
+			for k := range got {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			if want := []string{"changes", "command", "outcome", "target", "timestamp"}; !reflect.DeepEqual(keys, want) {
+				t.Errorf("audit keys = %v, want %v", keys, want)
+			}
+			if got["outcome"] != tc.wantOutcome || got["command"] != "workitems set-state" {
+				t.Errorf("outcome = %v, command = %v; want %q, %q", got["outcome"], got["command"], tc.wantOutcome, "workitems set-state")
+			}
+			target, _ := got["target"].(map[string]any)
+			if target["id"] != float64(4821) || target["project"] != "P" {
+				t.Errorf("target = %v, want id 4821 in project P", got["target"])
+			}
+			wantChanges := []any{map[string]any{"field": "System.State", "from": "Active", "to": "Closed"}}
+			if !reflect.DeepEqual(got["changes"], wantChanges) {
+				t.Errorf("changes = %v, want %v", got["changes"], wantChanges)
+			}
+		})
 	}
 }
