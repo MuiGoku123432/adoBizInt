@@ -681,6 +681,169 @@ func TestRenderNotInvokedUnderJSON(t *testing.T) {
 	}
 }
 
+// workItemScope is the scope workitems list discloses (06-03), shared by the
+// human-mode and --json scope tests below.
+func workItemScope() *ado.Scope {
+	return &ado.Scope{ExcludedStates: []string{"Done", "Closed", "Removed"}, Iterations: "recent"}
+}
+
+// TestScopeLineOnStderrInHumanMode pins D-04 and closes audit W4 for a human: a
+// scoped read writes exactly one scope line to stderr, never to stdout, and
+// writes it even when no rows came back — an empty result under an undisclosed
+// filter is the case W4 exists for. A read with a null scope writes nothing.
+func TestScopeLineOnStderrInHumanMode(t *testing.T) {
+	cases := []struct {
+		name       string
+		args       string
+		client     func(t *testing.T) *fakeReadClient
+		wantStdout bool
+		wantStderr string
+	}{
+		{
+			name: "workitems list, zero rows",
+			args: "workitems list",
+			client: func(t *testing.T) *fakeReadClient {
+				f := allReadsFake(t)
+				f.GetWorkItemsFunc = func(context.Context, []string) (ado.Result[ado.WorkItem], error) {
+					r := emptyResult[ado.WorkItem]()
+					r.Scope = workItemScope()
+					return r, nil
+				}
+				return f
+			},
+			wantStderr: "scope: excludes Done/Closed/Removed; recent iterations only\n",
+		},
+		{
+			name: "dashboard counts",
+			args: "dashboard counts",
+			client: func(t *testing.T) *fakeReadClient {
+				f := allReadsFake(t)
+				f.GetDashboardCountsFunc = func(context.Context, []string) (ado.Result[ado.DashboardCounts], error) {
+					r := emptyResult[ado.DashboardCounts]()
+					r.Items = []ado.DashboardCounts{{WorkItems: 1, PRs: 2, Pipelines: 3}}
+					s := workItemScope()
+					s.PRStatus = "active"
+					r.Scope = s
+					return r, nil
+				}
+				return f
+			},
+			wantStdout: true,
+			wantStderr: "scope: excludes Done/Closed/Removed; recent iterations only; active pull requests only\n",
+		},
+		{
+			name: "prs list, zero rows",
+			args: "prs list",
+			client: func(t *testing.T) *fakeReadClient {
+				f := allReadsFake(t)
+				f.GetPullRequestsFunc = func(context.Context, []string) (ado.Result[ado.PullRequest], error) {
+					r := emptyResult[ado.PullRequest]()
+					r.Scope = &ado.Scope{PRStatus: "active"}
+					return r, nil
+				}
+				return f
+			},
+			wantStderr: "scope: active pull requests only\n",
+		},
+		{
+			name: "releases approvals, zero rows",
+			args: "releases approvals",
+			client: func(t *testing.T) *fakeReadClient {
+				f := allReadsFake(t)
+				f.GetPendingApprovalsFunc = func(context.Context, []string) (ado.Result[ado.ReleaseApproval], error) {
+					r := emptyResult[ado.ReleaseApproval]()
+					r.Scope = &ado.Scope{ApprovalStatus: "pending"}
+					return r, nil
+				}
+				return f
+			},
+			wantStderr: "scope: pending approvals only\n",
+		},
+		{
+			name:   "branches list, null scope",
+			args:   "branches list",
+			client: allReadsFake,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+
+			if code := dispatch(context.Background(), tc.client(t), strings.Split(tc.args, " ")); code != exitOK {
+				t.Fatalf("dispatch(%q) = %d, want %d", tc.args, code, exitOK)
+			}
+			if got := stderr.String(); got != tc.wantStderr {
+				t.Errorf("stderr = %q, want %q", got, tc.wantStderr)
+			}
+			if strings.Contains(stdout.String(), "scope:") {
+				t.Errorf("stdout %q carries the scope line; it belongs on stderr", stdout.String())
+			}
+			if !tc.wantStdout && stdout.Len() != 0 {
+				t.Errorf("stdout = %q, want nothing for a zero-row read", stdout.String())
+			}
+		})
+	}
+
+	t.Run("scope precedes failures", func(t *testing.T) {
+		stdout, stderr := captureOutput(t)
+
+		f := allReadsFake(t)
+		f.GetPullRequestsFunc = func(context.Context, []string) (ado.Result[ado.PullRequest], error) {
+			r := emptyResult[ado.PullRequest]()
+			r.Scope = &ado.Scope{PRStatus: "active"}
+			r.Failures = []ado.Failure{{Project: "alpha", Operation: "get pull requests", Kind: ado.FailureTimeout}}
+			r.Complete = false
+			return r, nil
+		}
+
+		if code := dispatch(context.Background(), f, []string{"prs", "list"}); code != exitPartial {
+			t.Fatalf("dispatch(prs list) = %d, want %d", code, exitPartial)
+		}
+		lines := strings.Split(stderr.String(), "\n")
+		if len(lines) < 2 || lines[0] != "scope: active pull requests only" || !strings.HasPrefix(lines[1], "warning: alpha:") {
+			t.Errorf("stderr = %q, want the scope line first and the alpha warning second", stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout = %q, want nothing", stdout.String())
+		}
+	})
+}
+
+// TestScopeRidesInJSONEnvelopeOnly pins the --json half of D-04 (audit W4):
+// nothing is written to stderr for scope, stdout holds one document, and the
+// envelope's scope object is exactly what the read returned (Phase 3 D-11).
+func TestScopeRidesInJSONEnvelopeOnly(t *testing.T) {
+	stdout, stderr := captureOutput(t)
+
+	f := allReadsFake(t)
+	f.GetWorkItemsFunc = func(context.Context, []string) (ado.Result[ado.WorkItem], error) {
+		r := emptyResult[ado.WorkItem]()
+		r.Scope = workItemScope()
+		return r, nil
+	}
+
+	if code := dispatch(context.Background(), f, []string{"workitems", "list", "--json"}); code != exitOK {
+		t.Fatalf("dispatch(workitems list --json) = %d, want %d", code, exitOK)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("--json wrote %q to stderr, want nothing", stderr.String())
+	}
+	if bytes.Count(stdout.Bytes(), []byte("\n")) != 1 || !bytes.HasSuffix(stdout.Bytes(), []byte("\n")) {
+		t.Fatalf("stdout = %q, want exactly one newline-terminated document", stdout.String())
+	}
+
+	var env struct {
+		Scope json.RawMessage `json:"scope"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if want := `{"excluded_states":["Done","Closed","Removed"],"iterations":"recent"}`; string(env.Scope) != want {
+		t.Errorf("scope = %s, want %s", env.Scope, want)
+	}
+}
+
 func nonEmptyLines(s string) []string {
 	var out []string
 	for _, line := range strings.Split(s, "\n") {
