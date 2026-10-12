@@ -426,3 +426,101 @@ func TestGetPipelineRunsMarksUnreachedDefinitions(t *testing.T) {
 	}
 	assertDefinitionFailure(t, "GetPipelineRuns", result.Failures, result.Complete, "project-one", FailureTimeout, "pipeline-broken")
 }
+
+// Regression (gap-1 class): a failed per-definition detail lookup used to be
+// dropped behind `err == nil && fullDef != nil`, so the definition came back
+// with an empty repository_id/default_branch under complete:true and the
+// trigger modal later failed with an unrelated branch-fetch error. The
+// definition is now absent from Items and named in Failures.
+func TestGetPipelineDefinitionsReportsDetailFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantKind FailureKind
+	}{
+		{name: "auth", err: wrappedErrorValue(401, "TF400813: The user is not authorized"), wantKind: FailureAuth},
+		{name: "timeout", err: context.DeadlineExceeded, wantKind: FailureTimeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{
+				projects:  []string{"project-one"},
+				pipelines: []string{"pipeline-ok", "pipeline-broken"},
+				buildClient: &fakeBuildAPI{
+					t:                  t,
+					GetDefinitionsFunc: twoPipelineDefinitions,
+					GetDefinitionFunc: func(_ context.Context, args build.GetDefinitionArgs) (*build.BuildDefinition, error) {
+						if *args.DefinitionId == 18 {
+							return nil, tt.err
+						}
+						return &build.BuildDefinition{Repository: &build.BuildRepository{
+							Id:            strPtr("repo-guid-17"),
+							DefaultBranch: strPtr("refs/heads/main"),
+						}}, nil
+					},
+				},
+			}
+
+			result, err := client.GetPipelineDefinitions(context.Background(), nil)
+			if err != nil {
+				t.Fatalf("GetPipelineDefinitions() error = %v, want nil", err)
+			}
+			if len(result.Items) != 1 || result.Items[0].Name != "pipeline-ok" {
+				t.Fatalf("GetPipelineDefinitions() Items = %+v, want only pipeline-ok — a failed detail lookup must not yield a row with a blank repository_id", result.Items)
+			}
+			if got := result.Items[0]; got.RepositoryID != "repo-guid-17" || got.DefaultBranch != "main" {
+				t.Errorf("GetPipelineDefinitions()[0] RepositoryID/DefaultBranch = %q/%q, want %q/%q", got.RepositoryID, got.DefaultBranch, "repo-guid-17", "main")
+			}
+			assertDefinitionFailure(t, "GetPipelineDefinitions", result.Failures, result.Complete, "project-one", tt.wantKind, "pipeline-broken")
+		})
+	}
+}
+
+// TestGetPipelineDefinitionsMarksUnreachedDefinitions is D-12 inside the
+// per-definition detail loop: once the fetch deadline expires, the definitions
+// not yet reached are recorded as timeouts and no further GetDefinition call is
+// issued.
+func TestGetPipelineDefinitionsMarksUnreachedDefinitions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	calls := 0
+	client := &Client{
+		projects:  []string{"project-one"},
+		pipelines: []string{"pipeline-ok", "pipeline-broken"},
+		buildClient: &fakeBuildAPI{
+			t:                  t,
+			GetDefinitionsFunc: twoPipelineDefinitions,
+			GetDefinitionFunc: func(ctx context.Context, _ build.GetDefinitionArgs) (*build.BuildDefinition, error) {
+				calls++
+				if calls > 1 {
+					t.Errorf("GetDefinition call %d issued after the fetch deadline expired; want no doomed calls", calls)
+					return nil, ctx.Err()
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(5 * time.Second):
+					t.Error("fetch deadline did not expire within 5s")
+				}
+				// note: same detail answer as TestGetPipelineDefinitionsReportsDetailFailure; two uses stay inline.
+				return &build.BuildDefinition{Repository: &build.BuildRepository{
+					Id:            strPtr("repo-guid-17"),
+					DefaultBranch: strPtr("refs/heads/main"),
+				}}, nil
+			},
+		},
+	}
+
+	result, err := client.GetPipelineDefinitions(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetPipelineDefinitions() error = %v, want nil", err)
+	}
+	if calls != 1 {
+		t.Errorf("GetDefinition calls = %d, want 1", calls)
+	}
+	if len(result.Items) != 1 || result.Items[0].Name != "pipeline-ok" {
+		t.Errorf("GetPipelineDefinitions() Items = %+v, want only pipeline-ok", result.Items)
+	}
+	assertDefinitionFailure(t, "GetPipelineDefinitions", result.Failures, result.Complete, "project-one", FailureTimeout, "pipeline-broken")
+}
