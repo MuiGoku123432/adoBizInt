@@ -311,7 +311,12 @@ func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) (Re
 	}
 
 	log.Info("Pending approvals fetched", "total_count", len(allApprovals), "failure_count", len(failures))
-	return newResult(allApprovals, failures), nil
+	result := newResult(allApprovals, failures)
+	// D-15: the request's StatusFilter already restricts the answer to pending
+	// approvals server-side, so D-02 makes the scope non-null; the value is the
+	// same constant the request sends.
+	result.Scope = &Scope{ApprovalStatus: string(release.ApprovalStatusValues.Pending)}
+	return result, nil
 }
 
 // ApproveRelease approves a pending approval with optional comment
