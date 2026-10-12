@@ -65,6 +65,26 @@ var verbSummaries = map[string]string{
 	"pipelines queue":     "queue a pipeline run on --branch; previews by default, queues only with --confirm",
 }
 
+// verbScopes is the help-side counterpart of the scope the envelope carries
+// (D-01, D-06): a read with a built-in server-side filter states it in its own
+// --help, so an agent reading help learns what the read leaves out. Only reads
+// with such a filter appear (D-02, D-15, D-16). The window is 30 days because
+// that is GetRecentIterations' cutoff in client.go (RESEARCH Pitfall 7).
+var verbScopes = map[string]string{
+	"workitems list": "Scope: Azure DevOps returns only work items whose state is not Done, Closed or Removed, " +
+		"in iterations that start or finish within the last 30 days; a project with no such dated iteration " +
+		"is not limited by iteration. --hide-done additionally drops Resolved items. " +
+		"Under --json the envelope's scope object states the same.",
+	"dashboard counts": "Scope: work items are counted only when their state is not Done, Closed or Removed, " +
+		"in iterations that start or finish within the last 30 days (a project with no such dated iteration " +
+		"is not limited by iteration), and only active pull requests are counted. " +
+		"Under --json the envelope's scope object states the same.",
+	"prs list": "Scope: Azure DevOps returns only active pull requests; completed and abandoned pull requests " +
+		"are not listed. Under --json the envelope's scope object states the same.",
+	"releases approvals": "Scope: Azure DevOps returns only pending approvals. " +
+		"Under --json the envelope's scope object states the same.",
+}
+
 // Usage text is a diagnostic and goes to stderr at every level, never to
 // stdout. OUT-03 makes stdout the parseable channel: a caller piping
 // `adoBizInt prs list --json` into a parser must not have to distinguish a
@@ -124,6 +144,9 @@ func usageVerb(name string, fs *flag.FlagSet) {
 	fmt.Fprintf(stderrWriter, "Usage: adoBizInt %s [flags]\n", name)
 	if summary := verbSummaries[name]; summary != "" {
 		fmt.Fprintf(stderrWriter, "\n%s\n", summary)
+	}
+	if scope := verbScopes[name]; scope != "" {
+		fmt.Fprintf(stderrWriter, "\n%s\n", scope)
 	}
 	if writeSupportByCommand[name].confirm {
 		fmt.Fprintf(stderrWriter, "\nThis verb previews by default: it reports the change it would make,\n")

@@ -226,7 +226,7 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 	}
 	if sup.hideDone {
 		fs.BoolVar(&ff.hideDone, "hide-done", false,
-			"drop items in a done or resolved state (off by default)")
+			"also drop Resolved items client-side; Done, Closed and Removed are always excluded by Azure DevOps (off by default)")
 	}
 	if sup.hideTasks {
 		fs.BoolVar(&ff.hideTasks, "hide-tasks", false,
