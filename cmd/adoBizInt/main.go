@@ -91,7 +91,7 @@ func run() int {
 	if err := cfg.Validate(); err != nil {
 		log.Error("Config validation failed", "error", err)
 		fmt.Fprintf(stderrWriter, "Invalid config: %v\n", err)
-		fmt.Fprintf(stderrWriter, "\nPlease set ADO_PAT and ADO_ORG_URL environment variables\n")
+		fmt.Fprintf(stderrWriter, "\nPlease set ADO_PAT, ADO_ORG_URL and ADO_PROJECTS environment variables\n")
 		fmt.Fprintf(stderrWriter, "or create a config file at ~/.config/adoBizInt/config.yaml\n")
 		return exitUnknown
 	}

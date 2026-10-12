@@ -175,6 +175,12 @@ func (c *Config) Validate() error {
 	if c.OrgURL == "" {
 		return &ConfigError{Field: "org_url", Message: "Organization URL is required"}
 	}
+	// D-10: an empty list makes every read fan out over nothing and report
+	// complete:true. This covers the CLI and the TUI alike, because run()
+	// validates before both.
+	if len(c.Projects) == 0 {
+		return &ConfigError{Field: "projects", Message: "at least one project is required"}
+	}
 	// A fan-out budget at or below the poll interval cancels itself exactly as the
 	// next tick fires, producing a view that fails permanently and looks like an outage.
 	if c.FetchTimeout <= c.PollInterval {
