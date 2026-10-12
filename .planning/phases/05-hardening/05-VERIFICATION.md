@@ -1,9 +1,10 @@
 ---
 phase: 05-hardening
 verified: 2026-09-30T18:30:54Z
-status: human_needed
+status: passed
 score: 5/6 roadmap success criteria verified in code (SC5 awaits an observed GitHub Actions run); 38/42 plan truths verified, 4 backstop truths routed to human
 covered_files:
+
   - .github/workflows/ci.yml
   - .planning/REQUIREMENTS.md
   - .planning/phases/05-hardening/05-01-SUMMARY.md
@@ -51,10 +52,12 @@ covered_files:
   - internal/ui/workitems/detail_test.go
   - internal/ui/workitems/workitems.go
   - internal/ui/workitems/workitems_test.go
+
 covered_digest: "v1:sha256:0cf70660f79e99eedd528ff5978be74fd6622707856c3376858c1bd4ed7c2720"
 behavior_unverified: 0
 overrides_applied: 0
 deferred:
+
   - truth: "audit.jsonl is created 0644 inside the config directory (cmd/adoBizInt/audit.go:77,80)"
     addressed_in: "Known deferral T-05-26 (not a later roadmap phase)"
     evidence: "05-06 plan truth: file mode deferred; parent directory is now 0700 so other local users cannot traverse to it"
@@ -65,6 +68,7 @@ deferred:
     addressed_in: "Known deferral (review info, out of fix scope)"
     evidence: "05-REVIEW-FIX.md: Info is out of scope"
 human_verification:
+
   - test: "PHASE-BLOCKING (05-03 T2). Push dev to origin and open the Actions tab for the pushed HEAD commit."
     expected: "The `ci` run is green with build, vet, `go test -race` and gofmt steps all passing. Optional: a throwaway branch with an unformatted .go file goes red at the gofmt step and names the file. Also confirm by eye that the run used no repository secret (D-17 prohibition has no committed test)."
     why_human: "GitHub Actions is an external service; dev is 220 commits ahead of origin/dev and has not been pushed."
@@ -213,21 +217,25 @@ I found no `TBD`/`FIXME`/`XXX`/`TODO`/`HACK` markers in any of the 34 non-planni
 ### Human Verification Required
 
 #### 1. PHASE-BLOCKING: green GitHub Actions `ci` run (05-03 T2)
+
 **Test:** Push `dev` to origin and find the `ci` run for HEAD in the Actions tab.
 **Expected:** The run is green, with build, vet, race tests and gofmt all passing. While you are there, confirm the run used no secrets. Optional: a throwaway unformatted branch goes red at gofmt.
 **Why human:** GitHub is an external service, and the branch has not been pushed.
 
 #### 2. PHASE-BLOCKING: live `@project` before/after comparison (05-05 T2)
+
 **Test:** Build a binary at the 05-05 base commit and one at HEAD. For one configured project, compare `workitems list --json` item counts and `dashboard counts --json` work_items counts between them.
 **Expected:** The counts are equal and both envelopes report `complete: true`.
 **Why human:** This needs a real PAT and the live org.
 
 #### 3. Real TUI attachment download by ID (05-01 T3)
+
 **Test:** Download a known attachment from the work-item detail modal.
 **Expected:** The file is byte-identical to the one from the web UI and sits at `Downloaded to "<path>"`. The directory is 0700 and the file 0600. A repeat download gets ` (1)`, and esc cancels a slow download.
 **Why human:** This needs a live SDK route and a check of the visual TUI.
 
 #### 4. Live set-state dry run and `--confirm` with the project now in the update route (CR-01 fix)
+
 **Test:** Run a dry run and then `--confirm` on an item in configured project P. Then run a dry run on an item from another project.
 **Expected:** The first two succeed, with the audit record naming P. The cross-project item is refused with exit 3 and no audit record. The configured casing must match ADO's `System.TeamProject` exactly.
 **Why human:** The PATCH route with a project and the live `System.TeamProject` value have only been exercised against fakes.
@@ -235,6 +243,7 @@ I found no `TBD`/`FIXME`/`XXX`/`TODO`/`HACK` markers in any of the 34 non-planni
 ### Gaps Summary
 
 There are no code gaps. I checked all six HARD requirements against the code on HEAD rather than trusting the summaries. Each is backed by passing behavioral tests, and HARD-01, HARD-03 and HARD-04 are also backed by go/ast structural tests. I checked each review fix directly:
+
 - **CR-01:** set-state is now scoped to `--project`, in both the pre-read refusal and the PATCH route.
 - **WR-01 / WR-02:** downloads never clobber an existing file, and files are owner-only.
 - **WR-03:** closing the modal cancels a download.

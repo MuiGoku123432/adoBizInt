@@ -25,12 +25,12 @@ note: "Live run 2026-10-12: workitems list --json identical ID sets before (191b
 ### 3. Real TUI attachment download by ID (05-01 T3)
 expected: Downloading a real attachment writes a file byte-identical to the ADO web UI copy under ~/.config/adoBizInt/attachments (dir 0700, file 0600); a repeat download gets " (1)"; esc cancels a slow download.
 result: skipped
-reason: "Deferred by user to the v2 milestone's first smoke test. Interactive TUI download not run; download path covered by attachments_test.go and detail_test.go (WR-01..WR-04 fixes)."
+reason: "Deferred follow-up: Record as deferred, close now. Deferred to the v2 milestone's first smoke test. Interactive TUI download not run; download path covered by attachments_test.go and detail_test.go (WR-01..WR-04 fixes)."
 
 ### 4. Live set-state with project in the update route (CR-01 fix)
 expected: `workitems set-state` dry run and one --confirm against a work item in a configured project succeed; a work item from another project is refused with exit 3 and no audit record. Note the project match is case-sensitive against System.TeamProject.
 result: skipped
-reason: "Partially verified live 2026-10-12: dry run previewed Active->Resolved with executed:false (exit 0), same-state dry run exited 4, Process item with --project Kinetic refused with exit 3, audit.jsonl unchanged. The real --confirm write was deferred by user to the v2 milestone's first smoke test."
+reason: "Deferred follow-up: Record as deferred, close now. Partially verified live 2026-10-12: dry run previewed Active->Resolved with executed:false (exit 0), same-state dry run exited 4, Process item with --project Kinetic refused with exit 3, audit.jsonl unchanged. The real --confirm write was deferred by user to the v2 milestone's first smoke test."
 
 ## Summary
 
@@ -40,5 +40,14 @@ issues: 0
 pending: 0
 skipped: 2
 blocked: 0
+
+## Deferred Follow-Ups
+
+- test: 3
+  idea: "Record as deferred, close now — run a real TUI attachment download in the v2 milestone's first smoke test"
+  deferred_at: 2026-10-12
+- test: 4
+  idea: "Record as deferred, close now — run one live set-state --confirm (project in PATCH route) in the v2 milestone's first smoke test"
+  deferred_at: 2026-10-12
 
 ## Gaps
