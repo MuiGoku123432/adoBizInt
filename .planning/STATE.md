@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 06
 current_phase_name: core-value-cleanup
 status: executing
-stopped_at: Completed 06-01-help-token-position-PLAN.md
-last_updated: "2026-10-12T21:45:32.687Z"
+stopped_at: Completed 06-02-reject-empty-projects-PLAN.md
+last_updated: "2026-10-12T21:49:12.234Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 06 execution started
-state_head: 8540569753052837d797253310f35df306fb68f1
+state_head: b7fabaf27b68c0091a81f3cd364f7bebccef7602
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 33
-  completed_plans: 29
+  completed_plans: 30
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 06 (core-value-cleanup) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Next: Phase 2 re-verification (orchestrator); optional live `branches list --json` check at /gsd-verify-work
 Last activity: 2026-10-12 — Phase 06 execution started
@@ -91,6 +91,7 @@ Progress: [████████░░] 75%
 | Phase 02 P06 | 5 min | 3 tasks | 4 files |
 | Phase 02 P07 | 3min | 2 tasks | 4 files |
 | Phase 06 P01 | 3min | 2 tasks | 5 files |
+| Phase 06 P02 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 02]: 02-07: GetWorkItems records a failed iteration lookup as opGetWorkItemsIterations ('get work item iterations') and keeps the over-inclusive items (T-02-05, D-02, D-03)
 - [Phase 06]: 06-01: verb help decided by stdlib parse over a value-inert FlagSet probe; a help token as a flag value is the value (D-07/D-08/D-09)
 - [Phase 06]: 06-01: read verbs refuse stray positionals with exit 3 before any read (D-17)
+- [Phase 06]: 06-02: Validate checks projects after pat/org_url: empty list rejected (D-10), then any TrimSpace-blank entry (D-11); names are never trimmed or rewritten
+- [Phase 06]: 06-02: run() ordering (Validate before dispatch and ui.NewModel, returning exitUnknown) is pinned by go/ast in TestValidateGuardsCLIAndTUI
 
 ### Roadmap Evolution
 
@@ -232,6 +235,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-10-12T21:45:32.605Z
-Stopped at: Completed 06-01-help-token-position-PLAN.md
+Last session: 2026-10-12T21:49:12.149Z
+Stopped at: Completed 06-02-reject-empty-projects-PLAN.md
 Resume file: None
