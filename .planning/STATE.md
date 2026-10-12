@@ -174,6 +174,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 02]: 02-07: D-06a implemented - GetBranches suppresses a branch-stats error only on status 400 AND message prefix VS403403:; assumption A4 (404) retired, everything else recorded
 - [Phase 02]: 02-07: GetWorkItems records a failed iteration lookup as opGetWorkItemsIterations ('get work item iterations') and keeps the over-inclusive items (T-02-05, D-02, D-03)
 
+### Roadmap Evolution
+
+- Phase 6 added (2026-10-12): Core-value cleanup — close v1.0 audit warnings W2, W3, W4 before completing the milestone (user decision)
+
 ### Pending Todos
 
 - **[Phase 4 planning] Acceptance criteria style.** Three incidents in Phase 3 where a
