@@ -85,10 +85,12 @@ Phase 4 review findings still open on HEAD (`04-REVIEW.md`):
 
 Follow-ups found during Phase 5 and the 2026-10-12 live smoke test:
 
-- `branches list` always exits 1: five empty repositories return `VS403403: Cannot find any branches`, which Phase 2's empty-repository rule (HTTP 404 only) does not suppress.
+- ~~`branches list` always exits 1 on empty repositories~~ — **closed 2026-10-12** by 02-07 (D-06a, `a40606a`) and D-06b (`f73cfa4`); live run exits 0, `complete: true`.
 - `audit.jsonl` and `priorities.yaml` are created 0644, and the audit sink can create the config dir 0755 if `logging.Init` fails (T-05-26, IN-07).
 - `--project P,P` duplicates pass the allow-list and both copies reach the read.
 - `go.mod` still marks `google/uuid` as `// indirect` (IN-01); CI `persist-credentials` default (IN-02).
 - `~/.config/adoBizInt/adoBizInt.log` is never rotated (426 MB on 2026-10-12).
 - TUI `Error:` lines render raw server/SDK error text (`internal/ui/workitems/detail.go:118`).
 - Deferred live checks for the next milestone's first smoke test: one TUI attachment download, one `set-state --confirm` with the project in the PATCH route, and the Phase 1 eager-identity failure/recovery path.
+
+- **From the v1.0 milestone audit (2026-10-12), core-value warnings:** W2 help tokens inside flag values (`--search help`) exit 0 with empty stdout on reads; W3 an empty `projects` list passes validation and reads report `complete: true`; W4 `workitems list` silently excludes Done/Closed/Removed and older iterations. Also W1 panic after a sent write exits 3 with no audit record. Full list in `.planning/v1.0-MILESTONE-AUDIT.md`.
