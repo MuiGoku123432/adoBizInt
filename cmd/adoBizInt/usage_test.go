@@ -439,3 +439,57 @@ func TestRootUsageDocumentsTheWriteExitCodes(t *testing.T) {
 		}
 	}
 }
+
+// TestScopedVerbHelpStatesScope pins D-06 and D-15: each read with a fixed
+// server-side filter states it in its own --help, in the same terms as the
+// envelope's scope object, and the recency window is the 30 days client.go
+// actually uses (RESEARCH Pitfall 7). D-16 is the other half: no unscoped read
+// and no write verb prints a Scope: paragraph.
+func TestScopedVerbHelpStatesScope(t *testing.T) {
+	scoped := map[string][]string{
+		"workitems list":     {"Scope:", "Done", "Closed", "Removed", "30 days", "not limited by iteration", "Resolved"},
+		"dashboard counts":   {"Scope:", "Done", "Closed", "Removed", "30 days", "active pull requests"},
+		"prs list":           {"Scope:", "active pull requests"},
+		"releases approvals": {"Scope:", "pending approvals"},
+	}
+
+	for _, key := range commandKeys() {
+		t.Run(key, func(t *testing.T) {
+			_, stderr := captureOutput(t)
+
+			noun, verb, _ := strings.Cut(key, " ")
+			if code, handled := handleUsage([]string{noun, verb, "--help"}); !handled || code != exitOK {
+				t.Fatalf("handleUsage(%s --help) = (%d, %t), want (%d, true)", key, code, handled, exitOK)
+			}
+
+			want, ok := scoped[key]
+			if !ok {
+				if strings.Contains(stderr.String(), "Scope:") {
+					t.Errorf("unscoped verb %q help prints a Scope: paragraph:\n%s", key, stderr.String())
+				}
+				return
+			}
+			for _, token := range want {
+				if !strings.Contains(stderr.String(), token) {
+					t.Errorf("%q help does not contain %q:\n%s", key, token, stderr.String())
+				}
+			}
+		})
+	}
+}
+
+// TestHideDoneHelp pins D-05: --hide-done's help says Done, Closed and Removed
+// are already excluded server-side and that the flag adds Resolved, so it no
+// longer implies done items appear by default.
+func TestHideDoneHelp(t *testing.T) {
+	fs, _, _, _ := newFlagSet("workitems list")
+	f := fs.Lookup("hide-done")
+	if f == nil {
+		t.Fatal("workitems list has no --hide-done flag")
+	}
+	for _, token := range []string{"Resolved", "Done", "Closed", "Removed", "always excluded by Azure DevOps", "off by default"} {
+		if !strings.Contains(f.Usage, token) {
+			t.Errorf("--hide-done usage %q does not contain %q", f.Usage, token)
+		}
+	}
+}
