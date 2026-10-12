@@ -3,8 +3,8 @@ phase: 04
 slug: guarded-writes
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
+status: validated
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-09-12
 ---
@@ -47,27 +47,31 @@ created: 2026-09-12
 
 | Task ID | Plan | Wave | Requirement | SC | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|----|-----------------|-----------|-------------------|-------------|--------|
-| 04-01-T3 | 01 | 1 | CLI-03 / SAFE-01 | SC1 | `--confirm` registered on every write verb and on no read verb (`TestConfirmRegisteredOnEveryWriteVerbAndNoReadVerb`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestConfirmRegisteredOnEveryWriteVerbAndNoReadVerb` | ✅ `cmd/adoBizInt/write_test.go:392` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-01 | SC1 | Without `--confirm`, no mutating call — mutating fake func left nil (`TestDryRunIssuesNoMutatingCall`) | unit | `go test ./cmd/adoBizInt/... -run TestDryRunIssuesNoMutatingCall` | ✅ `cmd/adoBizInt/write_test.go:95` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-01 | SC2 | Dry-run envelope reports field-level `{field, from, to}` diff (`TestDryRunEnvelopeReportsFieldLevelDiff`) | unit | `go test ./cmd/adoBizInt/... -run TestDryRunEnvelopeReportsFieldLevelDiff` | ✅ `cmd/adoBizInt/write_test.go:107` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-01 | SC2 | Failed pre-read emits no dry-run report (D-02) (`TestFailedPreReadEmitsNoDryRunReport`) | unit | `go test ./cmd/adoBizInt/... -run TestFailedPreReadEmitsNoDryRunReport` | ✅ `cmd/adoBizInt/write_test.go:139` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-01 | SC2 | An already-applied change is refused with exit 4 on BOTH the dry-run and `--confirm` paths (D-03) (`TestRefusedNoOpExitsNoOpCodeOnBothPaths`) | unit | `go test ./cmd/adoBizInt/... -run TestRefusedNoOpExitsNoOpCodeOnBothPaths` | ✅ `cmd/adoBizInt/write_test.go:177` | ✅ green |
+| 04-01-T3 | 01 | 1 | CLI-03 / SAFE-01 | SC1 | `--confirm` registered on every write verb and on no read verb (`TestConfirmRegisteredOnEveryWriteVerbAndNoReadVerb`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestConfirmRegisteredOnEveryWriteVerbAndNoReadVerb` | ✅ `cmd/adoBizInt/write_test.go:443` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-01 | SC1 | Without `--confirm`, no mutating call — mutating fake func left nil (`TestDryRunIssuesNoMutatingCall`) | unit | `go test ./cmd/adoBizInt/... -run TestDryRunIssuesNoMutatingCall` | ✅ `cmd/adoBizInt/write_test.go:98` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-01 | SC2 | Dry-run envelope reports field-level `{field, from, to}` diff (`TestDryRunEnvelopeReportsFieldLevelDiff`) | unit | `go test ./cmd/adoBizInt/... -run TestDryRunEnvelopeReportsFieldLevelDiff` | ✅ `cmd/adoBizInt/write_test.go:111` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-01 | SC2 | Failed pre-read emits no dry-run report (D-02) (`TestFailedPreReadEmitsNoDryRunReport`) | unit | `go test ./cmd/adoBizInt/... -run TestFailedPreReadEmitsNoDryRunReport` | ✅ `cmd/adoBizInt/write_test.go:144` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-01 | SC2 | An already-applied change is refused with exit 4 on BOTH the dry-run and `--confirm` paths (D-03) (`TestRefusedNoOpExitsNoOpCodeOnBothPaths`) | unit | `go test ./cmd/adoBizInt/... -run TestRefusedNoOpExitsNoOpCodeOnBothPaths` | ✅ `cmd/adoBizInt/write_test.go:224` | ✅ green |
 | 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Executed write appends exactly one audit record with the D-15 field set (`TestExecutedWriteAppendsAuditRecord`) | unit | `go test ./cmd/adoBizInt/... -run TestExecutedWriteAppendsAuditRecord` | ✅ `cmd/adoBizInt/audit_test.go:61` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Audit record omits `argv` / `actor` / credential fields (`TestAuditRecordOmitsArgvAndCredentialFields`) | unit | `go test ./cmd/adoBizInt/... -run TestAuditRecordOmitsArgvAndCredentialFields` | ✅ `cmd/adoBizInt/audit_test.go:102` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Unwritable audit sink prevents the mutation (D-13 ordering) (`TestUnwritableAuditSinkPreventsMutation`) | unit | `go test ./cmd/adoBizInt/... -run TestUnwritableAuditSinkPreventsMutation` | ✅ `cmd/adoBizInt/audit_test.go:135` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Dry run and refused no-op append no audit record (D-14) (`TestDryRunAndNoOpAppendNoAuditRecord`) | unit | `go test ./cmd/adoBizInt/... -run TestDryRunAndNoOpAppendNoAuditRecord` | ✅ `cmd/adoBizInt/audit_test.go:172` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-02 / SAFE-04 | SC3 | Outcome-unknown write IS audited (D-16) (`TestOutcomeUnknownWriteIsAudited`) | unit | `go test ./cmd/adoBizInt/... -run TestOutcomeUnknownWriteIsAudited` | ✅ `cmd/adoBizInt/audit_test.go:197` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-04 | SC5 | success / failed / unknown produce three distinct exit codes (`TestWriteOutcomeClassification`) | unit | `go test ./cmd/adoBizInt/... -run TestWriteOutcomeClassification` | ✅ `cmd/adoBizInt/write_test.go:229` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-04 | SC5 | Mid-write SIGINT → unknown, not exit 3 (D-22) (`TestInterruptedWriteReportsOutcomeUnknownNotNothingRan`) | unit | `go test ./cmd/adoBizInt/... -run TestInterruptedWriteReportsOutcomeUnknownNotNothingRan` | ✅ `cmd/adoBizInt/write_test.go:287` | ✅ green |
-| 04-01-T3 | 01 | 1 | SAFE-04 | SC5 | All exit code constants pairwise distinct (`TestExitCodesArePairwiseDistinct`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestExitCodesArePairwiseDistinct` | ✅ `cmd/adoBizInt/write_test.go:328` | ✅ green |
-| 04-01-T3 | 01 | 1 | CLI-03 | SC1 | Usage errors — missing/duplicate target, zero or two `--project`, missing `--state` — exit 3 with no client call (`TestWriteParseErrorsExitUnknown`) | unit | `go test ./cmd/adoBizInt/... -run TestWriteParseErrorsExitUnknown` | ✅ `cmd/adoBizInt/write_test.go:356` | ✅ green |
-| 04-02-T1 | 02 | 2 | SAFE-03 | SC4 | Nil effort pointers produce no patch op (`TestUpdateWorkItemStateWithEffortOmitsNilFields`) | unit | `go test ./internal/ado/... -run TestUpdateWorkItemStateWithEffortOmitsNilFields` | ✅ `internal/ado/workitems_test.go:400` | ✅ green |
-| 04-02-T3 | 02 | 2 | SAFE-03 | SC4 | `--remaining 0` is a real zero, distinct from omitted (D-18) (`TestExplicitZeroEffortIsDistinctFromOmitted`) | unit | `go test ./cmd/adoBizInt/... -run TestExplicitZeroEffortIsDistinctFromOmitted` | ✅ `cmd/adoBizInt/write_test.go:448` | ✅ green |
-| 04-02-T1 | 02 | 2 | SAFE-03 | SC4 | TUI four-operation patch byte-identical after signature change (D-17 regression guard) (`TestUpdateWorkItemStateWithEffortIssuesExactPatch`) | unit | `go test ./internal/ado/... -run TestUpdateWorkItemStateWithEffortIssuesExactPatch` | ✅ `internal/ado/workitems_test.go:341` | ✅ green |
-| 04-02-T3 | 02 | 2 | SAFE-03 | SC4 | Effort flags registered on exactly the verbs whose `writeSupport.effort` is true, in both directions (`TestEffortFlagsNotRegisteredOnNonEffortVerbs`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestEffortFlagsNotRegisteredOnNonEffortVerbs` | ✅ `cmd/adoBizInt/write_test.go:559` | ✅ green |
-| 04-03-T3 | 03 | 3 | CLI-03 | SC1 | Every write verb appears in its noun-level `--help`, iterated from `writeSupportByCommand` (`TestEveryWriteVerbAppearsInNounUsage`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestEveryWriteVerbAppearsInNounUsage` | ✅ `cmd/adoBizInt/usage_test.go:174` | ✅ green |
-| 04-04-T1 | 04 | 4 | SAFE-01 / SAFE-02 / SAFE-04 | SC1–SC5 | All five guards asserted for every verb, iterated from `writeSupportByCommand`; a registered verb with no fixture fails with `t.Fatalf` (`TestWriteGuardMatrix`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestWriteGuardMatrix -v` | ✅ `cmd/adoBizInt/write_test.go:785` | ✅ green |
-| 04-04-T1 | 04 | 4 | SAFE-01 | SC6 | Every write test injects the Phase 1 seam; no test opens a socket | unit (structural) | `grep -rn "http\." --include=*_test.go internal/ado cmd \| grep -v ':[0-9]*:[[:space:]]*//'` returns nothing | ✅ by construction — every write guard drives `fakeWriteClient` through `TestWriteGuardMatrix`, which has no transport | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Audit record omits `argv` / `actor` / credential fields (`TestAuditRecordOmitsArgvAndCredentialFields`) | unit | `go test ./cmd/adoBizInt/... -run TestAuditRecordOmitsArgvAndCredentialFields` | ✅ `cmd/adoBizInt/audit_test.go:103` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Unwritable audit sink prevents the mutation (D-13 ordering) (`TestUnwritableAuditSinkPreventsMutation`) | unit | `go test ./cmd/adoBizInt/... -run TestUnwritableAuditSinkPreventsMutation` | ✅ `cmd/adoBizInt/audit_test.go:137` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-02 | SC3 | Dry run and refused no-op append no audit record (D-14) (`TestDryRunAndNoOpAppendNoAuditRecord`) | unit | `go test ./cmd/adoBizInt/... -run TestDryRunAndNoOpAppendNoAuditRecord` | ✅ `cmd/adoBizInt/audit_test.go:175` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-02 / SAFE-04 | SC3 | Outcome-unknown write IS audited (D-16) (`TestOutcomeUnknownWriteIsAudited`) | unit | `go test ./cmd/adoBizInt/... -run TestOutcomeUnknownWriteIsAudited` | ✅ `cmd/adoBizInt/audit_test.go:201` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-04 | SC5 | success / failed / unknown produce three distinct exit codes (`TestWriteOutcomeClassification`) | unit | `go test ./cmd/adoBizInt/... -run TestWriteOutcomeClassification` | ✅ `cmd/adoBizInt/write_test.go:277` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-04 | SC5 | Mid-write SIGINT → unknown, not exit 3 (D-22) (`TestInterruptedWriteReportsOutcomeUnknownNotNothingRan`) | unit | `go test ./cmd/adoBizInt/... -run TestInterruptedWriteReportsOutcomeUnknownNotNothingRan` | ✅ `cmd/adoBizInt/write_test.go:336` | ✅ green |
+| 04-01-T3 | 01 | 1 | SAFE-04 | SC5 | All exit code constants pairwise distinct (`TestExitCodesArePairwiseDistinct`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestExitCodesArePairwiseDistinct` | ✅ `cmd/adoBizInt/write_test.go:378` | ✅ green |
+| 04-01-T3 | 01 | 1 | CLI-03 | SC1 | Usage errors — missing/duplicate target, zero or two `--project`, missing `--state` — exit 3 with no client call (`TestWriteParseErrorsExitUnknown`) | unit | `go test ./cmd/adoBizInt/... -run TestWriteParseErrorsExitUnknown` | ✅ `cmd/adoBizInt/write_test.go:406` | ✅ green |
+| 04-02-T1 | 02 | 2 | SAFE-03 | SC4 | Nil effort pointers produce no patch op (`TestUpdateWorkItemStateWithEffortOmitsNilFields`) | unit | `go test ./internal/ado/... -run TestUpdateWorkItemStateWithEffortOmitsNilFields` | ✅ `internal/ado/workitems_test.go:484` | ✅ green |
+| 04-02-T3 | 02 | 2 | SAFE-03 | SC4 | `--remaining 0` is a real zero, distinct from omitted (D-18) (`TestExplicitZeroEffortIsDistinctFromOmitted`) | unit | `go test ./cmd/adoBizInt/... -run TestExplicitZeroEffortIsDistinctFromOmitted` | ✅ `cmd/adoBizInt/write_test.go:504` | ✅ green |
+| 04-02-T1 | 02 | 2 | SAFE-03 | SC4 | TUI four-operation patch byte-identical after signature change (D-17 regression guard) (`TestUpdateWorkItemStateWithEffortIssuesExactPatch`) | unit | `go test ./internal/ado/... -run TestUpdateWorkItemStateWithEffortIssuesExactPatch` | ✅ `internal/ado/workitems_test.go:423` | ✅ green |
+| 04-02-T3 | 02 | 2 | SAFE-03 | SC4 | Effort flags registered on exactly the verbs whose `writeSupport.effort` is true, in both directions (`TestEffortFlagsNotRegisteredOnNonEffortVerbs`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestEffortFlagsNotRegisteredOnNonEffortVerbs` | ✅ `cmd/adoBizInt/write_test.go:624` | ✅ green |
+| 04-03-T3 | 03 | 3 | CLI-03 | SC1 | Every write verb appears in its noun-level `--help`, iterated from `writeSupportByCommand` (`TestEveryWriteVerbAppearsInNounUsage`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestEveryWriteVerbAppearsInNounUsage` | ✅ `cmd/adoBizInt/usage_test.go:176` | ✅ green |
+| 04-04-T1 | 04 | 4 | SAFE-01 / SAFE-02 / SAFE-04 | SC1–SC5 | All five guards asserted for every verb, iterated from `writeSupportByCommand`; a registered verb with no fixture fails with `t.Fatalf` (`TestWriteGuardMatrix`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestWriteGuardMatrix -v` | ✅ `cmd/adoBizInt/write_test.go:850` | ✅ green |
+| 04-04-T1 | 04 | 4 | SAFE-01 | SC6 | Every write test injects the Phase 1 seam; no test opens a socket | unit (structural) | `grep -rn "http\." --include='*_test.go' internal/ado cmd \| grep -v ':[0-9]*:[[:space:]]*//'` returns nothing | ✅ by construction — every write guard drives `fakeWriteClient` through `TestWriteGuardMatrix`, which has no transport | ✅ green |
+| 04-03-T3 | 03 | 3 | CLI-03 / SAFE-01 | SC1 | Every write verb's `--help` documents `--confirm` (`TestWriteVerbUsageDocumentsConfirm`) | unit (structural) | `go test ./cmd/adoBizInt/... -run TestWriteVerbUsageDocumentsConfirm` | ✅ `cmd/adoBizInt/usage_test.go:203` | ✅ green |
+| BL-01 (260913-nd2) | — | — | SAFE-03 | SC4 | TUI effort modal submits nil for blank fields (`TestEffortModalSubmitNullability`) | unit | `go test ./internal/ui/workitems/... -run TestEffortModalSubmitNullability` | ✅ `internal/ui/workitems/effort_test.go:35` | ✅ green |
+| BL-01 (260913-nd2) | — | — | SAFE-03 | SC4 | `parseEffort("")` returns nil, not zero (`TestEffortModalParseEffort`) | unit | `go test ./internal/ui/workitems/... -run TestEffortModalParseEffort` | ✅ `internal/ui/workitems/effort_test.go:147` | ✅ green |
+| BL-01 (260913-nd2) | — | — | SAFE-03 | SC4 | TUI call sites forward effort pointers unchanged (`TestUpdateWorkItemStateWithEffortCallSitesForwardPointers`) | unit | `go test ./internal/ui/workitems/... -run TestUpdateWorkItemStateWithEffortCallSitesForwardPointers` | ✅ `internal/ui/workitems/workitems_test.go:132` | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -134,8 +138,7 @@ created: 2026-09-12
 > `status` and `nyquist_compliant` are deliberately left at `draft` / `false`: both are owned by
 > `/gsd-validate-phase` §6, which has not run. Every manual row is now green, so that run is the
 > only remaining blocker to flipping them.
-> `status` remains `draft` and `nyquist_compliant` remains `false` because a required manual
-> verification is red.
+> Superseded 2026-10-12: `/gsd-validate-phase` ran; see Validation Audit below.
 
 ---
 
@@ -146,6 +149,18 @@ created: 2026-09-12
 - [x] Wave 0 covers all MISSING references
 - [x] No watch-mode flags
 - [x] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-10-12
+
+---
+
+## Validation Audit 2026-10-12
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+All 21 mapped automated checks re-run green on HEAD f52bd53 (`go test -race -count=1`). The doc was refreshed: stale `file:line` references updated, SC6 grep glob quoted, and 4 existing tests added to the map (`TestWriteVerbUsageDocumentsConfirm` plus the three BL-01 TUI nullability tests). Both manual-only rows stay green on prior live evidence (2026-09-12 CLI run on 1198503; 2026-09-13 TUI re-test after 260913-nd2).
