@@ -87,6 +87,27 @@ func (f Failure) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// Scope discloses the fixed filter Azure DevOps applies server-side for a read,
+// so a caller can tell "outside the scope" from "does not exist" (audit W4,
+// D-01).
+//
+// A key is present only when that filter applies. This deliberately departs
+// from TestJSONFieldNames' stable-key-set rule, because a scope key's presence
+// IS the fact (D-01's examples are per-verb objects). "recent" means iterations
+// starting or finishing after a cutoff 30 days back (GetRecentIterations); a
+// project with no such dated iteration is not limited by iteration.
+//
+// Values are code or SDK constants, never server text, and scope never affects
+// Complete. The key names are a published one-way contract (D-01). pr_status is
+// used rather than status because dashboard counts carries both a work-item
+// filter and a PR filter, and a bare status would be ambiguous there.
+type Scope struct {
+	ExcludedStates []string `json:"excluded_states,omitempty"`
+	Iterations     string   `json:"iterations,omitempty"`
+	PRStatus       string   `json:"pr_status,omitempty"`
+	ApprovalStatus string   `json:"approval_status,omitempty"`
+}
+
 // Result is the envelope every aggregate read returns. Items holds whatever was
 // successfully fetched, Failures names every project that did not answer, and
 // Complete reports whether the items are the whole picture (TRUST-03).
@@ -94,11 +115,14 @@ func (f Failure) MarshalJSON() ([]byte, error) {
 // The json tags use the same snake_case convention as the payload types (D-04),
 // so Phase 3 serialises the whole read response under one contract rather than
 // wrapping snake_case payloads in Go-cased keys. This holds uniformly for all
-// eight reads, including the dashboard's single-element Items slice.
+// eight reads, including the dashboard's single-element Items slice. Scope is
+// never omitted: it is an object when the read applies a fixed server-side
+// filter and null when it does not (D-02).
 type Result[T any] struct {
 	Items    []T       `json:"items"`
 	Failures []Failure `json:"failures"`
 	Complete bool      `json:"complete"`
+	Scope    *Scope    `json:"scope"`
 }
 
 // newResult derives Complete from the failure slice so no call site has to

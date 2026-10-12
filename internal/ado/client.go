@@ -164,7 +164,7 @@ func (c *Client) CurrentUserEmail() string {
 	return c.currentUserEmail
 }
 
-// GetRecentIterations returns iteration paths for sprints active in the last 90 days
+// GetRecentIterations returns iteration paths for sprints active in the last 30 days
 func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]string, error) {
 	log := logging.Logger()
 
@@ -206,7 +206,7 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 			}
 		}
 
-		// Check if this iteration has dates within last 90 days
+		// Check if this iteration has dates within last 30 days
 		if node.Attributes != nil {
 			attrs := *node.Attributes
 			startDate, hasStart := attrs["startDate"]
@@ -228,7 +228,7 @@ func (c *Client) GetRecentIterations(ctx context.Context, project string) ([]str
 				}
 			}
 
-			// Include iteration if it overlaps with last 90 days
+			// Include iteration if it overlaps with last 30 days
 			// (start date is after cutoff OR finish date is after cutoff)
 			if !start.IsZero() || !finish.IsZero() {
 				includeIteration := false

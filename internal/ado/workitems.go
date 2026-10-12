@@ -92,6 +92,15 @@ const (
 func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[WorkItem], error) {
 	log := logging.Logger()
 
+	// D-01: disclose the fixed WIQL filter. The states must match the NOT IN
+	// literal in getProjectWorkItems, in order; TestGetWorkItemsScope ties them.
+	// Built per call so no two results share a Scope.
+	// note: GetDashboardCounts builds the same two fields; two uses, not extracted.
+	scope := &Scope{
+		ExcludedStates: []string{"Done", "Closed", "Removed"},
+		Iterations:     "recent",
+	}
+
 	targetProjects := projects
 	if len(targetProjects) == 0 {
 		targetProjects = c.projects
@@ -101,7 +110,9 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[Wo
 
 	if len(targetProjects) == 0 {
 		log.Warn("No projects to fetch work items for")
-		return newResult([]WorkItem{}, nil), nil
+		result := newResult([]WorkItem{}, nil)
+		result.Scope = scope
+		return result, nil
 	}
 
 	var allItems []WorkItem
@@ -134,7 +145,9 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[Wo
 	}
 
 	log.Info("Work items fetched", "total_count", len(allItems), "failure_count", len(failures))
-	return newResult(allItems, failures), nil
+	result := newResult(allItems, failures)
+	result.Scope = scope
+	return result, nil
 }
 
 // getProjectWorkItems returns the work items it collected alongside every
@@ -144,7 +157,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	log := logging.Logger()
 	var failures []Failure
 
-	// Get recent iterations (sprints active in last 90 days)
+	// Get recent iterations (sprints active in last 30 days)
 	iterations, err := c.GetRecentIterations(ctx, project)
 	if err != nil {
 		log.Warn("Failed to get iterations, using date filter only", "project", project, "error", err)
