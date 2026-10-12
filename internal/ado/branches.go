@@ -35,15 +35,27 @@ const (
 	opGetBranchStats  = "get branch stats"
 )
 
-// emptyRepositoryStatus is the status the SDK returns when a repository has no
-// branch stats to report. It is suppressed rather than recorded: naming every
-// empty repository in the org on the branches view would train the user to
-// ignore the exact channel D-13 depends on.
+// emptyRepositoryStatus and emptyRepositoryCode together identify the answer
+// ADO gives a branch-stats call on a repository with no branches. It is
+// suppressed rather than recorded: naming every empty repository in the org on
+// the branches view would train the user to ignore the exact channel D-13
+// depends on.
+//
+// D-06a: the live capture of 2026-10-12 returned status 400, typeKey
+// ArgumentException, errorCode 0, and a message beginning "VS403403: Cannot
+// find any branches for the ... repository." Neither TypeKey (generic) nor
+// ErrorCode (0) distinguishes it, so the leading ADO error identifier is
+// matched, anchored at the start of the message and only in conjunction with
+// the structural 400. That capture falsified assumption A4 (an empty
+// repository answers 404).
 //
 // D-07 fixed the failure kind set at four and explicitly deferred a not-found
 // kind; this is the site where such a kind would have earned its keep. If it
 // comes back, it comes back from the deferred-ideas list in 02-CONTEXT.md.
-const emptyRepositoryStatus = 404
+const (
+	emptyRepositoryStatus = 400
+	emptyRepositoryCode   = "VS403403:"
+)
 
 // GetBranches fetches branches for every repository in the specified projects,
 // sorted by most recent commit first. When repositories is non-empty only those
@@ -101,9 +113,11 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 			if err != nil {
 				// Empty repositories have no branch stats to report
 				log.Warn("Failed to get branch stats", "project", project, "repository", *repo.Name, "error", err)
-				// Distinguish by status code (D-06): a not-found response is an
-				// ordinary empty repository, not a broken read.
-				if status, ok := statusCodeOf(err); !ok || status != emptyRepositoryStatus {
+				// D-06a: an empty repository is recognised by status 400 plus the
+				// documented VS403403 code. Any other 400, a 401/403, a timeout or
+				// an error without a status is still recorded.
+				status, ok := statusCodeOf(err)
+				if !ok || status != emptyRepositoryStatus || !strings.HasPrefix(err.Error(), emptyRepositoryCode) {
 					failures = appendFailure(failures, project, opGetBranchStats+" for "+*repo.Name, err)
 				}
 				continue
