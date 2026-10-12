@@ -80,6 +80,19 @@ and nil-guard hardening (Phase 5); rate-limit backoff and N+1 restructuring
   because the failure is classified and never renders as an empty list — the
   cost is efficiency, not correctness.
 
+- **D-06a (ADDED 2026-10-12, gap closure — narrow exception to D-06):** An empty
+  repository on the branch-stats call is recognised by **HTTP 400 AND a message
+  that begins with the ADO error code `VS403403:`**, and is suppressed rather than
+  recorded as a failure. Live capture on 2026-10-12 against the Windstream org
+  (repository "Pricing Engine") returned status 400, `typeKey: ArgumentException`,
+  `errorCode: 0`, message `VS403403: Cannot find any branches for the Pricing
+  Engine repository.` No structural field distinguishes it: `ArgumentException`
+  is generic and `errorCode` is 0. Matching the leading ADO error identifier is a
+  documented code, not free text; anything else on that call — any other 400, a
+  401/403 (auth), a timeout — is still recorded. This replaces assumption A4
+  (empty repo yields 404), which the live evidence falsified. Chosen by the user.
+  — **Reversibility:** reversible — internal to `internal/ado/branches.go`.
+
 ### Timeout policy
 
 - **D-09:** Deadlines are enforced at **two points**: `connection.Timeout` bounds
