@@ -249,6 +249,16 @@ func runRead[T any](
 		}
 		return exitUnknown
 	}
+	// D-17: stdlib stops parsing at the first token it cannot read as a flag,
+	// so a stray positional would silently drop itself and every flag after
+	// it. Nothing ran, so the exit is 3. The token is quoted with %q, so a
+	// control character cannot reach the terminal raw; naming the first one is
+	// enough to locate the mistake.
+	if len(fs.Args()) > 0 {
+		fmt.Fprintf(stderrWriter, "%s takes no positional arguments; got %q; run 'adoBizInt %s --help' for its flags\n",
+			name, fs.Args()[0], name)
+		return exitUnknown
+	}
 	ff.identity = identity
 
 	log := logging.Logger()
