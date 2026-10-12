@@ -335,7 +335,12 @@ func runRead[T any](
 		// never suppressed here — a human running the default is exactly the
 		// caller who must not mistake a broken read for an empty one. Under
 		// --json the failures already ride inside the stdout envelope.
+		//
+		// The scope line is the human counterpart of the envelope's scope
+		// (D-04): it goes to stderr ahead of any warnings, and is written even
+		// for zero rows.
 		render(stdoutWriter, result.Items)
+		renderScope(stderrWriter, result.Scope)
 		renderFailures(stderrWriter, result.Failures)
 	}
 

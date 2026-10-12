@@ -102,6 +102,32 @@ func renderFailures(w io.Writer, failures []ado.Failure) {
 	_, _ = io.WriteString(w, b.String())
 }
 
+// renderScope writes the read's fixed server-side scope as one line to the
+// stderr writer (D-04), never to stdout. It prints even when the read returned
+// zero rows: an empty result under an undisclosed filter is exactly audit W4.
+// A nil scope (an unscoped read) writes nothing. Every value is a code constant
+// from internal/ado, so no field needs sanitize. Under --json the envelope's
+// scope object carries the same fact instead.
+func renderScope(w io.Writer, s *ado.Scope) {
+	if s == nil {
+		return
+	}
+	var parts []string
+	if len(s.ExcludedStates) > 0 {
+		parts = append(parts, "excludes "+strings.Join(s.ExcludedStates, "/"))
+	}
+	if s.Iterations != "" {
+		parts = append(parts, s.Iterations+" iterations only")
+	}
+	if s.PRStatus != "" {
+		parts = append(parts, s.PRStatus+" pull requests only")
+	}
+	if s.ApprovalStatus != "" {
+		parts = append(parts, s.ApprovalStatus+" approvals only")
+	}
+	_, _ = io.WriteString(w, "scope: "+strings.Join(parts, "; ")+"\n")
+}
+
 // writeRows is the shared body: build every line, then write once, and write
 // nothing at all when there is nothing to say.
 func writeRows[T any](w io.Writer, items []T, render func(*strings.Builder, T)) {
