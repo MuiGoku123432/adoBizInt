@@ -37,22 +37,22 @@ created: "2026-10-12"
 
 ## Per-Task Verification Map
 
-Task IDs are filled in by the planner. Test names are research proposals.
+Task IDs filled in by the planner (2026-10-12). `06-NN-TK` = plan NN, task K. Every task is RED-first, so each new test is created by the task that implements its behaviour.
 
-| Requirement | Behavior | Test Type | Automated Command | File Exists | Status |
-|-------------|----------|-----------|-------------------|-------------|--------|
-| CLI-05, CLI-06, OUT-04 (W2) | Help token as a flag value is the value; read/write runs | unit | `go test ./cmd/adoBizInt -run 'TestHelpTokenAsFlagValueIsNotHelp\|TestReleaseCommentReachesTheMutation' -count=1` | ❌ W0 / ✅ extend | ⬜ pending |
-| CLI-05 (W2, D-09) | Help in flag position works with no config, incl. `--project P --help`, `set-state 4821 --help` | unit | `go test ./cmd/adoBizInt -run 'TestHelpTokenInFlagPositionIsHelp\|TestHelpNeedsNoCredentials\|TestHelpIsDeterministic' -count=1` | ❌ W0 / ✅ | ⬜ pending |
-| CLI-06 (D-08) | WR-05: `--comment -h` reaches the mutation | unit | `go test ./cmd/adoBizInt -run TestReleaseCommentReachesTheMutation -count=1` | ✅ extend | ⬜ pending |
-| OUT-04 (D-17) | Stray positional on a read verb exits 3, nothing runs | unit | `go test ./cmd/adoBizInt -run TestReadRejectsStrayPositional -count=1` | ❌ W0 | ⬜ pending |
-| TRUST-03, OUT-04 (W3) | Empty, nil, blank, whitespace projects → `ConfigError{Field:"projects"}` | unit | `go test ./internal/config -run 'TestValidate\|TestLoadRejectsBlankProjects' -count=1` | ✅ extend / ❌ W0 | ⬜ pending |
-| TRUST-03 (W3, TUI) | `Validate` precedes both `dispatch` and `ui.NewModel` in `run()` | structural | `go test ./cmd/adoBizInt -run TestValidateGuardsCLIAndTUI -count=1` | ❌ W0 | ⬜ pending |
-| OUT-04, CLI-06 (W4) | `scope` key on every `Result[T]`; null when unscoped | unit (contract) | `go test ./internal/ado -run 'TestJSONFieldNames\|TestNewResultScopeIsNull' -count=1` | ✅ update / ❌ W0 | ⬜ pending |
-| TRUST-03 (W4, D-15/D-16) | Exact scope per read; scope ↔ WIQL/SearchCriteria tie; `complete` unchanged; early returns | unit | `go test ./internal/ado -run 'Scope' -count=1` | ❌ W0 | ⬜ pending |
-| CLI-06 (W4, D-04/05/06) | Human stderr scope line, never under `--json`; verb help states scope; `--hide-done` text | unit | `go test ./cmd/adoBizInt -run 'Scope\|TestHideDoneHelp' -count=1` | ❌ W0 | ⬜ pending |
-| OUT-04, OUT-05, SAFE-02, SAFE-04 (W1) | Panic in mutate → exit 5, crash record on stdout, one `unknown` audit line; failing sink → 5; pre-mutate panic → 3; no double record | unit | `go test ./cmd/adoBizInt -run 'TestPanic(After\|Before)Write' -count=1` | ❌ W0 | ⬜ pending |
-| SAFE-02 (W1) | Recover defer after `defer sink.Close()` and immediately before `op.mutate` | structural | `go test ./cmd/adoBizInt -run TestWriteRecoverPrecedesMutate -count=1` | ❌ W0 | ⬜ pending |
-| OUT-05 (regression) | Read panic still exits 3 | unit | `go test ./cmd/adoBizInt -run 'TestPanicExitsThree\|TestPATNeverLogged' -count=1` | ✅ | ⬜ pending |
+| Task ID | Requirement | Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|-------------|----------|-----------|-------------------|-------------|--------|
+| 06-01-T1 | CLI-05, CLI-06, OUT-04 (W2) | Help token as a flag value is the value; read/write runs | unit | `go test ./cmd/adoBizInt -run 'TestHelpTokenAsFlagValueIsNotHelp\|TestReleaseCommentReachesTheMutation' -count=1` | ❌ W0 / ✅ extend | ⬜ pending |
+| 06-01-T1 | CLI-05 (W2, D-09) | Help in flag position works with no config, incl. `--project P --help`, `set-state 4821 --help` | unit | `go test ./cmd/adoBizInt -run 'TestHelpTokenInFlagPositionIsHelp\|TestHelpNeedsNoCredentials\|TestHelpIsDeterministic' -count=1` | ❌ W0 / ✅ | ⬜ pending |
+| 06-01-T1 | CLI-06 (D-08) | WR-05: `--comment -h` reaches the mutation | unit | `go test ./cmd/adoBizInt -run TestReleaseCommentReachesTheMutation -count=1` | ✅ extend | ⬜ pending |
+| 06-01-T2 | OUT-04 (D-17) | Stray positional on a read verb exits 3, nothing runs | unit | `go test ./cmd/adoBizInt -run TestReadRejectsStrayPositional -count=1` | ❌ W0 | ⬜ pending |
+| 06-02-T1, 06-02-T2 | TRUST-03, OUT-04 (W3) | Empty, nil, blank, whitespace projects → `ConfigError{Field:"projects"}` | unit | `go test ./internal/config -run 'TestValidate\|TestLoadRejectsBlankProjects' -count=1` | ✅ extend / ❌ W0 | ⬜ pending |
+| 06-02-T1 | TRUST-03 (W3, TUI) | `Validate` precedes both `dispatch` and `ui.NewModel` in `run()` | structural | `go test ./cmd/adoBizInt -run TestValidateGuardsCLIAndTUI -count=1` | ❌ W0 | ⬜ pending |
+| 06-03-T1 | OUT-04, CLI-06 (W4) | `scope` key on every `Result[T]`; null when unscoped | unit (contract) | `go test ./internal/ado -run 'TestJSONFieldNames\|TestNewResultScopeIsNull' -count=1` | ✅ update / ❌ W0 | ⬜ pending |
+| 06-03-T1, T2, T3 | TRUST-03 (W4, D-15/D-16) | Exact scope per read; scope ↔ WIQL/SearchCriteria/StatusFilter tie; `complete` unchanged; early returns | unit | `go test ./internal/ado -run 'Scope' -count=1` | ❌ W0 | ⬜ pending |
+| 06-04-T1, 06-04-T2 | CLI-06 (W4, D-04/05/06) | Human stderr scope line, never under `--json`; verb help states scope; `--hide-done` text | unit | `go test ./cmd/adoBizInt -run 'Scope\|TestHideDoneHelp' -count=1` | ❌ W0 | ⬜ pending |
+| 06-05-T1, 06-05-T2 | OUT-04, OUT-05, SAFE-02, SAFE-04 (W1) | Panic in mutate → exit 5, crash record on stdout, one `unknown` audit line; failing sink → 5; pre-mutate panic → 3; no double record | unit | `go test ./cmd/adoBizInt -run 'TestPanic(After\|Before)Write' -count=1` | ❌ W0 | ⬜ pending |
+| 06-05-T1 | SAFE-02 (W1) | Recover defer after `defer sink.Close()` and immediately before `op.mutate` | structural | `go test ./cmd/adoBizInt -run TestWriteRecoverPrecedesMutate -count=1` | ❌ W0 | ⬜ pending |
+| 06-05-T1 | OUT-05 (regression) | Read panic still exits 3 | unit | `go test ./cmd/adoBizInt -run 'TestPanicExitsThree\|TestPATNeverLogged' -count=1` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 

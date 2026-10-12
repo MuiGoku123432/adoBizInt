@@ -204,11 +204,20 @@ Plans:
   3. The fixed server-side scope of `workitems list` (excluded states, recent iterations) and `prs list` (active only) is disclosed in help and in the JSON envelope, so an agent can tell "not in scope" from "does not exist" (W4)
   4. A panic after a write's request was issued exits 5 (outcome unknown) with a best-effort audit record, not exit 3 (W1)
 
-**Plans**: TBD
+**Plans**: 5 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 6 to break down)
+**Wave 1**
+
+- [ ] 06-01-help-token-position-PLAN.md — W2: a help token means help only in flag position (stdlib probe in `handleUsage`, D-07/D-08/D-09); a stray positional on a read verb exits 3 (D-17)
+- [ ] 06-02-reject-empty-projects-PLAN.md — W3: `config.Validate` rejects an empty or blank `projects` list for the CLI and the TUI (D-10/D-11), with a go/ast pin on `run()`
+- [ ] 06-03-scope-in-envelope-PLAN.md — W4 data: `scope` on every `Result[T]`, set on the four scoped reads and tied by test to their requests; null on the other four (D-01/D-02/D-15/D-16)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-04-scope-disclosure-cli-PLAN.md — W4 presentation: stderr scope line in human mode, `Scope:` paragraph in verb help, accurate `--hide-done` text (D-04/D-05/D-06)
+- [ ] 06-05-write-panic-outcome-unknown-PLAN.md — W1: a panic after a write's request is issued exits 5 with a best-effort `unknown` audit record; crash record stays on stdout (D-12/D-13/D-14/D-18)
 
 ## Deferred
 
