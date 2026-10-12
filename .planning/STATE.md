@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 06
 current_phase_name: core-value-cleanup
 status: executing
-stopped_at: Completed 06-03-scope-in-envelope-PLAN.md
-last_updated: "2026-10-12T21:54:00.613Z"
+stopped_at: Completed 06-04-scope-disclosure-cli-PLAN.md
+last_updated: "2026-10-12T21:57:38.961Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 06 execution started
-state_head: 7bba50506fe1e89b70a9506935b29c6c9f8100ca
+state_head: c0e222e1be5664157042cc92e8af4617f9b4f6a2
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 33
-  completed_plans: 31
+  completed_plans: 32
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 06 (core-value-cleanup) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Next: Phase 2 re-verification (orchestrator); optional live `branches list --json` check at /gsd-verify-work
 Last activity: 2026-10-12 — Phase 06 execution started
@@ -93,6 +93,7 @@ Progress: [████████░░] 75%
 | Phase 06 P01 | 3min | 2 tasks | 5 files |
 | Phase 06 P02 | 3min | 2 tasks | 4 files |
 | Phase 06 P03 | 3min | 3 tasks | 10 files |
+| Phase 06 P04 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -182,6 +183,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 06]: 06-02: run() ordering (Validate before dispatch and ui.NewModel, returning exitUnknown) is pinned by go/ast in TestValidateGuardsCLIAndTUI
 - [Phase 06]: 06-03: Scope fields are omitempty (presence is the fact); Result.Scope is not, so unscoped reads emit scope:null (D-01, D-02)
 - [Phase 06]: 06-03: pr_status/approval_status derive from the SDK constants the requests send; tie tests compare against captured request args
+- [Phase 06]: 06-04: scope line goes to stderr between rows and failure warnings, human branch only; --json path untouched (D-04)
+- [Phase 06]: 06-04: help states the 30-day recency window with the no-dated-iteration fallback, matching GetRecentIterations (D-06, Pitfall 7)
 
 ### Roadmap Evolution
 
@@ -238,6 +241,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-10-12T21:54:00.521Z
-Stopped at: Completed 06-03-scope-in-envelope-PLAN.md
+Last session: 2026-10-12T21:57:38.881Z
+Stopped at: Completed 06-04-scope-disclosure-cli-PLAN.md
 Resume file: None

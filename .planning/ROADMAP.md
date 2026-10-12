@@ -204,7 +204,7 @@ Plans:
   3. The fixed server-side scope of `workitems list` (excluded states, recent iterations) and `prs list` (active only) is disclosed in help and in the JSON envelope, so an agent can tell "not in scope" from "does not exist" (W4)
   4. A panic after a write's request was issued exits 5 (outcome unknown) with a best-effort audit record, not exit 3 (W1)
 
-**Plans**: 3/5 plans executed
+**Plans**: 4/5 plans executed
 
 Plans:
 
@@ -216,7 +216,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-04-scope-disclosure-cli-PLAN.md — W4 presentation: stderr scope line in human mode, `Scope:` paragraph in verb help, accurate `--hide-done` text (D-04/D-05/D-06)
+- [x] 06-04-scope-disclosure-cli-PLAN.md — W4 presentation: stderr scope line in human mode, `Scope:` paragraph in verb help, accurate `--hide-done` text (D-04/D-05/D-06)
 - [ ] 06-05-write-panic-outcome-unknown-PLAN.md — W1: a panic after a write's request is issued exits 5 with a best-effort `unknown` audit record; crash record stays on stdout (D-12/D-13/D-14/D-18)
 
 ## Deferred
