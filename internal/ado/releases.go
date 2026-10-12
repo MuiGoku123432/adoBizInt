@@ -53,14 +53,20 @@ type ReleaseApproval struct {
 }
 
 // opGetReleases and opGetPendingApprovals label the SDK calls in any Failure
-// these reads record.
+// these reads record. The per-definition latest-release lookup builds its label
+// as opGetLatestRelease + " for " + the definition name, so the warning line
+// names the broken release definition.
 const (
 	opGetReleases         = "get release definitions"
 	opGetPendingApprovals = "get pending approvals"
+	opGetLatestRelease    = "get latest release"
 )
 
-// GetReleases fetches recent releases for configured pipelines. Per-project
-// failures are reported in the returned envelope.
+// GetReleases fetches recent releases for configured pipelines. Items holds one
+// entry per matching definition whose latest-release lookup answered;
+// "noReleases" means the lookup answered with none. A definition whose lookup
+// failed is absent from Items and named in Failures (D-02, D-13), as is every
+// project whose definition listing failed.
 func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Release], error) {
 	log := logging.Logger()
 
@@ -125,6 +131,14 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 			defID := *def.Id
 			defName := *def.Name
 
+			// The fetch deadline can expire inside this N+1 fan-out, not only
+			// between projects: record the definitions not yet reached rather
+			// than issuing calls that are already doomed (D-12).
+			if err := ctx.Err(); err != nil {
+				failures = appendFailure(failures, project, opGetLatestRelease+" for "+defName, err)
+				continue
+			}
+
 			// Create base release entry for this definition
 			rel := Release{
 				Project:        project,
@@ -146,9 +160,11 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 				Expand:       &expand,
 			})
 			if err != nil {
-				log.Debug("Failed to get releases for definition", "project", project, "definition", defName, "error", err)
-				// Still add the definition with noReleases status
-				allReleases = append(allReleases, rel)
+				log.Error("Failed to get latest release", "project", project, "definition", defName, "error", err)
+				// The definition is left out of Items so a failed lookup can never
+				// read as noReleases, and the loop moves on to the remaining
+				// definitions: D-08 rejected short-circuiting on auth failure.
+				failures = appendFailure(failures, project, opGetLatestRelease+" for "+defName, err)
 				continue
 			}
 
