@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 2
 current_phase_name: Honest reads
 status: planning
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-10-12T15:40:50.538Z"
+stopped_at: Completed 02-07-PLAN.md
+last_updated: "2026-10-12T15:45:12.494Z"
 last_activity: 2026-10-12
-last_activity_desc: 02-06 complete (per-definition lookup failures reported)
-state_head: 3ad31ed5209b5260ed09b78c21cb4c732ce53b8d
+last_activity_desc: 02-07 complete (D-06a empty-repository recognition, work-item iteration failure recorded)
+state_head: 083f1dddc71dc933abc3d1f7b72a4d96dbe9d6a5
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 28
-  completed_plans: 27
+  completed_plans: 28
 milestone_name: milestone
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 2 — Honest reads (gap closure)
-Plan: 02-06 complete; 02-07 pending
-Status: Executing gap-closure plans
-Next: 02-07 (D-06a empty-repository recognition, work-item iteration lookup failure), then Phase 2 re-verification
-Last activity: 2026-10-12 — 02-06 complete: per-definition lookup failures reported in GetPipelineRuns, GetReleases, GetPipelineDefinitions
+Plan: 02-06 and 02-07 complete (7/7)
+Status: Gap-closure plans executed; awaiting re-verification
+Next: Phase 2 re-verification (orchestrator); optional live `branches list --json` check at /gsd-verify-work
+Last activity: 2026-10-12 — 02-07 complete: GetBranches suppresses only 400 + VS403403: (D-06a), GetWorkItems records opGetWorkItemsIterations
 
 Progress: [████████░░] 75%
 
@@ -88,6 +88,7 @@ Progress: [████████░░] 75%
 | Phase 05 P05 | 8min | 2 tasks | 6 files |
 | Phase 05 P06 | 4 min | 2 tasks | 3 files |
 | Phase 02 P06 | 5 min | 3 tasks | 4 files |
+| Phase 02 P07 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 05]: 05-06: DEFERRED follow-up T-05-26 -- cmd/adoBizInt/audit.go still creates audit.jsonl 0644 and MkdirAll 0755; mitigated by the 0700 directory, file mode out of scope under D-18
 - [Phase 02]: 02-06 G1: a definition whose per-definition N+1 lookup (GetBuilds, GetReleases, GetDefinition) failed is omitted from Items and named in Failures as 'op for definition'; no unknown-status row, 02-04 JSON contract unchanged — Mirrors GetBranches; no view change; reversible. Nil-Id edge in GetPipelineDefinitions now surfaces as an other-kind Failure (Phase 5 D-14 scope)
 - [Phase 02]: 02-06: D-12 ctx.Err() pre-flight now runs inside each per-definition loop, not only between projects — Unreached definitions get timeout Failures and no doomed SDK calls
+- [Phase 02]: 02-07: D-06a implemented - GetBranches suppresses a branch-stats error only on status 400 AND message prefix VS403403:; assumption A4 (404) retired, everything else recorded
+- [Phase 02]: 02-07: GetWorkItems records a failed iteration lookup as opGetWorkItemsIterations ('get work item iterations') and keeps the over-inclusive items (T-02-05, D-02, D-03)
 
 ### Pending Todos
 
@@ -221,6 +224,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-10-12T15:40:44.235Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-10-12T15:45:12.401Z
+Stopped at: Completed 02-07-PLAN.md
 Resume file: None

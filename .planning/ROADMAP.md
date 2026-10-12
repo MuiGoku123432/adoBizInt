@@ -79,7 +79,7 @@ Plans:
   5. Exported `ado` structs carry `json:` tags with stable lower-cased names
   6. The TUI renders failures rather than silently showing an empty table
 
-**Plans**: 6/7 plans executed (gap-closure plan 02-07 from the 2026-10-12 re-verification pending)
+**Plans**: 7/7 plans executed (gap-closure plans 02-06 and 02-07 from the 2026-10-12 re-verification complete; re-verification pending)
 
 Plans:
 
@@ -89,7 +89,7 @@ Plans:
 - [x] 02-04-json-field-contract-PLAN.md — Wave 3: json tags on the eleven serializable structs and retirement of the Phase 1 characterization test names
 - [x] 02-05-tui-failure-surfacing-PLAN.md — Wave 3: the remaining five views render auth banners, partial warnings, and stale markers
 - [x] 02-06-PLAN.md — Gap closure, Wave 1: GetPipelineRuns, GetReleases and GetPipelineDefinitions record per-definition lookup failures (row omitted) and a per-definition D-12 pre-flight
-- [ ] 02-07-PLAN.md — Gap closure, Wave 1: D-06a empty-repository recognition in GetBranches (400 plus VS403403:), and the work-item list records a failed iteration lookup
+- [x] 02-07-PLAN.md — Gap closure, Wave 1: D-06a empty-repository recognition in GetBranches (400 plus VS403403:), and the work-item list records a failed iteration lookup
 
 ### Phase 3: Read CLI
 
