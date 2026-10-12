@@ -23,7 +23,7 @@ shipping no flag at all, which is why the test seam comes first.
 - [x] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters (verified 2026-09-09)
 - [x] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record (completed 2026-10-12)
 - [x] **Phase 5: Hardening** - Attachment and path fixes, nil guards, WIQL @project, CI (completed 2026-10-12)
-- [ ] **Phase 6: Core-value cleanup** - Close audit warnings W1 (panic mid-write), W2 (help token in flag values), W3 (empty projects list), W4 (undisclosed list scope)
+- [x] **Phase 6: Core-value cleanup** - Close audit warnings W1 (panic mid-write), W2 (help token in flag values), W3 (empty projects list), W4 (undisclosed list scope) (completed 2026-10-12)
 
 ## Phase Details
 
