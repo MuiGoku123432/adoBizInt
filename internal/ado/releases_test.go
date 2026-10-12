@@ -2,8 +2,10 @@ package ado
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -448,4 +450,100 @@ func TestGetReleasesMarksUnreachedDefinitions(t *testing.T) {
 		t.Errorf("GetReleases() Items = %+v, want only release-ok", result.Items)
 	}
 	assertDefinitionFailure(t, "GetReleases", result.Failures, result.Complete, "project-one", FailureTimeout, "release-broken")
+}
+
+// TestGetPendingApprovalsScope pins D-15: the approvals request already asks
+// Azure DevOps for pending approvals only, so the envelope discloses that
+// filter, equal to the StatusFilter the request sends.
+func TestGetPendingApprovalsScope(t *testing.T) {
+	var gotFilter *release.ApprovalStatus
+	client := &Client{
+		projects: []string{"project-one", "project-two"},
+		releaseClient: &fakeReleaseAPI{
+			t: t,
+			GetApprovalsFunc: func(_ context.Context, args release.GetApprovalsArgs) (*release.GetApprovalsResponseValue, error) {
+				gotFilter = args.StatusFilter
+				approvalID := 47
+				return &release.GetApprovalsResponseValue{Value: []release.ReleaseApproval{{Id: &approvalID}}}, nil
+			},
+		},
+	}
+
+	result, err := client.GetPendingApprovals(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("GetPendingApprovals() error = %v, want nil", err)
+	}
+	if result.Scope == nil {
+		t.Fatal("Scope is nil, want the approval status filter")
+	}
+	raw, err := json.Marshal(result.Scope)
+	if err != nil {
+		t.Fatalf("marshal scope: %v", err)
+	}
+	if want := `{"approval_status":"pending"}`; string(raw) != want {
+		t.Errorf("scope = %s, want %s", raw, want)
+	}
+	if gotFilter == nil || string(*gotFilter) != result.Scope.ApprovalStatus {
+		t.Errorf("StatusFilter = %v, want %q", gotFilter, result.Scope.ApprovalStatus)
+	}
+	if !result.Complete || len(result.Failures) != 0 {
+		t.Errorf("Complete = %v, Failures = %+v, want true and none", result.Complete, result.Failures)
+	}
+}
+
+// TestUnscopedReadsReportNullScope pins D-16: "latest run/release per
+// definition" is the purpose of these verbs, not a hidden filter, so each
+// envelope reports "scope":null. It fails if anyone sets a scope on them. The
+// empty-but-complete result when no pipelines are configured is tracked in
+// BL-02, not here.
+func TestUnscopedReadsReportNullScope(t *testing.T) {
+	assertNull := func(t *testing.T, scope *Scope, complete bool, result any) {
+		t.Helper()
+		if scope != nil {
+			t.Errorf("Scope = %+v, want nil", scope)
+		}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			t.Fatalf("marshal result: %v", err)
+		}
+		if !strings.Contains(string(raw), `"scope":null`) {
+			t.Errorf("result JSON = %s, want it to contain \"scope\":null", raw)
+		}
+		if !complete {
+			t.Errorf("Complete = false, want true so the fixture is known to have answered")
+		}
+	}
+	noErr := func(string) error { return nil }
+
+	t.Run("branches list", func(t *testing.T) {
+		result, err := branchTestClient(t, "project-one", "repository-one", nil).GetBranches(context.Background(), nil, nil)
+		if err != nil {
+			t.Fatalf("GetBranches() error = %v, want nil", err)
+		}
+		assertNull(t, result.Scope, result.Complete, result)
+	})
+
+	t.Run("pipelines runs", func(t *testing.T) {
+		result, err := pipelineTestClient(t, []string{"project-one"}, noErr).GetPipelineRuns(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetPipelineRuns() error = %v, want nil", err)
+		}
+		assertNull(t, result.Scope, result.Complete, result)
+	})
+
+	t.Run("pipelines definitions", func(t *testing.T) {
+		result, err := pipelineTestClient(t, []string{"project-one"}, noErr).GetPipelineDefinitions(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetPipelineDefinitions() error = %v, want nil", err)
+		}
+		assertNull(t, result.Scope, result.Complete, result)
+	})
+
+	t.Run("releases list", func(t *testing.T) {
+		result, err := releaseTestClient(t, []string{"project-one"}, noErr).GetReleases(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetReleases() error = %v, want nil", err)
+		}
+		assertNull(t, result.Scope, result.Complete, result)
+	})
 }
