@@ -234,10 +234,25 @@ func runWrite(ctx context.Context, op writeOp, args []string) (code int) {
 	// unknown, the safe direction (RESEARCH A4). It is registered after
 	// defer sink.Close(), and defers run last-in first-out, so the sink is still
 	// open when it runs.
+	audited := false
 	defer func() {
 		r := recover()
 		if r == nil {
 			return
+		}
+		// D-13 best effort: leave a trace before the crash record, unless the
+		// normal path already appended one (never two records for one write).
+		// The record carries no panic text, so the five-key D-15 shape and the
+		// T-04-01 no-argv rule hold. A refused write that later panics is
+		// recorded unknown, which over-reports in the safe direction.
+		// note: this append-and-report sequence also appears in the normal path
+		// below; two uses is below the rule of three, so it is not extracted.
+		if !audited {
+			record := newAuditRecord(writeRecord{Command: name, Target: target, Changes: changes, Outcome: outcomeUnknown})
+			if auditErr := appendAuditRecord(sink, record); auditErr != nil {
+				log.Error("Failed to append audit record", "command", name, "error", auditErr)
+				fmt.Fprintf(stderrWriter, "Write may have landed but was NOT recorded in %s: %v\n", auditPath, auditErr)
+			}
 		}
 		code = handlePanic(fmt.Sprintf("panic after %s was issued; outcome unknown: %v", name, r), exitOutcomeUnknown)
 	}()
@@ -259,6 +274,7 @@ func runWrite(ctx context.Context, op writeOp, args []string) (code int) {
 		record := newAuditRecord(writeRecord{
 			Command: name, Target: target, Changes: changes, Outcome: outcome,
 		})
+		audited = true
 		if auditErr := appendAuditRecord(sink, record); auditErr != nil {
 			log.Error("Failed to append audit record", "command", name, "error", auditErr)
 			// The operator needs to know WHAT to go check, not merely that a
