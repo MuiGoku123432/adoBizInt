@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
 )
 
@@ -98,51 +99,94 @@ func branchTestClient(t *testing.T, project, repository string, statsErr error) 
 }
 
 // TestGetBranchesReportsRepoFailure covers the nested per-repository swallow.
-// A 404 is an ordinary empty repository, not a failure; anything else is.
+// D-06a: ADO answers an empty repository with HTTP 400 and a message beginning
+// "VS403403:" (live capture against the org on 2026-10-12: typeKey
+// ArgumentException, errorCode 0). Only that conjunction is an ordinary empty
+// repository; every other outcome on the call is a failure naming the
+// repository, including VS403403 text under any other status or with none.
 func TestGetBranchesReportsRepoFailure(t *testing.T) {
 	const (
 		project    = "project-one"
 		repository = "repository-one"
+		vs403      = "VS403403: Cannot find any branches for the repository-one repository."
 	)
 
-	t.Run("empty repository is not a failure", func(t *testing.T) {
-		client := branchTestClient(t, project, repository, wrappedErrorValue(404, "no branches"))
+	// The live capture carries TypeKey and ErrorCode; the shared helpers set only
+	// Message and StatusCode, so the two 400 ArgumentException rows are spelled out.
+	liveError := func(message string) error {
+		status := 400
+		typeKey := "ArgumentException"
+		errorCode := 0
+		return azuredevops.WrappedError{
+			Message:    &message,
+			TypeKey:    &typeKey,
+			ErrorCode:  &errorCode,
+			StatusCode: &status,
+		}
+	}
 
-		result, err := client.GetBranches(context.Background(), nil, nil)
-		if err != nil {
-			t.Fatalf("GetBranches() error = %v, want nil", err)
-		}
-		if len(result.Failures) != 0 {
-			t.Fatalf("GetBranches() Failures = %+v, want none — an empty repository is not a broken read", result.Failures)
-		}
-		if !result.Complete {
-			t.Errorf("GetBranches() Complete = %v, want true", result.Complete)
-		}
-		if len(result.Items) != 0 {
-			t.Errorf("GetBranches() Items = %+v, want empty", result.Items)
-		}
-	})
+	tests := []struct {
+		name     string
+		err      error
+		recorded bool
+		kind     FailureKind
+	}{
+		{name: "live VS403403 capture is an empty repository", err: liveError(vs403)},
+		{name: "VS403403 pointer form is an empty repository", err: wrappedErrorPointer(400, vs403)},
+		{
+			name:     "other 400 ArgumentException is recorded",
+			err:      liveError("TF401019: The Git repository with name or identifier repository-one does not exist or you do not have permissions for the operation you are attempting."),
+			recorded: true,
+			kind:     FailureOther,
+		},
+		{name: "VS403403 under 404 is recorded", err: wrappedErrorValue(404, vs403), recorded: true, kind: FailureOther},
+		{name: "VS403403 text on a rejected token stays auth", err: wrappedErrorValue(403, vs403), recorded: true, kind: FailureAuth},
+		{name: "rejected token is auth", err: wrappedErrorValue(401, "TF400813: The user is not authorized"), recorded: true, kind: FailureAuth},
+		{name: "VS403403 text without an SDK status is recorded", err: errors.New(vs403), recorded: true, kind: FailureOther},
+		{name: "timeout is recorded", err: context.DeadlineExceeded, recorded: true, kind: FailureTimeout},
+		{name: "server error names the repository", err: wrappedErrorValue(500, "internal error"), recorded: true, kind: FailureOther},
+	}
 
-	t.Run("server error names the repository", func(t *testing.T) {
-		client := branchTestClient(t, project, repository, wrappedErrorValue(500, "internal error"))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := branchTestClient(t, project, repository, tt.err)
 
-		result, err := client.GetBranches(context.Background(), nil, nil)
-		if err != nil {
-			t.Fatalf("GetBranches() error = %v, want nil", err)
-		}
-		if len(result.Failures) != 1 {
-			t.Fatalf("GetBranches() Failures = %+v, want exactly one per-repository entry", result.Failures)
-		}
-		if result.Failures[0].Project != project {
-			t.Errorf("GetBranches() Failures[0].Project = %q, want %q", result.Failures[0].Project, project)
-		}
-		if !strings.Contains(result.Failures[0].Operation, repository) {
-			t.Errorf("GetBranches() Failures[0].Operation = %q, want it to identify repository %q", result.Failures[0].Operation, repository)
-		}
-		if result.Complete {
-			t.Errorf("GetBranches() Complete = %v, want false", result.Complete)
-		}
-	})
+			result, err := client.GetBranches(context.Background(), nil, nil)
+			if err != nil {
+				t.Fatalf("GetBranches() error = %v, want nil", err)
+			}
+			if len(result.Items) != 0 {
+				t.Errorf("GetBranches() Items = %+v, want empty", result.Items)
+			}
+
+			if !tt.recorded {
+				if len(result.Failures) != 0 {
+					t.Fatalf("GetBranches() Failures = %+v, want none: an empty repository is not a broken read", result.Failures)
+				}
+				if !result.Complete {
+					t.Errorf("GetBranches() Complete = %v, want true", result.Complete)
+				}
+				return
+			}
+
+			if len(result.Failures) != 1 {
+				t.Fatalf("GetBranches() Failures = %+v, want exactly one per-repository entry", result.Failures)
+			}
+			got := result.Failures[0]
+			if got.Project != project {
+				t.Errorf("GetBranches() Failures[0].Project = %q, want %q", got.Project, project)
+			}
+			if !strings.Contains(got.Operation, repository) {
+				t.Errorf("GetBranches() Failures[0].Operation = %q, want it to identify repository %q", got.Operation, repository)
+			}
+			if got.Kind != tt.kind {
+				t.Errorf("GetBranches() Failures[0].Kind = %q, want %q", got.Kind, tt.kind)
+			}
+			if result.Complete {
+				t.Errorf("GetBranches() Complete = %v, want false", result.Complete)
+			}
+		})
+	}
 }
 
 func TestGetBranchesClassifiesRejectedToken(t *testing.T) {
