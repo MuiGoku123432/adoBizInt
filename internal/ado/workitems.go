@@ -76,10 +76,14 @@ type Attachment struct {
 // opGetWorkItems and opGetWorkItemsBatch label the SDK calls in any Failure the
 // work-item read records. The batch label is distinct because a project can
 // answer its query and still fail its detail fetch (D-02): reporting only the
-// outer failure would mark a partially-answering project complete.
+// outer failure would mark a partially-answering project complete. The
+// iteration label exists because a failed lookup makes the WIQL query run
+// without its sprint clause, the same degradation the dashboard records as
+// opDashboardIterations (T-02-05).
 const (
-	opGetWorkItems      = "get work items"
-	opGetWorkItemsBatch = "get work item batch"
+	opGetWorkItems           = "get work items"
+	opGetWorkItemsBatch      = "get work item batch"
+	opGetWorkItemsIterations = "get work item iterations"
 )
 
 // GetWorkItems fetches work items for the specified projects. Per-project query

@@ -82,15 +82,30 @@ func TestGetWorkItemsReportsProjectFailure(t *testing.T) {
 		}
 	})
 
-	t.Run("classification node failure is warned and discarded", func(t *testing.T) {
+}
+
+// TestGetWorkItemsReportsIterationFailure replaces the silent-discard
+// characterization: a failed iteration lookup makes the WIQL query run without
+// its sprint clause, so the list is taken under a substituted filter and must
+// be flagged incomplete (T-02-05, D-02). The over-inclusive items are kept,
+// following D-03's keep-what-answered precedent.
+func TestGetWorkItemsReportsIterationFailure(t *testing.T) {
+	t.Run("one project's lookup fails", func(t *testing.T) {
+		const (
+			degradedProject  = "project-query-fails"
+			survivingProject = "project-query-succeeds"
+		)
 		queryIDs := map[string]int{
-			failingProject:   101,
+			degradedProject:  101,
 			survivingProject: 202,
 		}
 		api := &fakeWorkItemAPI{
 			t: t,
-			GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
-				return nil, errors.New("classification node failed")
+			GetClassificationNodeFunc: func(_ context.Context, args workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+				if args.Project != nil && *args.Project == degradedProject {
+					return nil, errors.New("classification node failed")
+				}
+				return nil, nil
 			},
 			QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
 				if args.Project == nil {
@@ -114,7 +129,7 @@ func TestGetWorkItemsReportsProjectFailure(t *testing.T) {
 			},
 		}
 		client := &Client{
-			projects:       []string{failingProject, survivingProject},
+			projects:       []string{degradedProject, survivingProject},
 			workitemClient: api,
 		}
 
@@ -122,13 +137,54 @@ func TestGetWorkItemsReportsProjectFailure(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetWorkItems() error = %v, want nil", err)
 		}
-		// getProjectWorkItems warns and discards classification-node failures,
-		// so both projects continue through QueryByWiql and return an item.
 		if len(result.Items) != 2 {
-			t.Fatalf("GetWorkItems() returned %d items, want 2 because both projects succeed", len(result.Items))
+			t.Fatalf("GetWorkItems() returned %d items, want 2: the degraded project's items are kept", len(result.Items))
 		}
-		if !result.Complete || len(result.Failures) != 0 {
-			t.Errorf("GetWorkItems() Complete/Failures = %v/%+v, want true/none — a discarded iteration warning is not a failure", result.Complete, result.Failures)
+		if len(result.Failures) != 1 {
+			t.Fatalf("GetWorkItems() Failures = %+v, want exactly one iteration entry", result.Failures)
+		}
+		got := result.Failures[0]
+		if got.Project != degradedProject {
+			t.Errorf("GetWorkItems() Failures[0].Project = %q, want %q", got.Project, degradedProject)
+		}
+		if got.Operation != opGetWorkItemsIterations {
+			t.Errorf("GetWorkItems() Failures[0].Operation = %q, want %q", got.Operation, opGetWorkItemsIterations)
+		}
+		if got.Kind != FailureOther {
+			t.Errorf("GetWorkItems() Failures[0].Kind = %q, want %q", got.Kind, FailureOther)
+		}
+		if result.Complete {
+			t.Errorf("GetWorkItems() Complete = %v, want false under a substituted filter", result.Complete)
+		}
+	})
+
+	t.Run("degradation is reported even when the query returns nothing", func(t *testing.T) {
+		api := &fakeWorkItemAPI{
+			t: t,
+			GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+				return nil, errors.New("classification node failed")
+			},
+			QueryByWiqlFunc: func(_ context.Context, _ workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
+				return &workitemtracking.WorkItemQueryResult{WorkItems: &[]workitemtracking.WorkItemReference{}}, nil
+			},
+		}
+		client := &Client{
+			projects:       []string{"project-one"},
+			workitemClient: api,
+		}
+
+		result, err := client.GetWorkItems(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetWorkItems() error = %v, want nil", err)
+		}
+		if len(result.Items) != 0 {
+			t.Errorf("GetWorkItems() Items = %+v, want empty", result.Items)
+		}
+		if len(result.Failures) != 1 || result.Failures[0].Operation != opGetWorkItemsIterations {
+			t.Fatalf("GetWorkItems() Failures = %+v, want exactly one %q entry", result.Failures, opGetWorkItemsIterations)
+		}
+		if result.Complete {
+			t.Errorf("GetWorkItems() Complete = %v, want false under a substituted filter", result.Complete)
 		}
 	})
 }
