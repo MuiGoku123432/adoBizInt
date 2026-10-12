@@ -115,10 +115,14 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[Wo
 			continue
 		}
 
-		items, batchFailures, err := c.getProjectWorkItems(ctx, project)
-		// Batch failures are attributed even when the query itself answered, so
-		// a project that answered partially is never reported as complete.
-		failures = append(failures, batchFailures...)
+		items, projectFailures, err := c.getProjectWorkItems(ctx, project)
+		// Sub-request failures (iteration lookup, detail batches) are attributed
+		// even when the query itself answered, so a project that answered
+		// partially is never reported as complete. A project whose iteration
+		// lookup and QueryByWiql both fail intentionally yields two entries, the
+		// opGetWorkItemsIterations one followed by the opGetWorkItems one,
+		// because they are two distinct failed sub-requests (D-02).
+		failures = append(failures, projectFailures...)
 		if err != nil {
 			log.Error("Failed to get work items for project", "project", project, "error", err)
 			// The loop still visits every configured project: D-08 rejected
@@ -133,15 +137,22 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[Wo
 	return newResult(allItems, failures), nil
 }
 
-// getProjectWorkItems returns the work items it collected alongside any batch
-// failures, so the caller can attribute a partial answer to its project.
+// getProjectWorkItems returns the work items it collected alongside every
+// sub-request failure (the iteration lookup and the detail batches), so the
+// caller can attribute a partial or degraded answer to its project.
 func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]WorkItem, []Failure, error) {
 	log := logging.Logger()
+	var failures []Failure
 
 	// Get recent iterations (sprints active in last 90 days)
 	iterations, err := c.GetRecentIterations(ctx, project)
 	if err != nil {
 		log.Warn("Failed to get iterations, using date filter only", "project", project, "error", err)
+		// This is a degradation, not a neutral fallback: the query below loses
+		// its iteration clause, so the list is taken under a substituted filter
+		// and must not be presented with the same authority as a correct one
+		// (T-02-05, D-02). The items are kept, and the caller sees Complete=false.
+		failures = appendFailure(failures, project, opGetWorkItemsIterations, err)
 	} else if len(iterations) > 0 {
 		log.Info("Using iteration filter", "project", project, "sprints", iterations)
 	}
@@ -160,12 +171,12 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 
 	result, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
-		return nil, nil, err
+		return nil, failures, err
 	}
 
 	if result == nil || result.WorkItems == nil || len(*result.WorkItems) == 0 {
 		log.Info("Query returned no work items", "project", project)
-		return []WorkItem{}, nil, nil
+		return []WorkItem{}, failures, nil
 	}
 
 	totalFound := len(*result.WorkItems)
@@ -180,7 +191,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	}
 
 	if len(ids) == 0 {
-		return []WorkItem{}, nil, nil
+		return []WorkItem{}, failures, nil
 	}
 
 	// Fetch full work item details in batches (Azure DevOps API limit is 200 IDs per request)
@@ -188,7 +199,6 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 	fields := []string{"System.Id", "System.Title", "System.Description", "Microsoft.VSTS.Scheduling.StoryPoints", "System.WorkItemType", "System.State", "System.AssignedTo"}
 
 	var allItems []workitemtracking.WorkItem
-	var failures []Failure
 	for i := 0; i < len(ids); i += batchSize {
 		end := i + batchSize
 		if end > len(ids) {
