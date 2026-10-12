@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: 06
 current_phase_name: core-value-cleanup
-status: executing
-stopped_at: Completed 06-04-scope-disclosure-cli-PLAN.md
-last_updated: "2026-10-12T21:57:38.961Z"
+status: verifying
+stopped_at: Completed 06-05-PLAN.md
+last_updated: "2026-10-12T22:01:39.535Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 06 execution started
-state_head: c0e222e1be5664157042cc92e8af4617f9b4f6a2
+state_head: 2464f817b750c467ea2fedc3c1921c0a1aa306b4
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 33
-  completed_plans: 32
+  completed_plans: 33
 milestone_name: milestone
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 
 Phase: 06 (core-value-cleanup) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Next: Phase 2 re-verification (orchestrator); optional live `branches list --json` check at /gsd-verify-work
 Last activity: 2026-10-12 — Phase 06 execution started
 
@@ -94,6 +94,7 @@ Progress: [████████░░] 75%
 | Phase 06 P02 | 3min | 2 tasks | 4 files |
 | Phase 06 P03 | 3min | 3 tasks | 10 files |
 | Phase 06 P04 | 4min | 2 tasks | 6 files |
+| Phase 06 P05 | 3min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -185,6 +186,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 06]: 06-03: pr_status/approval_status derive from the SDK constants the requests send; tie tests compare against captured request args
 - [Phase 06]: 06-04: scope line goes to stderr between rows and failure warnings, human branch only; --json path untouched (D-04)
 - [Phase 06]: 06-04: help states the 30-day recency window with the no-dated-iteration fallback, matching GetRecentIterations (D-06, Pitfall 7)
+- [Phase 06]: 06-05: runWrite's deferred recover sits immediately before op.mutate (after defer sink.Close()); its position is the request-issued boundary, so a post-request panic exits 5 and a pre-read panic exits 3 (D-12)
+- [Phase 06]: 06-05: handlePanic(r, code) returns the caller's code; guard passes exitUnknown, runWrite passes exitOutcomeUnknown; crash record stays on stdout (D-18)
+- [Phase 06]: 06-05: a post-request panic appends one best-effort five-key unknown audit record; a local audited flag set before the normal append prevents a second record (D-13)
 
 ### Roadmap Evolution
 
@@ -241,6 +245,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-10-12T21:57:38.881Z
-Stopped at: Completed 06-04-scope-disclosure-cli-PLAN.md
+Last session: 2026-10-12T22:01:39.445Z
+Stopped at: Completed 06-05-PLAN.md
 Resume file: None
