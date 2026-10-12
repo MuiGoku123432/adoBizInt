@@ -76,6 +76,14 @@ no query widening, no new flags beyond what disclosure requires.
 - **D-14:** Correct the stale comments in `cmd/adoBizInt/main.go` and
   `cmd/adoBizInt/crash.go` that call 3 "the outcome-unknown exit code".
 
+### Post-research decisions (2026-10-12)
+- **D-15:** `releases approvals` reports `scope: {"approval_status": "pending"}` — its request already filters to pending approvals server-side, so D-02 applies. (Research recommends `pr_status` rather than `status` for the PR key, since `dashboard counts` also counts only active PRs.)
+  — **Reversibility:** one-way — published `--json` field (same contract as D-01).
+- **D-16:** `pipelines runs` and `releases list` report `scope: null` — "latest run/release per definition" is the verb's purpose, not a hidden filter. The empty-but-complete result when no pipelines are configured goes to BL-02.
+- **D-17:** A stray positional argument on a **read** verb (e.g. `workitems list help --json`) is a usage error: exit 3, nothing runs. Same class as W2 (an agent's request silently misread); in scope by user decision.
+  — **Reversibility:** costly — changes accepted argv for read verbs; scripts passing stray words would start failing.
+- **D-18:** The structured crash record stays on **stdout** (Phase 3 D-23/D-26 contract). D-13's "stderr" refers only to the audit-append failure message.
+
 ### Claude's Discretion
 - Exact key names inside `scope` and the stderr wording, within D-01/D-04.
 - How the "request issued" moment is signalled to the panic handler for D-12 (e.g. a flag set in `runWrite` before `op.mutate`), provided it is structural and tested.

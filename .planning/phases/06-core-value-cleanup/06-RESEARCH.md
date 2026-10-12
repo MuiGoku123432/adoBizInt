@@ -632,7 +632,9 @@ Every `{"items", "failures", "complete"}` set in `TestJSONFieldNames` becomes `{
 | A3 | Azure DevOps `Get Pull Requests By Project` applies a server default page size when `$top` is unset. The docs list `$top` with no default (CITED below); community sources say about 100 | OQ2 | If true, `prs list` can be silently truncated, which is a completeness issue separate from scope. Not a Phase 6 deliverable (D-03). |
 | A4 | Treating "mutate entered" as "request issued" is acceptable: a panic inside `op.mutate` before the HTTP call leaves is reported 5, not 3 | Pattern 4 | Over-reports unknown, the safe direction per Phase 4 D-22 reasoning |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All resolved by the user on 2026-10-12, recorded in 06-CONTEXT.md: Q1 → D-15 (approvals scope pending); Q2 → D-16 (latest-only reads null; empty-pipelines case to BL-02); Q3 → D-17 (stray read positional exits 3, in scope); Q4 → D-18 (crash record stays on stdout).
 
 1. **Does `releases approvals` get a non-null scope?**
    - What we know: it applies a server-side `StatusFilter: Pending` (`releases.go:257`). D-02's rule ("null when a read has no built-in server-side filter") therefore makes it non-null. ROADMAP SC3 names only `workitems list` and `prs list`. CONTEXT names `dashboard counts` as well.
