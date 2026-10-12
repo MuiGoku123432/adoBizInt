@@ -142,10 +142,16 @@ func TestReleaseCommentReachesTheMutation(t *testing.T) {
 	}{
 		{"supplied", []string{"releases", "approve", "77", "--project", "P", "--comment", "ship it", "--confirm", "--json"}, "ship it"},
 		{"omitted", []string{"releases", "approve", "77", "--project", "P", "--confirm", "--json"}, ""},
+		// D-08 closes BL-02 WR-05: a help token in a value position is the value.
+		{"help token as value", []string{"releases", "approve", "77", "--project", "P", "--comment", "-h", "--confirm", "--json"}, "-h"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tempAuditSink(t)
 			_, stderr := captureOutput(t)
+
+			if _, handled := handleUsage(tc.args); handled {
+				t.Fatalf("handleUsage(%q) reported handled; the write would never run (stderr: %q)", tc.args, stderr.String())
+			}
 
 			var got string
 			c := wrapFake(t, &fakeWriteClient{t: t,

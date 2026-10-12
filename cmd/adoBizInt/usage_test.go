@@ -5,6 +5,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"sentinovo.ai/bizInt/internal/ado"
 )
 
 // TestFlagsRegisteredOnEverySubcommand pins D-20: the shared registrar is what
@@ -166,6 +168,171 @@ func TestHandleUsagePassesValidSubcommandsThrough(t *testing.T) {
 		if _, handled := handleUsage(args); handled {
 			t.Errorf("handleUsage(%q) reported handled, want passthrough to dispatch", args)
 		}
+	}
+}
+
+// TestHelpTokenAsFlagValueIsNotHelp pins D-07, D-08 and D-09 (audit W2): a help
+// token that stdlib flag reads as a flag's value is that value, so the request
+// it belongs to runs rather than being silently replaced by help.
+func TestHelpTokenAsFlagValueIsNotHelp(t *testing.T) {
+	withConfiguredProjects(t) // no names: the pre-config state handleUsage runs in
+
+	for _, args := range [][]string{
+		{"workitems", "list", "--search", "help"},
+		{"workitems", "list", "--search", "-h"},
+		{"workitems", "list", "--search", "--help"},
+		{"workitems", "list", "--search=-help"},
+		{"workitems", "list", "--search", "-help", "--json"},
+		{"workitems", "list", "--json", "help"},
+		{"workitems", "list", "help"},
+		{"workitems", "list", "--HELP"},
+		{"workitems", "list", "--search"},
+		{"workitems", "list"},
+		{"releases", "approve", "77", "--project", "P", "--comment", "-h", "--confirm"},
+		{"pipelines", "queue", "7", "--project", "P", "--branch", "-h"},
+		{"workitems", "list", "--project", "nope", "--search", "help"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+			if _, handled := handleUsage(args); handled {
+				t.Errorf("handleUsage(%q) reported handled, want passthrough to dispatch", args)
+			}
+			if stdout.Len() != 0 || stderr.Len() != 0 {
+				t.Errorf("handleUsage(%q) wrote stdout %q and stderr %q, want nothing: the probe is silent",
+					args, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("search help runs the read", func(t *testing.T) {
+		withConfiguredProjects(t, "one")
+		stdout, stderr := captureOutput(t)
+
+		calls := 0
+		c := &fakeReadClient{t: t,
+			GetWorkItemsFunc: func(context.Context, []string) (ado.Result[ado.WorkItem], error) {
+				calls++
+				return ado.Result[ado.WorkItem]{Items: []ado.WorkItem{
+					{ID: 7, Title: "help desk outage", Project: "one", State: "Active"},
+					{ID: 8, Title: "Beta task", Project: "one", State: "Active"},
+				}, Failures: []ado.Failure{}, Complete: true}, nil
+			}}
+
+		args := []string{"workitems", "list", "--search", "help", "--json"}
+		if _, handled := handleUsage(args); handled {
+			t.Fatalf("handleUsage(%q) reported handled; the read never ran (stderr: %q)", args, stderr.String())
+		}
+		if code := dispatch(context.Background(), c, args); code != exitOK {
+			t.Fatalf("dispatch(%q) = %d, want %d (stderr: %q)", args, code, exitOK, stderr.String())
+		}
+		if got := decodeWorkItemIDs(t, stdout); !equalInts(got, []int{7}) {
+			t.Errorf("emitted IDs = %v, want [7]", got)
+		}
+		if calls != 1 {
+			t.Errorf("GetWorkItems called %d times, want exactly 1", calls)
+		}
+	})
+
+	t.Run("search help with no match still runs the read", func(t *testing.T) {
+		withConfiguredProjects(t, "one")
+		stdout, stderr := captureOutput(t)
+
+		calls := 0
+		c := &fakeReadClient{t: t,
+			GetWorkItemsFunc: func(context.Context, []string) (ado.Result[ado.WorkItem], error) {
+				calls++
+				return ado.Result[ado.WorkItem]{Items: []ado.WorkItem{
+					{ID: 8, Title: "Beta task", Project: "one", State: "Active"},
+				}, Failures: []ado.Failure{}, Complete: true}, nil
+			}}
+
+		args := []string{"workitems", "list", "--search", "help"}
+		if _, handled := handleUsage(args); handled {
+			t.Fatalf("handleUsage(%q) reported handled; the read never ran", args)
+		}
+		if code := dispatch(context.Background(), c, args); code != exitOK {
+			t.Fatalf("dispatch(%q) = %d, want %d (stderr: %q)", args, code, exitOK, stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout = %q, want nothing for a search with no match", stdout.String())
+		}
+		if calls != 1 {
+			t.Errorf("GetWorkItems called %d times, want exactly 1", calls)
+		}
+	})
+
+	t.Run("unconfigured project is still refused", func(t *testing.T) {
+		withConfiguredProjects(t, "one")
+		stdout, stderr := captureOutput(t)
+
+		args := []string{"workitems", "list", "--project", "nope", "--search", "help"}
+		if _, handled := handleUsage(args); handled {
+			t.Fatalf("handleUsage(%q) reported handled, want passthrough to dispatch", args)
+		}
+		// No closure set: reaching a read fails the subtest.
+		if code := dispatch(context.Background(), &fakeReadClient{t: t}, args); code != exitUnknown {
+			t.Errorf("dispatch(%q) = %d, want %d", args, code, exitUnknown)
+		}
+		if !strings.Contains(stderr.String(), "not a configured project") {
+			t.Errorf("stderr = %q, want the allow-list refusal", stderr.String())
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout = %q, want nothing", stdout.String())
+		}
+	})
+
+	t.Run("--HELP is an unknown flag", func(t *testing.T) {
+		stdout, _ := captureOutput(t)
+
+		args := []string{"workitems", "list", "--HELP"}
+		if code := dispatch(context.Background(), &fakeReadClient{t: t}, args); code != exitUnknown {
+			t.Errorf("dispatch(%q) = %d, want %d", args, code, exitUnknown)
+		}
+		if stdout.Len() != 0 {
+			t.Errorf("stdout = %q, want nothing", stdout.String())
+		}
+	})
+}
+
+// TestHelpTokenInFlagPositionIsHelp pins D-07 and D-09 (audit W2): a help token
+// in flag position still prints verb help with no config loaded, and the help
+// is rendered from a real FlagSet, so typed defaults survive.
+func TestHelpTokenInFlagPositionIsHelp(t *testing.T) {
+	withConfiguredProjects(t) // no names: the pre-config state handleUsage runs in
+
+	for _, args := range [][]string{
+		{"workitems", "list", "--project", "P", "--help"},
+		{"workitems", "list", "--search", "x", "-h"},
+		{"prs", "list", "--json", "-help"},
+		{"prs", "list", "--help=x"},
+		{"workitems", "set-state", "4821", "--help"},
+		{"workitems", "set-state", "--help", "4821"},
+		{"releases", "approve", "77", "--project", "P", "-h"},
+		{"prs", "list", "foo", "--help"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			stdout, stderr := captureOutput(t)
+
+			code, handled := handleUsage(args)
+			if !handled {
+				t.Fatalf("handleUsage(%q) reported unhandled, want verb help", args)
+			}
+			if code != exitOK {
+				t.Errorf("handleUsage(%q) = %d, want %d", args, code, exitOK)
+			}
+			if stdout.Len() != 0 {
+				t.Errorf("help wrote %q to stdout, want nothing", stdout.String())
+			}
+			out := stderr.String()
+			for _, want := range []string{"Usage: adoBizInt", "-json", "-timeout duration"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("help for %q does not contain %q:\n%s", args, want, out)
+				}
+			}
+			if strings.Contains(out, "panic calling String") {
+				t.Errorf("help for %q was printed from the value-inert probe:\n%s", args, out)
+			}
+		})
 	}
 }
 
