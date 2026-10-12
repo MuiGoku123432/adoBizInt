@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -737,6 +740,7 @@ func TestTimeoutOverridesConfiguredBudgetAfterValidation(t *testing.T) {
 		OrgURL:       "https://dev.azure.com/fixture",
 		PollInterval: 30 * time.Second,
 		FetchTimeout: 2 * time.Minute,
+		Projects:     config.StringSlice{"P"},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("configured budget must validate before the override: %v", err)
@@ -766,6 +770,103 @@ func TestTimeoutOverridesConfiguredBudgetAfterValidation(t *testing.T) {
 	}
 	if applied > 10*time.Second {
 		t.Errorf("applied budget is %v, want roughly 5s (the flag, not the configured 2m)", applied)
+	}
+}
+
+// TestValidateGuardsCLIAndTUI pins D-10 structurally: one cfg.Validate() covers
+// the CLI and the TUI because run() calls it before the dispatch branch and
+// before ui.NewModel, and its failure branch returns exitUnknown (nothing ran).
+// The assertions are over the AST, so a comment can neither satisfy nor defeat
+// them (STATE.md F-03-3 precedent).
+func TestValidateGuardsCLIAndTUI(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parse main.go: %v", err)
+	}
+
+	var run *ast.FuncDecl
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "run" {
+			run = fn
+		}
+	}
+	if run == nil {
+		t.Fatalf("func run not found in main.go")
+	}
+
+	// indexOf returns the position of the one top-level statement of run whose
+	// subtree holds a call matching match, failing unless exactly one does.
+	indexOf := func(what string, match func(*ast.CallExpr) bool) int {
+		t.Helper()
+		found := -1
+		for i, stmt := range run.Body.List {
+			hit := false
+			ast.Inspect(stmt, func(n ast.Node) bool {
+				if call, ok := n.(*ast.CallExpr); ok && match(call) {
+					hit = true
+				}
+				return !hit
+			})
+			if !hit {
+				continue
+			}
+			if found != -1 {
+				t.Fatalf("%s is called in more than one statement of run", what)
+			}
+			found = i
+		}
+		if found == -1 {
+			t.Fatalf("%s is not called in run; the ordering check would be vacuous", what)
+		}
+		return found
+	}
+
+	validate := indexOf("Validate", func(c *ast.CallExpr) bool {
+		sel, ok := c.Fun.(*ast.SelectorExpr)
+		return ok && sel.Sel.Name == "Validate"
+	})
+	dispatchAt := indexOf("dispatch", func(c *ast.CallExpr) bool {
+		id, ok := c.Fun.(*ast.Ident)
+		return ok && id.Name == "dispatch"
+	})
+	newModel := indexOf("ui.NewModel", func(c *ast.CallExpr) bool {
+		sel, ok := c.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "NewModel" {
+			return false
+		}
+		x, ok := sel.X.(*ast.Ident)
+		return ok && x.Name == "ui"
+	})
+
+	if validate > dispatchAt || validate > newModel {
+		t.Errorf("cfg.Validate() is statement %d, dispatch %d, ui.NewModel %d; Validate must precede both", validate, dispatchAt, newModel)
+	}
+
+	guard, ok := run.Body.List[validate].(*ast.IfStmt)
+	if !ok {
+		t.Fatalf("the Validate statement is %T, want the *ast.IfStmt guarding cfg.Validate()", run.Body.List[validate])
+	}
+	returnsUnknown, namesProjects := false, false
+	ast.Inspect(guard.Body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.ReturnStmt:
+			if len(n.Results) == 1 {
+				if id, ok := n.Results[0].(*ast.Ident); ok && id.Name == "exitUnknown" {
+					returnsUnknown = true
+				}
+			}
+		case *ast.BasicLit:
+			if n.Kind == token.STRING && strings.Contains(n.Value, "ADO_PROJECTS") {
+				namesProjects = true
+			}
+		}
+		return true
+	})
+	if !returnsUnknown {
+		t.Errorf("the Validate failure branch does not return exitUnknown")
+	}
+	if !namesProjects {
+		t.Errorf("the Validate failure hint does not name ADO_PROJECTS")
 	}
 }
 

@@ -100,6 +100,7 @@ func TestValidate(t *testing.T) {
 			OrgURL:       "https://dev.azure.com/example",
 			PollInterval: 30 * time.Second,
 			FetchTimeout: 2 * time.Minute,
+			Projects:     StringSlice{"P"},
 		}
 	}
 
@@ -134,6 +135,24 @@ func TestValidate(t *testing.T) {
 			name:      "fetch timeout below poll interval",
 			mutate:    func(c *Config) { c.FetchTimeout = c.PollInterval - time.Second },
 			wantField: "fetch_timeout",
+		},
+		{
+			// D-10: an empty list makes every read report complete:true over nothing.
+			name:      "nil projects",
+			mutate:    func(c *Config) { c.Projects = nil },
+			wantField: "projects",
+		},
+		{
+			name:      "empty projects slice",
+			mutate:    func(c *Config) { c.Projects = StringSlice{} },
+			wantField: "projects",
+		},
+		{
+			// The projects check runs after pat, so a missing credential is still
+			// the first thing the operator is told about.
+			name:      "missing pat with no projects",
+			mutate:    func(c *Config) { c.PAT = ""; c.Projects = nil },
+			wantField: "pat",
 		},
 	}
 
