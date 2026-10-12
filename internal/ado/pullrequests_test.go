@@ -2,6 +2,7 @@ package ado
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"testing"
@@ -358,6 +359,61 @@ func TestGetPullRequestsReportsCompleteWhenEveryProjectAnswers(t *testing.T) {
 	if len(result.Failures) != 0 {
 		t.Errorf("GetPullRequests() Failures = %+v, want none", result.Failures)
 	}
+}
+
+// TestGetPullRequestsScope pins D-01 and audit W4 for prs list: the envelope
+// discloses the active-only filter, equal to the status the request sends.
+func TestGetPullRequestsScope(t *testing.T) {
+	const want = `{"pr_status":"active"}`
+
+	t.Run("scope matches the request", func(t *testing.T) {
+		var gotStatus *git.PullRequestStatus
+		client := &Client{
+			projects: []string{"project-one", "project-two"},
+			gitClient: &fakeGitAPI{
+				t: t,
+				GetPullRequestsByProjectFunc: func(_ context.Context, args git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+					gotStatus = args.SearchCriteria.Status
+					return &[]git.GitPullRequest{}, nil
+				},
+			},
+		}
+
+		result, err := client.GetPullRequests(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetPullRequests() error = %v, want nil", err)
+		}
+		if result.Scope == nil {
+			t.Fatal("Scope is nil, want the PR status filter")
+		}
+		raw, err := json.Marshal(result.Scope)
+		if err != nil {
+			t.Fatalf("marshal scope: %v", err)
+		}
+		if string(raw) != want {
+			t.Errorf("scope = %s, want %s", raw, want)
+		}
+		if gotStatus == nil || string(*gotStatus) != result.Scope.PRStatus {
+			t.Errorf("SearchCriteria.Status = %v, want %q", gotStatus, result.Scope.PRStatus)
+		}
+		if !result.Complete || len(result.Failures) != 0 {
+			t.Errorf("Complete = %v, Failures = %+v, want true and none", result.Complete, result.Failures)
+		}
+	})
+
+	t.Run("no projects still carries the scope", func(t *testing.T) {
+		result, err := (&Client{}).GetPullRequests(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetPullRequests() error = %v, want nil", err)
+		}
+		raw, err := json.Marshal(result.Scope)
+		if err != nil {
+			t.Fatalf("marshal scope: %v", err)
+		}
+		if string(raw) != want {
+			t.Errorf("scope = %s, want %s", raw, want)
+		}
+	})
 }
 
 // TestFetchTimeoutMarksUnreached is D-12's only mechanical gate in this phase.

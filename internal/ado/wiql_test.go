@@ -550,3 +550,75 @@ func TestGetWorkItemsScope(t *testing.T) {
 		}
 	})
 }
+
+// dashboardScopeJSON is the published scope of dashboard counts (D-01).
+const dashboardScopeJSON = `{"excluded_states":["Done","Closed","Removed"],"iterations":"recent","pr_status":"active"}`
+
+// TestGetDashboardCountsScope pins D-01 and audit W4 for dashboard counts: both
+// returns disclose the work-item WIQL filter and the PR status filter, each tied
+// to the request the dashboard actually sends.
+func TestGetDashboardCountsScope(t *testing.T) {
+	t.Run("scope matches the requests", func(t *testing.T) {
+		var gotQuery string
+		var gotStatus *git.PullRequestStatus
+		client := &Client{
+			projects: []string{"P"},
+			workitemClient: &fakeWorkItemAPI{
+				t: t,
+				GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+					return nil, nil
+				},
+				QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
+					gotQuery = *args.Wiql.Query
+					return &workitemtracking.WorkItemQueryResult{}, nil
+				},
+			},
+			gitClient: &fakeGitAPI{
+				t: t,
+				GetPullRequestsByProjectFunc: func(_ context.Context, args git.GetPullRequestsByProjectArgs) (*[]git.GitPullRequest, error) {
+					gotStatus = args.SearchCriteria.Status
+					return &[]git.GitPullRequest{}, nil
+				},
+			},
+		}
+
+		result, err := client.GetDashboardCounts(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
+		}
+		if result.Scope == nil {
+			t.Fatal("Scope is nil, want the dashboard filters")
+		}
+		raw, err := json.Marshal(result.Scope)
+		if err != nil {
+			t.Fatalf("marshal scope: %v", err)
+		}
+		if string(raw) != dashboardScopeJSON {
+			t.Errorf("scope = %s, want %s", raw, dashboardScopeJSON)
+		}
+		notIn := "[System.State] NOT IN ('" + strings.Join(result.Scope.ExcludedStates, "', '") + "')"
+		if !strings.Contains(gotQuery, notIn) {
+			t.Errorf("query = %q, want it to contain %q so scope and request cannot drift", gotQuery, notIn)
+		}
+		if gotStatus == nil || string(*gotStatus) != result.Scope.PRStatus {
+			t.Errorf("SearchCriteria.Status = %v, want %q", gotStatus, result.Scope.PRStatus)
+		}
+		if !result.Complete {
+			t.Errorf("Complete = false, want true (Failures = %v)", result.Failures)
+		}
+	})
+
+	t.Run("early return carries the scope", func(t *testing.T) {
+		result, err := (&Client{}).GetDashboardCounts(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetDashboardCounts() error = %v, want nil", err)
+		}
+		raw, err := json.Marshal(result.Scope)
+		if err != nil {
+			t.Fatalf("marshal scope: %v", err)
+		}
+		if string(raw) != dashboardScopeJSON {
+			t.Errorf("scope = %s, want %s", raw, dashboardScopeJSON)
+		}
+	})
+}
