@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 2
 current_phase_name: Honest reads
 status: planning
-stopped_at: Phase 4 complete, ready to plan Phase 2
-last_updated: "2026-10-12T14:59:50.659Z"
+stopped_at: Completed 02-06-PLAN.md
+last_updated: "2026-10-12T15:40:50.538Z"
 last_activity: 2026-10-12
-last_activity_desc: Phase 4 complete, transitioned to Phase 2
-state_head: 63ae6a4e43c75af600bcad78850a247b6e37dced
+last_activity_desc: 02-06 complete (per-definition lookup failures reported)
+state_head: 3ad31ed5209b5260ed09b78c21cb4c732ce53b8d
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 26
-  completed_plans: 26
+  total_plans: 28
+  completed_plans: 27
 milestone_name: milestone
 ---
 
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 
 ## Current Position
 
-Phase: 2 — Honest reads
-Plan: Not started
-Status: Ready to plan
-Next: Phase 04 (guarded writes)
-Last activity: 2026-10-12 — Phase 4 complete, transitioned to Phase 2
+Phase: 2 — Honest reads (gap closure)
+Plan: 02-06 complete; 02-07 pending
+Status: Executing gap-closure plans
+Next: 02-07 (D-06a empty-repository recognition, work-item iteration lookup failure), then Phase 2 re-verification
+Last activity: 2026-10-12 — 02-06 complete: per-definition lookup failures reported in GetPipelineRuns, GetReleases, GetPipelineDefinitions
 
 Progress: [████████░░] 75%
 
@@ -87,6 +87,7 @@ Progress: [████████░░] 75%
 | Phase 05 P04 | 6 min | 2 tasks | 8 files |
 | Phase 05 P05 | 8min | 2 tasks | 6 files |
 | Phase 05 P06 | 4 min | 2 tasks | 3 files |
+| Phase 02 P06 | 5 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -166,6 +167,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 05]: 05-06: logging.Init chmods ~/.config/adoBizInt to 0700 and adoBizInt.log to 0600 on every call (file.Chmod on the fd); chmod failure closes the file and returns, handled by initLogging's non-fatal warning (D-20, D-21)
 - [Phase 05]: 05-06: TestPATNeverLogged reuses patFixture, drives an executed write (a dry run logs nothing), and asserts Read complete / Write complete / panic recovered markers; tripwire, not a present-leak detector
 - [Phase 05]: 05-06: DEFERRED follow-up T-05-26 -- cmd/adoBizInt/audit.go still creates audit.jsonl 0644 and MkdirAll 0755; mitigated by the 0700 directory, file mode out of scope under D-18
+- [Phase 02]: 02-06 G1: a definition whose per-definition N+1 lookup (GetBuilds, GetReleases, GetDefinition) failed is omitted from Items and named in Failures as 'op for definition'; no unknown-status row, 02-04 JSON contract unchanged — Mirrors GetBranches; no view change; reversible. Nil-Id edge in GetPipelineDefinitions now surfaces as an other-kind Failure (Phase 5 D-14 scope)
+- [Phase 02]: 02-06: D-12 ctx.Err() pre-flight now runs inside each per-definition loop, not only between projects — Unreached definitions get timeout Failures and no doomed SDK calls
 
 ### Pending Todos
 
@@ -218,6 +221,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-09-30T17:40:41.785Z
-Stopped at: Phase 4 complete, ready to plan Phase 2
+Last session: 2026-10-12T15:40:44.235Z
+Stopped at: Completed 02-06-PLAN.md
 Resume file: None
