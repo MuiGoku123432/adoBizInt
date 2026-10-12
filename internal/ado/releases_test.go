@@ -346,3 +346,106 @@ func TestFetchTimeoutMarksUnreachedReleases(t *testing.T) {
 	}
 	assertAllUnreached(t, "GetPendingApprovals", approvals.Failures, approvals.Complete, projects)
 }
+
+// Regression (gap 1): a failed per-definition release lookup used to append the
+// definition as "noReleases" and record nothing, so a rejected token or a
+// timeout read as an empty state under complete:true. The definition is now
+// absent from Items and named in Failures.
+func TestGetReleasesReportsDefinitionFailure(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantKind FailureKind
+	}{
+		// The pointer SDK shape here and the value shape in the GetPipelineRuns
+		// counterpart cover both forms azuredevops.UnwrapError returns.
+		{name: "auth", err: wrappedErrorPointer(403, "TF400813: The user is not authorized"), wantKind: FailureAuth},
+		{name: "timeout", err: context.DeadlineExceeded, wantKind: FailureTimeout},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{
+				projects:           []string{"project-one"},
+				releaseDefinitions: []string{"release-ok", "release-broken"},
+				releaseClient: &fakeReleaseAPI{
+					t: t,
+					GetReleaseDefinitionsFunc: func(_ context.Context, _ release.GetReleaseDefinitionsArgs) (*release.GetReleaseDefinitionsResponseValue, error) {
+						okID, brokenID := 31, 32
+						return &release.GetReleaseDefinitionsResponseValue{Value: []release.ReleaseDefinition{
+							{Id: &okID, Name: strPtr("release-ok")},
+							{Id: &brokenID, Name: strPtr("release-broken")},
+						}}, nil
+					},
+					GetReleasesFunc: func(_ context.Context, args release.GetReleasesArgs) (*release.GetReleasesResponseValue, error) {
+						if *args.DefinitionId == 32 {
+							return nil, tt.err
+						}
+						releaseID := 901
+						return &release.GetReleasesResponseValue{Value: []release.Release{{Id: &releaseID, Name: strPtr("Release-1")}}}, nil
+					},
+				},
+			}
+
+			result, err := client.GetReleases(context.Background(), nil)
+			if err != nil {
+				t.Fatalf("GetReleases() error = %v, want nil", err)
+			}
+			if len(result.Items) != 1 || result.Items[0].DefinitionName != "release-ok" {
+				t.Errorf("GetReleases() Items = %+v, want only release-ok — a failed lookup must not render as a noReleases row", result.Items)
+			}
+			assertDefinitionFailure(t, "GetReleases", result.Failures, result.Complete, "project-one", tt.wantKind, "release-broken")
+		})
+	}
+}
+
+// TestGetReleasesMarksUnreachedDefinitions is D-12 inside the per-definition
+// loop: once the fetch deadline expires, the definitions not yet reached are
+// recorded as timeouts and no further GetReleases call is issued.
+func TestGetReleasesMarksUnreachedDefinitions(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	calls := 0
+	client := &Client{
+		projects:           []string{"project-one"},
+		releaseDefinitions: []string{"release-ok", "release-broken"},
+		releaseClient: &fakeReleaseAPI{
+			t: t,
+			// note: same two-definition fixture as TestGetReleasesReportsDefinitionFailure; two uses stay inline.
+			GetReleaseDefinitionsFunc: func(_ context.Context, _ release.GetReleaseDefinitionsArgs) (*release.GetReleaseDefinitionsResponseValue, error) {
+				okID, brokenID := 31, 32
+				return &release.GetReleaseDefinitionsResponseValue{Value: []release.ReleaseDefinition{
+					{Id: &okID, Name: strPtr("release-ok")},
+					{Id: &brokenID, Name: strPtr("release-broken")},
+				}}, nil
+			},
+			GetReleasesFunc: func(ctx context.Context, _ release.GetReleasesArgs) (*release.GetReleasesResponseValue, error) {
+				calls++
+				if calls > 1 {
+					t.Errorf("GetReleases call %d issued after the fetch deadline expired; want no doomed calls", calls)
+					return nil, ctx.Err()
+				}
+				select {
+				case <-ctx.Done():
+				case <-time.After(5 * time.Second):
+					t.Error("fetch deadline did not expire within 5s")
+				}
+				releaseID := 901
+				return &release.GetReleasesResponseValue{Value: []release.Release{{Id: &releaseID, Name: strPtr("Release-1")}}}, nil
+			},
+		},
+	}
+
+	result, err := client.GetReleases(ctx, nil)
+	if err != nil {
+		t.Fatalf("GetReleases() error = %v, want nil", err)
+	}
+	if calls != 1 {
+		t.Errorf("GetReleases calls = %d, want 1", calls)
+	}
+	if len(result.Items) != 1 || result.Items[0].DefinitionName != "release-ok" {
+		t.Errorf("GetReleases() Items = %+v, want only release-ok", result.Items)
+	}
+	assertDefinitionFailure(t, "GetReleases", result.Failures, result.Complete, "project-one", FailureTimeout, "release-broken")
+}
