@@ -72,8 +72,10 @@ func writeCrashRecord(kind, message string) {
 // ran writes no stack anywhere.
 var loggingReady bool
 
-// handlePanic turns a recovered value into the published crash record and the
-// outcome-unknown exit code.
+// handlePanic turns a recovered value into the published crash record and
+// returns the exit code its caller chose: exitUnknown (3, nothing ran) from
+// guard, or exitOutcomeUnknown (5) from runWrite once a write's request was
+// issued (D-12). The record goes to stdout either way (D-18).
 //
 // The full stack goes to the log file and nowhere else, and only when logging
 // initialisation succeeded. The fallback logger writes to stderr, so an
@@ -84,7 +86,7 @@ var loggingReady bool
 //
 // Do not make the stack write unconditional for debuggability. The log path is
 // already in the record, which is where a caller is meant to look.
-func handlePanic(r any) int {
+func handlePanic(r any, code int) int {
 	message := fmt.Sprint(r)
 
 	if loggingReady {
@@ -95,5 +97,5 @@ func handlePanic(r any) int {
 	}
 
 	writeCrashRecord(crashKindPanic, message)
-	return exitUnknown
+	return code
 }

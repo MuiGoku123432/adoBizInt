@@ -134,7 +134,7 @@ func oneRepo(name string, wf *writeFlags) (string, error) {
 // steps is the contract, not an implementation detail — in particular the audit
 // sink is opened before anything is attempted (D-13), and the no-op refusal
 // precedes the --confirm branch because D-03 refuses on both paths.
-func runWrite(ctx context.Context, op writeOp, args []string) int {
+func runWrite(ctx context.Context, op writeOp, args []string) (code int) {
 	name := op.name
 	fs, gf, _, wf := newFlagSet(name)
 	if err := fs.Parse(hoistLeadingPositionals(args)); err != nil {
@@ -227,6 +227,20 @@ func runWrite(ctx context.Context, op writeOp, args []string) int {
 		return finishWrite(name, target, changes, false, outcomeDryRun, exitOK, gf.asJSON)
 	}
 
+	// D-12: this recover's POSITION is the request-issued signal. A panic in
+	// resolve or plan never reaches it and exits 3 through guard; from here on
+	// the mutation may be live in ADO, so a panic exits 5, as an interrupt does
+	// (Phase 4 D-22). Treating "mutate entered" as "request issued" over-reports
+	// unknown, the safe direction (RESEARCH A4). It is registered after
+	// defer sink.Close(), and defers run last-in first-out, so the sink is still
+	// open when it runs.
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		code = handlePanic(fmt.Sprintf("panic after %s was issued; outcome unknown: %v", name, r), exitOutcomeUnknown)
+	}()
 	err = op.mutate(writeCtx, target, wf)
 
 	// The parent's Err() is consulted, not the failure kind: classifyFailure maps

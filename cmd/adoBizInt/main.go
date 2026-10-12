@@ -24,8 +24,10 @@ func main() {
 }
 
 // guard runs the whole program with a deferred recover, so a panic anywhere
-// inside it becomes a structured crash record and the outcome-unknown exit code
-// rather than the runtime's own dump and status (D-23, OUT-05).
+// inside it becomes a structured crash record and exit 3 (nothing ran, D-08)
+// rather than the runtime's own dump and status (D-23, OUT-05). A panic inside a
+// write after its request was issued never reaches guard: runWrite recovers it
+// first and exits 5 (D-12).
 //
 // It wraps run rather than living inside it so a test can drive a real panic
 // through the real handler; run itself loads configuration and constructs a
@@ -36,7 +38,7 @@ func main() {
 func guard(body func() int) (code int) {
 	defer func() {
 		if r := recover(); r != nil {
-			code = handlePanic(r)
+			code = handlePanic(r, exitUnknown)
 		}
 	}()
 	return body()
@@ -60,8 +62,8 @@ func initLogging() {
 }
 
 // run performs the whole program and returns the process exit code. Startup
-// failures return exitUnknown rather than exitPartial (D-08): the read never
-// happened, so its outcome is unknown rather than incomplete.
+// failures return exitUnknown rather than exitPartial (D-08): nothing ran, so
+// there is no partial result to report.
 func run() int {
 	initLogging()
 	log := logging.Logger()
