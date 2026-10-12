@@ -43,6 +43,17 @@ const (
 func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (Result[DashboardCounts], error) {
 	log := logging.Logger()
 
+	// D-01: disclose the fixed filters. The states and iterations mirror
+	// getProjectCounts' WIQL, and PRStatus is derived from the constant the PR
+	// request sends, so the two cannot drift. Built per call so no two results
+	// share a Scope.
+	// note: GetWorkItems builds the same two work-item fields; two uses, not extracted.
+	scope := &Scope{
+		ExcludedStates: []string{"Done", "Closed", "Removed"},
+		Iterations:     "recent",
+		PRStatus:       string(git.PullRequestStatusValues.Active),
+	}
+
 	// Use provided projects or fall back to configured projects
 	targetProjects := projects
 	if len(targetProjects) == 0 {
@@ -57,7 +68,9 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (Res
 
 	if len(targetProjects) == 0 {
 		log.Warn("No projects to fetch counts for - projects list is empty")
-		return newResult([]DashboardCounts{{}}, nil), nil
+		result := newResult([]DashboardCounts{{}}, nil)
+		result.Scope = scope
+		return result, nil
 	}
 
 	counts := &DashboardCounts{}
@@ -99,7 +112,9 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (Res
 		"failure_count", len(failures),
 	)
 
-	return newResult([]DashboardCounts{*counts}, failures), nil
+	result := newResult([]DashboardCounts{*counts}, failures)
+	result.Scope = scope
+	return result, nil
 }
 
 // getProjectCounts fetches counts for a single project. It returns both the
@@ -117,7 +132,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	counts := &DashboardCounts{}
 	var failures []Failure
 
-	// Get recent iterations (sprints active in last 90 days)
+	// Get recent iterations (sprints active in last 30 days)
 	iterations, err := c.GetRecentIterations(ctx, project)
 	if err != nil {
 		log.Warn("Failed to get iterations for dashboard, using date filter only", "project", project, "error", err)

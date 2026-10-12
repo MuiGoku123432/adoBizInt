@@ -79,7 +79,11 @@ func (c *Client) GetPullRequests(ctx context.Context, projects []string) (Result
 	}
 
 	log.Info("Pull requests fetched", "total_count", len(allPRs), "failure_count", len(failures))
-	return newResult(allPRs, failures), nil
+	result := newResult(allPRs, failures)
+	// D-01: Azure DevOps returns only active pull requests to this request; the
+	// value is the same constant SearchCriteria.Status points at.
+	result.Scope = &Scope{PRStatus: string(git.PullRequestStatusValues.Active)}
+	return result, nil
 }
 
 func (c *Client) convertPR(pr git.GitPullRequest, project string) PullRequest {
