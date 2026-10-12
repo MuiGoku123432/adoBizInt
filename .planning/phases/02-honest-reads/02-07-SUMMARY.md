@@ -188,3 +188,23 @@ None. No external service configuration is required.
 ---
 *Phase: 02-honest-reads*
 *Completed: 2026-10-12*
+
+## Post-execution deviation (orchestrator, 2026-10-12)
+
+The live `branches list --json` check after this plan returned `complete:false`
+with **130** failures (was 5 VS403403 before). All 130 were TF401019, HTTP 404,
+typeKey `GitRepositoryNotFoundException`: the disabled repositories (2 Kinetic,
+128 Process) that `GetRepositories` still lists. The pre-02-07 blanket-404 rule
+had been hiding them by accident; narrowing to D-06a exposed them.
+
+Fixed with user decision **D-06b**: skip a branch-stats error that is 404 AND
+typeKey `GitRepositoryNotFoundException` (structured field, no message match).
+
+- `8995e2e` test(02-07): failing D-06b rows (disabled, pointer form, plus three
+  negatives: 404 other typeKey, the typeKey under 400, the typeKey on 403 stays auth)
+- `f73cfa4` fix(02-07): `unreadableRepository` in branches.go; `wrappedErrorOf`
+  in result.go now owns the value/pointer WrappedError extraction shared with
+  `statusCodeOf`
+
+Live re-check: `branches list --json` exit 0, `complete:true`, 0 failures,
+886 branches. Full gate (build, vet, `go test -race -count=1 ./...`, gofmt) green.

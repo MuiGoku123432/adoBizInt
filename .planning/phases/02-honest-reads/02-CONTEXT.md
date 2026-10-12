@@ -92,6 +92,15 @@ and nil-guard hardening (Phase 5); rate-limit backoff and N+1 restructuring
   401/403 (auth), a timeout — is still recorded. This replaces assumption A4
   (empty repo yields 404), which the live evidence falsified. Chosen by the user.
   — **Reversibility:** reversible — internal to `internal/ado/branches.go`.
+- **D-06b (ADDED 2026-10-12, found during 02-07 live check):** A **disabled
+  repository** is skipped on the branch-stats call when the answer is **HTTP 404
+  AND the structured `typeKey` is `GitRepositoryNotFoundException`** (no message
+  matching). Narrowing to D-06a surfaced 130 failures, all disabled repositories
+  (2 Kinetic, 128 Process) that `GetRepositories` still lists; the old blanket
+  404 rule had been hiding them. The 2020 SDK's `GitRepository` has no
+  `isDisabled` field; after the v2 SDK upgrade (PLAT-02) prefer skipping by that
+  field before the call. Chosen by the user.
+  — **Reversibility:** reversible — internal to `internal/ado/branches.go`.
 
 ### Timeout policy
 
