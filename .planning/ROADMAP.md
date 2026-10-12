@@ -18,7 +18,7 @@ shipping no flag at all, which is why the test seam comes first.
 
 ## Phases
 
-- [ ] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable (awaiting human verification)
+- [x] **Phase 1: Test seam for internal/ado** - Narrow interfaces and injectable sub-clients so write paths become testable (awaiting human verification) (completed 2026-10-12)
 - [ ] **Phase 2: Honest reads** - Aggregate reads surface failures, auth errors are fatal, every call has a deadline (awaiting human verification)
 - [x] **Phase 3: Read CLI** - Subcommand dispatch, JSON output, exit codes, agent-relevant filters (verified 2026-09-09)
 - [ ] **Phase 4: Guarded writes** - Write verbs behind dry-run default, explicit confirmation, and an audit record

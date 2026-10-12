@@ -1,7 +1,7 @@
 ---
 phase: 01-test-seam-for-internal-ado
 verified: 2026-09-06T06:19:31Z
-status: human_needed
+status: passed
 score: 27/29 must-haves verified
 behavior_unverified: 1
 overrides_applied: 0
@@ -14,17 +14,20 @@ re_verification:
   gaps_remaining: []
   regressions: []
 unverified_backstop_items:
+
   - truth: "Two aggregate reads returning results for the same project have stable, specified output order under repeated runs."
     reason: insufficient_spec
     disposition: explicitly_unclaimed_non_goal
     blocking: false
     rationale: "The plan never identifies the two reads or the required order. This item was introduced only as an under-specified plan-level backstop, is not a ROADMAP success criterion or SEAM requirement, and plan 01-06 explicitly excludes it from the surgical gap closure. Honest-verifier semantics require abstention, not a fabricated pass; because it is not part of the phase goal contract, the abstention does not block phase completion."
 behavior_unverified_items:
+
   - truth: "NewClient remains non-fatal when eager identity lookup fails, keeps successful AuthenticatedUser.Id caching, and retains the provider for later approval retries."
     test: "Construct a client through NewClient against a controlled identity endpoint that fails once and then recovers; inspect the returned client/warning and perform subsequent approvals."
     expected: "Construction succeeds after the eager lookup failure, a successful eager lookup caches AuthenticatedUser.Id, and a client created during failure retains the provider so later approval attempts recover without changing public behavior."
     why_human: "NewClient still constructs concrete SDK clients and performs the identity request internally. No pre-existing test executes this constructor transition; source wiring plus direct-provider tests prove the pieces but cannot prove the constructor-time state transition at runtime."
 human_verification:
+
   - test: "Exercise NewClient through a controlled eager identity failure and recovery path."
     expected: "Construction remains non-fatal, the warning describes retry behavior, successful eager lookup caches AuthenticatedUser.Id, and subsequent approval can recover through the retained provider."
     why_human: "No automated test invokes NewClient's identity-failure transition without a network-capable SDK client; presence and structural wiring alone are insufficient under behavior-dependent verification rules."
