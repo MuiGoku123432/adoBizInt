@@ -3,6 +3,8 @@ package ado
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -447,4 +449,104 @@ func stringValue(lit *ast.BasicLit) (string, bool) {
 	}
 	v, err := strconv.Unquote(lit.Value)
 	return v, err == nil
+}
+
+// workItemScopeJSON is the published scope of workitems list (D-01).
+const workItemScopeJSON = `{"excluded_states":["Done","Closed","Removed"],"iterations":"recent"}`
+
+// TestGetWorkItemsScope pins D-01 and audit W4 for workitems list: every return
+// path discloses the fixed WIQL filter, the excluded states match the query's
+// NOT IN list in order, and scope never changes completeness.
+func TestGetWorkItemsScope(t *testing.T) {
+	scopeJSON := func(t *testing.T, s *Scope) string {
+		t.Helper()
+		if s == nil {
+			t.Fatal("Scope is nil, want the work-item filter")
+		}
+		raw, err := json.Marshal(s)
+		if err != nil {
+			t.Fatalf("marshal scope: %v", err)
+		}
+		return string(raw)
+	}
+
+	t.Run("scope matches the query", func(t *testing.T) {
+		var gotQuery string
+		api := &fakeWorkItemAPI{
+			t: t,
+			GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+				return nil, nil
+			},
+			QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
+				gotQuery = *args.Wiql.Query
+				return &workitemtracking.WorkItemQueryResult{}, nil
+			},
+		}
+		client := &Client{projects: []string{"P"}, workitemClient: api}
+
+		result, err := client.GetWorkItems(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetWorkItems() error = %v, want nil", err)
+		}
+		if got := scopeJSON(t, result.Scope); got != workItemScopeJSON {
+			t.Errorf("scope = %s, want %s", got, workItemScopeJSON)
+		}
+		notIn := "[System.State] NOT IN ('" + strings.Join(result.Scope.ExcludedStates, "', '") + "')"
+		if !strings.Contains(gotQuery, notIn) {
+			t.Errorf("query = %q, want it to contain %q so scope and request cannot drift", gotQuery, notIn)
+		}
+		if !result.Complete || len(result.Failures) != 0 {
+			t.Errorf("Complete = %v, Failures = %v, want true and none", result.Complete, result.Failures)
+		}
+		raw, err := json.Marshal(result)
+		if err != nil {
+			t.Fatalf("marshal result: %v", err)
+		}
+		if want := `"scope":` + workItemScopeJSON; !strings.Contains(string(raw), want) {
+			t.Errorf("result JSON = %s, want it to contain %s", raw, want)
+		}
+	})
+
+	t.Run("early return carries the scope", func(t *testing.T) {
+		result, err := (&Client{}).GetWorkItems(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetWorkItems() error = %v, want nil", err)
+		}
+		if got := scopeJSON(t, result.Scope); got != workItemScopeJSON {
+			t.Errorf("scope = %s, want %s", got, workItemScopeJSON)
+		}
+	})
+
+	t.Run("a failed project keeps the scope", func(t *testing.T) {
+		api := &fakeWorkItemAPI{
+			t: t,
+			GetClassificationNodeFunc: func(_ context.Context, _ workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
+				return nil, nil
+			},
+			QueryByWiqlFunc: func(_ context.Context, _ workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
+				return nil, errors.New("query failed")
+			},
+		}
+		client := &Client{projects: []string{"P"}, workitemClient: api}
+
+		result, err := client.GetWorkItems(context.Background(), nil)
+		if err != nil {
+			t.Fatalf("GetWorkItems() error = %v, want nil", err)
+		}
+		if result.Complete || len(result.Failures) != 1 {
+			t.Errorf("Complete = %v, Failures = %v, want false and one entry", result.Complete, result.Failures)
+		}
+		if got := scopeJSON(t, result.Scope); got != workItemScopeJSON {
+			t.Errorf("scope = %s, want %s", got, workItemScopeJSON)
+		}
+	})
+
+	t.Run("results do not share a scope", func(t *testing.T) {
+		client := &Client{}
+		first, _ := client.GetWorkItems(context.Background(), nil)
+		second, _ := client.GetWorkItems(context.Background(), nil)
+		if first.Scope == nil || first.Scope == second.Scope {
+			t.Errorf("Scope pointers %p and %p, want two distinct non-nil values", first.Scope, second.Scope)
+		}
+	})
 }

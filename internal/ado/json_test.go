@@ -152,19 +152,32 @@ func TestJSONFieldNames(t *testing.T) {
 	// The envelope and the failure record are tagged in the same convention so
 	// Phase 3 serialises the whole read response under one contract (D-01).
 	t.Run("Result", func(t *testing.T) {
-		assertKeySet(t, Result[WorkItem]{}, []string{"items", "failures", "complete"})
+		assertKeySet(t, Result[WorkItem]{}, []string{"items", "failures", "complete", "scope"})
 	})
 
-	// Result must present the same three keys for every payload type, including
+	// Result must present the same four keys for every payload type, including
 	// the dashboard's single-element Items slice from 02-03.
 	t.Run("Result_uniform_across_reads", func(t *testing.T) {
-		assertKeySet(t, Result[Branch]{}, []string{"items", "failures", "complete"})
-		assertKeySet(t, Result[PullRequest]{}, []string{"items", "failures", "complete"})
-		assertKeySet(t, Result[PipelineRun]{}, []string{"items", "failures", "complete"})
-		assertKeySet(t, Result[Release]{}, []string{"items", "failures", "complete"})
-		assertKeySet(t, Result[ReleaseApproval]{}, []string{"items", "failures", "complete"})
-		assertKeySet(t, Result[WorkItemDetail]{}, []string{"items", "failures", "complete"})
-		assertKeySet(t, Result[DashboardCounts]{}, []string{"items", "failures", "complete"})
+		assertKeySet(t, Result[Branch]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[PullRequest]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[PipelineRun]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[Release]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[ReleaseApproval]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[WorkItemDetail]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[DashboardCounts]{}, []string{"items", "failures", "complete", "scope"})
+	})
+
+	// Scope is the one struct exempt from the stable-key-set rule: a key's
+	// presence IS the disclosed filter (D-01), so a populated Scope carries
+	// exactly the four contract keys and an empty one carries none.
+	t.Run("Scope", func(t *testing.T) {
+		assertKeySet(t, Scope{
+			ExcludedStates: []string{"Done"},
+			Iterations:     "recent",
+			PRStatus:       "active",
+			ApprovalStatus: "pending",
+		}, []string{"excluded_states", "iterations", "pr_status", "approval_status"})
+		assertKeySet(t, Scope{}, []string{})
 	})
 
 	// Threat T-02-01: exactly four keys. If a field is ever added to Failure
@@ -450,5 +463,29 @@ func TestNewResultEmitsEmptyArraysNotNull(t *testing.T) {
 	}
 	if string(envelope.Failures) != "[]" {
 		t.Errorf("failures = %s, want [] (raw: %s)", envelope.Failures, raw)
+	}
+}
+
+// TestNewResultScopeIsNull pins D-02: a read that applies no fixed server-side
+// filter still emits the scope key, as JSON null. An absent key would decode
+// as a nil RawMessage and fail, so this distinguishes null from missing.
+func TestNewResultScopeIsNull(t *testing.T) {
+	result := newResult[Branch](nil, nil)
+	if result.Scope != nil {
+		t.Errorf("newResult(nil, nil).Scope = %+v, want nil", result.Scope)
+	}
+
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal Result[Branch]: %v", err)
+	}
+	var envelope struct {
+		Scope json.RawMessage `json:"scope"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	if string(envelope.Scope) != "null" {
+		t.Errorf("scope = %q, want null (raw: %s)", envelope.Scope, raw)
 	}
 }
