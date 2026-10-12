@@ -154,6 +154,38 @@ func TestValidate(t *testing.T) {
 			mutate:    func(c *Config) { c.PAT = ""; c.Projects = nil },
 			wantField: "pat",
 		},
+		{
+			// D-11: a blank name would reach the read as a project with no name.
+			name:      "blank project entry",
+			mutate:    func(c *Config) { c.Projects = StringSlice{""} },
+			wantField: "projects",
+		},
+		{
+			name:      "whitespace project entry",
+			mutate:    func(c *Config) { c.Projects = StringSlice{" \t "} },
+			wantField: "projects",
+		},
+		{
+			name:      "non-breaking-space project entry",
+			mutate:    func(c *Config) { c.Projects = StringSlice{" "} },
+			wantField: "projects",
+		},
+		{
+			name:      "blank entry beside a valid one",
+			mutate:    func(c *Config) { c.Projects = StringSlice{"A", " "} },
+			wantField: "projects",
+		},
+		{
+			name:      "interior space is a valid name",
+			mutate:    func(c *Config) { c.Projects = StringSlice{"My Project"} },
+			wantField: "",
+		},
+		{
+			// Names are validated, never rewritten, so padding is accepted as written.
+			name:      "padded name is accepted as written",
+			mutate:    func(c *Config) { c.Projects = StringSlice{" P "} },
+			wantField: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -175,6 +207,61 @@ func TestValidate(t *testing.T) {
 			}
 			if cfgErr.Field != tt.wantField {
 				t.Errorf("Validate() ConfigError.Field = %v, want %v", cfgErr.Field, tt.wantField)
+			}
+		})
+	}
+}
+
+// TestLoadRejectsBlankProjects drives every load path that can yield an empty
+// or blank projects list through Load and then Validate. The YAML sequence and
+// the legacy project key do not trim, so D-11's blank check is the only guard on
+// those paths. The ADO_PROJECTS and YAML scalar paths already trim and drop
+// empty parts, which turns their blanks into an empty list that D-10 rejects.
+func TestLoadRejectsBlankProjects(t *testing.T) {
+	const creds = "pat: fixture-pat\norg_url: https://dev.azure.com/fixture\n"
+
+	tests := []struct {
+		name      string
+		yaml      string
+		envList   string
+		wantValid bool
+	}{
+		{name: "yaml sequence with an empty string", yaml: `projects: [""]`},
+		{name: "yaml sequence with spaces", yaml: `projects: ["  "]`},
+		{name: "yaml sequence with a blank beside a valid name", yaml: `projects: ["A", " "]`},
+		{name: "legacy project key of spaces", yaml: `project: "  "`},
+		{name: "yaml scalar of spaces", yaml: `projects: "  "`},
+		{name: "env list of separators only", envList: " , "},
+		{name: "no projects anywhere"},
+		{name: "valid yaml sequence", yaml: `projects: ["A", "B"]`, wantValid: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writeConfig(t, creds+tt.yaml+"\n")
+			t.Setenv("ADO_PAT", "")
+			t.Setenv("ADO_ORG_URL", "")
+			t.Setenv("ADO_PROJECT", "")
+			t.Setenv("ADO_PROJECTS", tt.envList)
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() error = %v, want nil", err)
+			}
+
+			err = cfg.Validate()
+			if tt.wantValid {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+			cfgErr, ok := err.(*ConfigError)
+			if !ok {
+				t.Fatalf("Validate() error = %v (%T), want *ConfigError; Projects = %q", err, err, cfg.Projects)
+			}
+			if cfgErr.Field != "projects" {
+				t.Errorf("Validate() ConfigError.Field = %v, want projects", cfgErr.Field)
 			}
 		})
 	}
