@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: 06
 current_phase_name: core-value-cleanup
 status: executing
-stopped_at: Completed 06-02-reject-empty-projects-PLAN.md
-last_updated: "2026-10-12T21:49:12.234Z"
+stopped_at: Completed 06-03-scope-in-envelope-PLAN.md
+last_updated: "2026-10-12T21:54:00.613Z"
 last_activity: 2026-10-12
 last_activity_desc: Phase 06 execution started
-state_head: b7fabaf27b68c0091a81f3cd364f7bebccef7602
+state_head: 7bba50506fe1e89b70a9506935b29c6c9f8100ca
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 33
-  completed_plans: 30
+  completed_plans: 31
 milestone_name: milestone
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 06 (core-value-cleanup) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Next: Phase 2 re-verification (orchestrator); optional live `branches list --json` check at /gsd-verify-work
 Last activity: 2026-10-12 — Phase 06 execution started
@@ -92,6 +92,7 @@ Progress: [████████░░] 75%
 | Phase 02 P07 | 3min | 2 tasks | 4 files |
 | Phase 06 P01 | 3min | 2 tasks | 5 files |
 | Phase 06 P02 | 3min | 2 tasks | 4 files |
+| Phase 06 P03 | 3min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -179,6 +180,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 06]: 06-01: read verbs refuse stray positionals with exit 3 before any read (D-17)
 - [Phase 06]: 06-02: Validate checks projects after pat/org_url: empty list rejected (D-10), then any TrimSpace-blank entry (D-11); names are never trimmed or rewritten
 - [Phase 06]: 06-02: run() ordering (Validate before dispatch and ui.NewModel, returning exitUnknown) is pinned by go/ast in TestValidateGuardsCLIAndTUI
+- [Phase 06]: 06-03: Scope fields are omitempty (presence is the fact); Result.Scope is not, so unscoped reads emit scope:null (D-01, D-02)
+- [Phase 06]: 06-03: pr_status/approval_status derive from the SDK constants the requests send; tie tests compare against captured request args
 
 ### Roadmap Evolution
 
@@ -235,6 +238,6 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Session Continuity
 
-Last session: 2026-10-12T21:49:12.149Z
-Stopped at: Completed 06-02-reject-empty-projects-PLAN.md
+Last session: 2026-10-12T21:54:00.521Z
+Stopped at: Completed 06-03-scope-in-envelope-PLAN.md
 Resume file: None
