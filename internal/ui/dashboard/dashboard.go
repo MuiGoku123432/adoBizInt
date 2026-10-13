@@ -9,7 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"sentinovo.ai/bizInt/internal/ado"
-	"sentinovo.ai/bizInt/internal/ui/fetchctx"
+	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 )
 

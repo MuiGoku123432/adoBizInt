@@ -1,5 +1,6 @@
-// Package fetchctx derives the fan-out deadline every read command in the TUI
-// runs under.
+// Package fetchctx derives the bounded deadline every read command (CLI and
+// TUI) runs under, and, through NewWithParent, the context every guarded write
+// is issued under.
 //
 // It exists because all six views need the identical five-line
 // "capture the budget, wrap the background context in a WithTimeout, defer
@@ -12,8 +13,8 @@
 // grep counts occurrences in this file to prove the root context is built in
 // exactly one place, and a comment that spelled it would defeat that check.
 //
-// Write call sites deliberately do not use this: they keep their own contexts
-// and are Phase 4's scope.
+// It lives outside internal/ui so non-UI packages (the CLI and the shared write
+// guard) can import it without depending on the UI tree.
 package fetchctx
 
 import (

@@ -13,7 +13,7 @@ import (
 	"github.com/evertras/bubble-table/table"
 
 	"sentinovo.ai/bizInt/internal/ado"
-	"sentinovo.ai/bizInt/internal/ui/fetchctx"
+	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"

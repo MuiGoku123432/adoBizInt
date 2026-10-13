@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/logging"
-	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 )
 
 // Process exit codes (D-06). These are a public contract from this plan onward:

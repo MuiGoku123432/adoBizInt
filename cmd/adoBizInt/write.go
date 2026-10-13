@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"sentinovo.ai/bizInt/internal/ado"
+	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/logging"
-	"sentinovo.ai/bizInt/internal/ui/fetchctx"
 )
 
 // Work item field names as ADO spells them. They are the `field` values of the
