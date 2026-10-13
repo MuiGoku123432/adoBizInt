@@ -67,7 +67,16 @@ template is resolved per project; working days come from team settings only.
   3. A structural test fails if any `internal/ui` file calls an `ado` mutation method directly, and every existing TUI write runs with the real project and a bounded context
   4. Every audit record, from the CLI or the TUI, carries an `actor` key (`tui`, `cli-human` or `agent`) and a field recording whether `--user-approved` was supplied
   5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process
-**Plans**: TBD
+**Plans**: 8 plans
+Plans:
+- [ ] 07-01-PLAN.md — Lock the CLI write tests (sha256 + inventory) and move fetchctx to internal/fetchctx
+- [ ] 07-02-PLAN.md — Extract internal/guard (Run, audit sink 0600/0700, ops) and make the CLI a thin adapter
+- [ ] 07-03-PLAN.md — Persist `actor` and `user_approved` on every audit record (decision checkpoint: CLI actor label)
+- [ ] 07-04-PLAN.md — Shared confirm flow (diff modal, preview/execute) and PR approve/complete through the guard
+- [ ] 07-05-PLAN.md — Release approve/reject and pipeline queue: input step, then diff confirm, then guarded write
+- [ ] 07-06-PLAN.md — Work items: stage state changes and confirm on move-on (row, other item), leave API
+- [ ] 07-07-PLAN.md — Compound resolve as sequential guarded writes, blank-effort end-to-end test, no-bypass structural test
+- [ ] 07-08-PLAN.md — App-level D-02: tab switch and quit confirm staged edits; quit held while a write is busy
 **UI hint**: yes
 **Research**: Skip. Internal refactor, protected by the existing CLI write tests
 **Compliance**: Supports SOX ITGC audit evidence for TUI-made changes. Do not weaken the TUI path to confirm-only.
