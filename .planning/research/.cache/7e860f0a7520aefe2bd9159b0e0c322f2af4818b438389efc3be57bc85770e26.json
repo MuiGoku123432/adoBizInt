@@ -1,0 +1,1 @@
+{"content":"Work item to PR link is an ArtifactLink relation with url vstfs:///Git/PullRequestId/{projectId}%2F{repoId}%2F{prId}; read via expand=Relations on the work item; git.GetPullRequestWorkItemRefs goes PR->work items (opposite direction).","source":"web","provider":"websearch","confidence":"LOW","fetched_at":"2026-10-13T15:10:45.664Z","ttl":86400000,"kind":"web"}
