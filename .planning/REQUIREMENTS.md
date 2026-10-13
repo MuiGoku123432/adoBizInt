@@ -184,12 +184,74 @@ Deferred. Tracked but not in this roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| GUARD-01 | Phase 7 | Pending |
+| GUARD-02 | Phase 7 | Pending |
+| GUARD-03 | Phase 7 | Pending |
+| GUARD-04 | Phase 7 | Pending |
+| GUARD-05 | Phase 7 | Pending |
+| GUARD-06 | Phase 7 | Pending |
+| PLAT-02 | Phase 8 | Pending |
+| PLAT-03 | Phase 8 | Pending |
+| PLAT-04 | Phase 9 | Pending |
+| PLAT-05 | Phase 8 | Pending |
+| TEAM-01 | Phase 9 | Pending |
+| TEAM-02 | Phase 9 | Pending |
+| TEAM-03 | Phase 9 | Pending |
+| TEAM-04 | Phase 9 | Pending |
+| TEAM-05 | Phase 9 | Pending |
+| TEAM-06 | Phase 10 | Pending |
+| TEAM-07 | Phase 9 | Pending |
+| TEAM-08 | Phase 9 | Pending |
+| DATA-01 | Phase 10 | Pending |
+| DATA-02 | Phase 10 | Pending |
+| DATA-03 | Phase 10 | Pending |
+| DATA-04 | Phase 10 | Pending |
+| DATA-05 | Phase 10 | Pending |
+| DATA-06 | Phase 10 | Pending |
+| NAG-01 | Phase 11 | Pending |
+| NAG-02 | Phase 11 | Pending |
+| NAG-03 | Phase 11 | Pending |
+| NAG-04 | Phase 11 | Pending |
+| NAG-12 | Phase 11 | Pending |
+| NAG-05 | Phase 11 | Pending |
+| NAG-06 | Phase 11 | Pending |
+| NAG-07 | Phase 11 | Pending |
+| NAG-08 | Phase 11 | Pending |
+| NAG-09 | Phase 11 | Pending |
+| NAG-10 | Phase 11 | Pending |
+| NAG-11 | Phase 11 | Pending |
+| NAG-13 | Phase 11 | Pending |
+| CEREMONY-01 | Phase 12 | Pending |
+| CEREMONY-02 | Phase 12 | Pending |
+| CEREMONY-03 | Phase 12 | Pending |
+| CEREMONY-04 | Phase 12 | Pending |
+| CEREMONY-05 | Phase 12 | Pending |
+| SPRINT-01 | Phase 15 | Pending |
+| SPRINT-02 | Phase 15 | Pending |
+| SPRINT-03 | Phase 15 | Pending |
+| SPRINT-04 | Phase 15 | Pending |
+| SPRINT-05 | Phase 15 | Pending |
+| GROOM-01 | Phase 16 | Pending |
+| GROOM-02 | Phase 16 | Pending |
+| GROOM-03 | Phase 16 | Pending |
+| GROOM-04 | Phase 16 | Pending |
+| GROOM-05 | Phase 16 | Pending |
+| GROOM-06 | Phase 16 | Pending |
+| AGENT-01 | Phase 13 | Pending |
+| AGENT-02 | Phase 13 | Pending |
+| AGENT-03 | Phase 13 | Pending |
+| AGENT-04 | Phase 13 | Pending |
+| AGENT-05 | Phase 14 | Pending |
+| STORY-01 | Phase 14 | Pending |
+| STORY-02 | Phase 14 | Pending |
+| STORY-03 | Phase 14 | Pending |
+| STORY-04 | Phase 14 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 62 total
-- Mapped to phases: 0 (filled by roadmap)
-- Unmapped: 62 ⚠️
+- Mapped to phases: 62
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-10-13*
-*Last updated: 2026-10-13 after research and scoping decisions*
+*Last updated: 2026-10-13 after v2.0 roadmap creation (traceability filled)*

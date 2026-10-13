@@ -2,11 +2,13 @@
 gsd_state_version: "1.0"
 milestone: v2.0
 milestone_name: Scrum Master
+current_phase: "7"
+current_phase_name: Guarded TUI Writes
 status: planning
-last_updated: "2026-10-13T15:04:45.162Z"
+last_updated: "2026-10-13T15:47:19.000Z"
 last_activity: 2026-10-13
 progress:
-  total_phases: 0
+  total_phases: 10
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +19,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-10-12)
+See: .planning/PROJECT.md (updated 2026-10-13)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** v2.0 Scrum Master — defining requirements
+**Current focus:** v2.0 Scrum Master (Phases 7-16) — Phase 7: Guarded TUI Writes
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-10-13 — Milestone v2.0 started
+Phase: 7 of 16 (Guarded TUI Writes)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-10-13 — v2.0 roadmap created (10 phases, 62/62 requirements mapped)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -183,10 +187,14 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 06]: 06-05: runWrite's deferred recover sits immediately before op.mutate (after defer sink.Close()); its position is the request-issued boundary, so a post-request panic exits 5 and a pre-read panic exits 3 (D-12)
 - [Phase 06]: 06-05: handlePanic(r, code) returns the caller's code; guard passes exitUnknown, runWrite passes exitOutcomeUnknown; crash record stays on stdout (D-18)
 - [Phase 06]: 06-05: a post-request panic appends one best-effort five-key unknown audit record; a local audited flag set before the normal append prevents a second record (D-13)
+- [v2.0 scoping, 2026-10-13]: User decisions — human-tier verbs allowed with `--user-approved`; tier refusal exits 6; audit records gain an `actor` key; acceptance criteria are append-only; Delivered = Resolved + Closed; process template resolved per project; working days from team settings only (no days off, no capacity)
+- [v2.0 roadmap]: Phases 7-16 follow the research build order (BL-01 → platform → TEAM → DATA → NAG → CEREMONY → AGENT → STORY → Sprint tab → GROOM). Concurrency stays serial plus shape caps; the transport paces but never retries; reads retry in the service layer, writes never
+- [v2.0 roadmap]: TEAM-06 (area-path intersection) mapped to Phase 10 rather than the Team phase, because its behaviour is only observable once work items are read and the same filter must serve the live set and the baseline. AGENT-05 (create/update field allow-list) mapped to Phase 14 with the verbs it constrains. PLAT-04 (shape caps) mapped to Phase 9, ahead of the first fan-out
 
 ### Roadmap Evolution
 
 - Phase 6 added (2026-10-12): Core-value cleanup — close v1.0 audit warnings W2, W3, W4 before completing the milestone (user decision)
+- v2.0 roadmap created (2026-10-13): Phases 7-16, 62 requirements mapped
 
 ### Pending Todos
 
@@ -211,8 +219,17 @@ Carried from `.planning/codebase/CONCERNS.md`. All are addressed by the roadmap.
 Affecting the v2 scrum milestone, not v1:
 
 - **Days off unmaintained in ADO.** ADO capacity is `capacityPerDay x workingDays - daysOff`, so every capacity figure is overstated. Constrains v2 design: capacity is display-only, and no nag rule may read it. Revisit if teams start maintaining days off.
-- **BL-01 part 2 (high, open): TUI writes have no dry run, no confirmation, and no audit record.** A TUI-driven write leaves no trace in `audit.jsonl`. Part 1 (blank effort fields zeroed) was fixed and live-re-tested 2026-09-13 via quick task 260913-nd2. C2 is therefore only partly closed by Phase 4 — the CLI surface is guarded, the TUI surface is not. Needs its own discuss-phase because routing TUI writes through `runWrite` is an architectural change. See `.planning/BACKLOG.md`.
+- **BL-01 part 2 (high, open): TUI writes have no dry run, no confirmation, and no audit record.** A TUI-driven write leaves no trace in `audit.jsonl`. Part 1 (blank effort fields zeroed) was fixed and live-re-tested 2026-09-13 via quick task 260913-nd2. C2 is therefore only partly closed by Phase 4 — the CLI surface is guarded, the TUI surface is not. Needs its own discuss-phase because routing TUI writes through `runWrite` is an architectural change. See `.planning/BACKLOG.md`. Scheduled as v2.0 Phase 7.
 - Phase 4 live verification RAN 2026-09-12: CLI steps 1-6 passed against Windstream/Kinetic work item 1198503; the TUI effort-modal step FAILED, was fixed by quick task 260913-nd2, and PASSED on re-test 2026-09-13. All manual rows are now green; `04-VALIDATION.md` stays `status: draft` / `nyquist_compliant: false` only until `/gsd-validate-phase 4` runs.
+
+v2.0 roadmap concerns (2026-10-13):
+
+- **Audit file mode (Phase 7 decision).** `audit.jsonl` is created 0644 (T-05-26, BL-02 out of scope) and v2.0 starts writing agent-supplied text to it. Decide in Phase 7 discuss-phase: pull this one fix in, or record it as an accepted risk.
+- **Phase 10 spike is load-bearing.** `System.IterationId` combined with WIQL `ASOF` is unverified live (LOW confidence). Fallback: the server-sourced iteration path through the existing escaper, recorded as a deviation.
+- **Phase 13 breaks v1 non-interactive scripts.** Human-tier v1 write verbs will refuse (exit 6) without `--user-approved` from a non-TTY caller. Record as a decision.
+- **SOX (Phase 13).** Agent use of PR complete/approve and release approve/reject under `--user-approved` touches change-management and segregation-of-duties controls. Confirm policy permits agent-executed merges and approvals before authorizing them.
+- **CPNI review flagged** for Phases 12 (`standup`), 14 (comments) and 15 (per-person load): they copy names and work item free text into output.
+- **Offline startup (`g-01-1`)** is not fixed by the v7 SDK; carry it forward past Phase 8.
 
 ### Quick Tasks Completed
 
@@ -240,10 +257,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-12T22:01:39.445Z
-Stopped at: Milestone v1.0 completed and archived
+Last session: 2026-10-13T15:47:19.000Z
+Stopped at: v2.0 roadmap created (Phases 7-16); ready to plan Phase 7
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Discuss Phase 7 with /gsd-discuss-phase 7 (audit actor key and file-mode decisions), then /gsd-plan-phase 7
