@@ -3,71 +3,87 @@
 ## What This Is
 
 adoBizInt is a terminal application for working Azure DevOps day to day: work
-items, pull requests, pipelines, releases and branches, in one keyboard-driven
-TUI. This milestone adds a second front door -- a non-interactive CLI with
-structured JSON output -- so an AI agent can drive the same operations the TUI
-already performs.
+items, pull requests, pipelines, releases and branches. It has two front doors
+over one UI-independent service layer: a keyboard-driven TUI for humans, and a
+non-interactive `noun verb` CLI with structured JSON output so an AI agent can
+drive the same operations.
 
 ## Core Value
 
 An agent driving this tool must never mistake a broken call for an empty result.
 
+## Current State
+
+**Shipped:** v1.0 Agent CLI (2026-10-12). See `.planning/MILESTONES.md`.
+
+- Eight read verbs and six guarded write verbs on the CLI; `adoBizInt` with no subcommand still launches the TUI unchanged
+- Every read returns a `Result[T]` envelope with `complete`, `failures` and `scope`; exit codes 0-5 distinguish success, partial, auth failure, usage/config error, write failure and unknown outcome
+- Writes default to dry run, require `--confirm`, and append a JSONL audit record before the request is sent
+- Closed as `override_closeout`: Phases 2, 4 and 5 verifications are stale against later code, and live-ADO confirmation of the write path is deferred
+
+## Next Milestone Goals
+
+The scrum master milestone designed on 2026-09-03. Its requirements are preserved
+in the `## v2 Requirements` section of `milestones/v1.0-REQUIREMENTS.md`:
+Team Foundation, Sprint Data Access, Board Honesty, Ceremony Output, Sprint View
+(TUI), Grooming Mode (TUI), Agent Authorization, Story Management, Platform.
+
+Open v1.0 follow-ups to weigh against it: BL-01 (the TUI write path bypasses
+every Phase 4 guard) and BL-02 (open review warnings) in `.planning/BACKLOG.md`.
+
 ## Requirements
 
 ### Validated
 
-<!-- Inferred from the existing codebase. Shipped and in daily use. -->
+<!-- Pre-existing: inferred from the codebase at onboarding. -->
 
-- Six TUI views over Azure DevOps: dashboard, work items, PRs, pipelines, releases, branches
-- 25-method ADO service layer in `internal/ado`, UI-independent and context-first
-- PAT auth with YAML file plus environment variable configuration
-- Read operations across work items, PRs, pipelines, releases, branches
-- Write operations: work item state and effort, PR approve and complete, release approve and reject, pipeline queue
+- ✓ Six TUI views over Azure DevOps: dashboard, work items, PRs, pipelines, releases, branches — pre-v1.0
+- ✓ 25-method ADO service layer in `internal/ado`, UI-independent and context-first — pre-v1.0
+- ✓ PAT auth with YAML file plus environment variable configuration — pre-v1.0
+- ✓ Read operations across work items, PRs, pipelines, releases, branches — pre-v1.0
+- ✓ Write operations: work item state and effort, PR approve and complete, release approve and reject, pipeline queue — pre-v1.0
+
+<!-- Shipped in v1.0 Agent CLI. -->
+
+- ✓ Aggregate reads report failures instead of swallowing them — v1.0
+- ✓ Per-invocation timeouts and cancellation — v1.0
+- ✓ A test seam for `internal/ado` so write paths can be verified — v1.0
+- ✓ CLI subcommand surface covering existing read operations — v1.0
+- ✓ Stable JSON output on stdout, diagnostics on stderr — v1.0
+- ✓ Exit codes that distinguish success, partial, auth failure and unknown outcome — v1.0
+- ✓ CLI write verbs guarded by dry-run default and explicit confirmation — v1.0 (live-ADO confirmation deferred)
+- ✓ Audit record for every write — v1.0 (CLI only; the TUI write path is BL-01)
+- ✓ Close the attachment, path-containment and nil-dereference findings from CONCERNS.md — v1.0
 
 ### Active
 
-<!-- This milestone. Agent-accessible CLI over features that already exist. -->
+<!-- Defined by /gsd-new-milestone for the next milestone. -->
 
-- [ ] Aggregate reads report failures instead of swallowing them
-- [ ] Per-invocation timeouts and cancellation
-- [ ] A test seam for `internal/ado` so write paths can be verified
-- [ ] CLI subcommand surface covering existing read operations
-- [ ] Stable JSON output on stdout, diagnostics on stderr
-- [ ] Exit codes that distinguish success, partial, auth failure and unknown outcome
-- [ ] CLI write verbs guarded by dry-run default and explicit confirmation
-- [ ] Audit record for every write
-- [ ] Close the attachment, path-containment and nil-dereference findings from CONCERNS.md
+(None yet — run `/gsd-new-milestone`)
 
 ### Out of Scope
 
-- **Scrum master features** (sprint CRUD, capacity, velocity, burndown, backlog rank) -- the dormant `work.Client` at `internal/ado/client.go:88` is the seam for these, but they are net-new ADO integration and this milestone deliberately ships the CLI over what already works first
-- **Work item creation, comments, linking** -- same reasoning; extends the ADO surface rather than exposing it
-- **Native MCP server** -- a CLI with `--json` is composable and dependency-free. Revisit only if the CLI proves insufficient in practice
+- **Native MCP server** -- a CLI with `--json` is composable and dependency-free. v1.0 shipped that CLI; revisit only if it proves insufficient in practice
 - **Rewriting the TUI** -- the CLI is additive. `adoBizInt` with no subcommand must keep launching the TUI unchanged
-- **Azure DevOps SDK upgrade** -- the pinned `v1.0.0-b5` is a 2020 beta (CONCERNS.md MED5). Real, but not a blocker for this milestone
+- **Azure DevOps SDK upgrade** -- the pinned `v1.0.0-b5` is a 2020 beta (CONCERNS.md MED5). Real, but not yet a blocker
+- **Scrum master features and work item creation, comments, linking** -- excluded from v1.0 so the CLI shipped over what already worked first. Now the candidate scope for the next milestone; see Next Milestone Goals
 
 ## Context
 
-Brownfield. 30 Go files, 7,601 lines, mapped in `.planning/codebase/`.
+Brownfield. At v1.0 close: 84 Go files, about 11,700 lines of production code and
+13,200 lines of tests. The codebase map in `.planning/codebase/` predates v1.0.
 
-The architecture is unusually well suited to this milestone: `internal/ado`
-(2,015 lines) has zero TUI imports, all 25 methods are context-first, and every
-return type is a plain struct. Roughly 2,400 lines across `ado`, `config`,
-`logging` and `utils/links.go` transfer to a CLI unchanged.
+The `internal/ado` layer has zero TUI imports, and now sits behind narrow
+interfaces with fail-fast fakes. The dormant `work.Client` at
+`internal/ado/client.go` remains the seam for sprint and capacity reads.
 
-Three findings shape the plan:
+Known issues carried forward (`.planning/BACKLOG.md`):
 
-1. **Reads cannot fail.** All eight aggregate read functions end in `return x, nil`
-   with per-project errors dropped via `continue`. An expired PAT, an ADO outage
-   and a genuinely empty backlog produce byte-identical output. A human watching
-   a TUI notices. An agent does not. (CONCERNS.md C1)
-2. **`internal/ado` is 0.0% covered and has no interface anywhere**, so the seven
-   destructive writes -- including PR merge and release approval against
-   production -- have no substitutable seam and cannot be tested.
-   (CONCERNS.md H1, TESTING.md)
-3. **There is no argument parsing anywhere.** `main()` runs one unconditional
-   path from config load to `p.Run()`. There is no seam for a CLI to attach to,
-   which makes this additive rather than a refactor. (ARCHITECTURE.md)
+- BL-01: TUI writes bypass the dry-run, confirmation and audit guards the CLI enforces
+- BL-02: `prs approve` cannot detect an existing approval when the identity is unresolved; a stdout write failure after a mutation exits 3; `audit.jsonl` is created 0644; the log file is never rotated
+- Pipeline reads report `complete: true` when no pipelines are configured (same class as audit W3)
+- The `prs list` page size cap under no limit is unverified
+- Offline startup fails because the SDK's resource-area discovery is mandatory (debug session `g-01-1`, diagnosed, deferred)
 
 ## Constraints
 
@@ -81,11 +97,13 @@ Three findings shape the plan:
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| CLI with `--json`, not an MCP server | Composable, testable, zero new dependencies. Matches the existing binary | -- Pending |
-| Ship the CLI over existing features before adding scrum features | Proves the agent interface against working code. Avoids the speculative generality the standards forbid | -- Pending |
-| Fix read error propagation before shipping any read verb | A read verb that renders auth failure as an empty list actively misleads an agent. Correctness precedes surface area | -- Pending |
-| Extract interfaces in `internal/ado` despite the no-abstraction rule | Explicitly required to test seven production-mutating write paths. This is the one abstraction the task demands | -- Pending |
-| TUI remains the default with no subcommand | Non-breaking for daily use | -- Pending |
+| CLI with `--json`, not an MCP server | Composable, testable, zero new dependencies. Matches the existing binary | ✓ Good |
+| Ship the CLI over existing features before adding scrum features | Proves the agent interface against working code. Avoids the speculative generality the standards forbid | ✓ Good |
+| Fix read error propagation before shipping any read verb | A read verb that renders auth failure as an empty list actively misleads an agent. Correctness precedes surface area | ✓ Good |
+| Extract interfaces in `internal/ado` despite the no-abstraction rule | Explicitly required to test seven production-mutating write paths. This is the one abstraction the task demands | ✓ Good |
+| TUI remains the default with no subcommand | Non-breaking for daily use | ✓ Good |
+| Writes guarded by dry-run default, `--confirm` and a pre-flight audit record | An unverified `--dry-run` is worse than none; the audit must exist before the request leaves | ✓ Good (CLI); ⚠️ Revisit for the TUI path (BL-01) |
+| Every read discloses its server-side `scope` | An undisclosed filter makes a filtered result look like a complete one (audit W4) | ✓ Good |
 | Scrum posture: the agent informs, the TUI acts | Two of the three driving pains (stale board data, manual ceremony prep) are CLI read verbs on the v1 foundation. Only navigation speed needs new TUI work | -- Pending |
 | Capacity is display-only, never a rule input | Days off are not maintained, so ADO capacity is systematically overstated. Reasoning from it would produce confident wrong answers -- the C1 failure mode one layer up | -- Pending |
 | Nag rules hardcoded, thresholds configurable | A general rules engine is speculative generality. The rule set is the feature, not the extensibility | -- Pending |
@@ -97,7 +115,24 @@ Three findings shape the plan:
 
 | Date | Topic | Output |
 |------|-------|--------|
-| 2026-09-03 | Scrum master milestone scope, features and TUI shape | REQUIREMENTS.md v2: TEAM, DATA, NAG, CEREMONY, SPRINT, GROOM, AGENT, STORY |
+| 2026-09-03 | Scrum master milestone scope, features and TUI shape | REQUIREMENTS.md v2 (archived in `milestones/v1.0-REQUIREMENTS.md`): TEAM, DATA, NAG, CEREMONY, SPRINT, GROOM, AGENT, STORY |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
 
 ---
-*Last updated: 2026-09-03 after scrum design session*
+*Last updated: 2026-10-12 after v1.0 milestone*

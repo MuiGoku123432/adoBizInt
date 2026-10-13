@@ -1,39 +1,36 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 6
-status: completed
+status: Awaiting next milestone
 stopped_at: Phase 6 complete — all phases complete
-last_updated: "2026-10-12T22:07:42.269Z"
+last_updated: "2026-10-13T04:20:26.964Z"
 last_activity: 2026-10-12
-last_activity_desc: Phase 6 complete
-state_head: c03bf0c6f747be842bd52c68379b00a088807894
+last_activity_desc: Milestone v1.0 completed and archived
+state_head: 3b7ec0df3f3a0c69923c8140def8da6fca75d217
 progress:
   total_phases: 6
   completed_phases: 3
   total_plans: 33
   completed_plans: 33
 milestone_name: milestone
+current_phase: 6
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-03)
+See: .planning/PROJECT.md (updated 2026-10-12)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 06 — core-value-cleanup
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: All phases complete
-Next: Phase 2 re-verification (orchestrator); optional live `branches list --json` check at /gsd-verify-work
-Last activity: 2026-10-12 — Phase 6 complete
-
-Progress: [████████░░] 75%
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-10-12 — Milestone v1.0 completed and archived
 
 ## Performance Metrics
 
@@ -224,8 +221,6 @@ Affecting the v2 scrum milestone, not v1:
 
 | # | Description | Date | Commit | Status | Directory |
 |---|-------------|------|--------|--------|-----------|
-| 260913-nd2 | Fix BL-01 part 1: TUI effort modal silently zeroes effort fields left blank | 2026-09-13 | 266b88b | complete — unit-verified + live TUI re-test passed 2026-09-13 | [260913-nd2-fix-bl-01-tui-effort-modal-silently-zero](./quick/260913-nd2-fix-bl-01-tui-effort-modal-silently-zero/) |
-| 260913-uhj | Fix CR-01 (audit-append failure reported as success) and WR-03 (`releases approve`/`reject` non-functional) | 2026-09-13 | 5ef869c | complete — verified 9/9; WR-03 confirmed by live A/B on approval 21611 | [260913-uhj-fix-cr-01-audit-append-failure-reported-](./quick/260913-uhj-fix-cr-01-audit-append-failure-reported-/) |
 
 ### Environment Notes
 
@@ -234,8 +229,11 @@ Affecting the v2 scrum milestone, not v1:
 
 ## Deferred Items
 
+Items acknowledged and deferred at milestone close, most recent first:
+
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
+| debug_sessions | g-01-1-offline-startup-block (v1.0 close, override_closeout) | diagnosed | 2026-10-12 |
 | Hardening | Log opened 0600 / dir 0700 + PAT-redaction test — filed as HARD-06 | Resolved in 05-06 | 2026-09-09 |
 | Hardening | `cmd/adoBizInt/audit.go` creates `audit.jsonl` 0644 and its dir via `MkdirAll(..., 0755)` (T-05-26); mitigated by the 0700 dir `logging.Init` enforces, file mode deferred under D-18 | Follow-up | 2026-09-30 |
 | Scrum master | Sprint CRUD, capacity, velocity, burndown, backlog rank | v2 | 2026-09-03 |
@@ -246,5 +244,9 @@ Affecting the v2 scrum milestone, not v1:
 ## Session Continuity
 
 Last session: 2026-10-12T22:01:39.445Z
-Stopped at: Phase 6 complete — all phases complete
+Stopped at: Milestone v1.0 completed and archived
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

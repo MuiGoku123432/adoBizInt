@@ -3,6 +3,10 @@ status: diagnosed
 trigger: 'G-01-1: "it did not open when I turned off wifi". Expected NewClient construction to remain non-fatal when eager identity lookup fails. Diagnose only; do not modify production code.'
 created: 2026-09-07T00:55:57Z
 updated: 2026-09-07T01:10:00Z
+audit_acknowledged:
+  milestone: v1.0
+  at: 2026-10-13
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -14,8 +18,10 @@ next_action: Verify constructor-line provenance and dependency stability against
 bug_class: bohrbug
 known_pattern_candidate: none; semantic recall returned no matching prior resolution
 candidate_causes:
+
   - code: Phase 1 may have moved optional GetConnectionData before mandatory service-client initialization or made identity failure fatal.
   - environment: Wi-Fi-off removes DNS/network access needed by mandatory Azure DevOps SDK resource-area discovery as well as optional identity lookup.
+
 and_gate: no for regression classification; either baseline ordering changed or the UAT setup prevents baseline-required discovery.
 
 ## Symptoms
