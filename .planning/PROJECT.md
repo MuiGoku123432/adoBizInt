@@ -21,15 +21,20 @@ An agent driving this tool must never mistake a broken call for an empty result.
 - Writes default to dry run, require `--confirm`, and append a JSONL audit record before the request is sent
 - Closed as `override_closeout`: Phases 2, 4 and 5 verifications are stale against later code, and live-ADO confirmation of the write path is deferred
 
-## Next Milestone Goals
+## Current Milestone: v2.0 Scrum Master
 
-The scrum master milestone designed on 2026-09-03. Its requirements are preserved
-in the `## v2 Requirements` section of `milestones/v1.0-REQUIREMENTS.md`:
-Team Foundation, Sprint Data Access, Board Honesty, Ceremony Output, Sprint View
-(TUI), Grooming Mode (TUI), Agent Authorization, Story Management, Platform.
+**Goal:** Make sprint health visible and actionable across teams -- the agent informs through CLI read verbs, the TUI acts through a Sprint tab and grooming mode.
 
-Open v1.0 follow-ups to weigh against it: BL-01 (the TUI write path bypasses
-every Phase 4 guard) and BL-02 (open review warnings) in `.planning/BACKLOG.md`.
+**Target features:**
+- BL-01 first: TUI writes route through the same guard and audit path as the CLI
+- Team foundation: teams per project, membership, current sprint per team, multi-team rollup
+- Sprint data access: sprint-scoped reads including completed work and effort fields, baseline reconstruction
+- Board honesty: hardcoded nag rules with configurable thresholds, JSON findings
+- Ceremony output: `sprint report`, `standup`, `planning`
+- Sprint tab and grooming mode in the TUI
+- Agent authorization tiers enforced in the CLI
+- Story management: create, comment, link
+- Platform: rate-limit backoff and fan-out caps; SDK upgrade off the 2020 beta, gated on `govulncheck`
 
 ## Requirements
 
@@ -57,16 +62,25 @@ every Phase 4 guard) and BL-02 (open review warnings) in `.planning/BACKLOG.md`.
 
 ### Active
 
-<!-- Defined by /gsd-new-milestone for the next milestone. -->
+<!-- v2.0 Scrum Master. Full REQ-IDs in REQUIREMENTS.md. -->
 
-(None yet — run `/gsd-new-milestone`)
+- [ ] TUI writes pass through the same guard and audit path as CLI writes (BL-01)
+- [ ] Team-scoped configuration, membership and current-sprint resolution
+- [ ] Sprint-scoped read path that includes completed work and effort fields
+- [ ] Board-honesty nag rules emitted as JSON findings
+- [ ] Ceremony verbs: sprint report, standup, planning
+- [ ] Sprint tab with cross-team rollup and per-team drill-down
+- [ ] Keyboard-only grooming mode with inline edits and backlog reorder
+- [ ] Agent write tiers enforced in the CLI surface
+- [ ] Work item creation, comments and links
+- [ ] Rate-limit backoff and fan-out caps
+- [ ] Azure DevOps SDK upgrade off the 2020 beta
 
 ### Out of Scope
 
-- **Native MCP server** -- a CLI with `--json` is composable and dependency-free. v1.0 shipped that CLI; revisit only if it proves insufficient in practice
 - **Rewriting the TUI** -- the CLI is additive. `adoBizInt` with no subcommand must keep launching the TUI unchanged
-- **Azure DevOps SDK upgrade** -- the pinned `v1.0.0-b5` is a 2020 beta (CONCERNS.md MED5). Real, but not yet a blocker
-- **Scrum master features and work item creation, comments, linking** -- excluded from v1.0 so the CLI shipped over what already worked first. Now the candidate scope for the next milestone; see Next Milestone Goals
+- **Native MCP server (PLAT-01)** -- deferred again from v2.0; only if the CLI proves insufficient
+- **BL-02 review warnings and the deferred v1.0 live checks** -- left in `.planning/BACKLOG.md`, not v2.0 scope
 
 ## Context
 
@@ -135,4 +149,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-12 after v1.0 milestone*
+*Last updated: 2026-10-13 after starting v2.0 milestone*
