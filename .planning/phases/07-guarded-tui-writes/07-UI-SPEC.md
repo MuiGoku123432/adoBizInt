@@ -1,7 +1,8 @@
 ---
 phase: "07"
 slug: "guarded-tui-writes"
-status: draft
+status: approved
+reviewed_at: "2026-10-13"
 shadcn_initialized: false
 preset: none
 created: "2026-10-13"
@@ -178,7 +179,7 @@ Locked literals from 07-CONTEXT.md are marked **(L)**. All other strings are the
 | Modal title | `Confirm #<id>` **(L)** |
 | Diff line | `<Field>  <From> → <To>`; empty From is `(none)`; other-target prefix `#<targetID> ` |
 | Empty state heading | Not applicable: the modal never opens with zero changes. A zero-change pre-read is the no-op status below |
-| Empty state body | `No change: #<id> already <label>` **(L, D-07)**, e.g. `No change: #7 already approved`, `No change: #1 already resolved` |
+| Empty state body | `No change: #<id> already <label>` **(L, D-07)**, e.g. `No change: #7 already approved`, `No change: #1 already resolved`. An abandoned PR on complete reads `No change: #<id> already abandoned` (not `already completed`) |
 | Pre-read status | PRs `Checking PR #<id>...`; Releases `Checking approval #<id>...`; Pipelines `Checking <PipelineName> on <Branch>...`; Work Items `Checking #<id>...` |
 | Write in flight | `Writing #<id>...` |
 | Staged hint | `#<id> staged: <state> — move to another row to confirm` |
@@ -191,7 +192,7 @@ Locked literals from 07-CONTEXT.md are marked **(L)**. All other strings are the
 | Error state: unknown (single op, or first op) | `#<id>: outcome unknown — verify in ADO` **(L, D-08)**, sticky. Suffix ` (not recorded in audit log)` when the audit append also failed |
 | Error state: compound partial (D-09) | `#<id> closed; effort update FAILED: <error>` **(L prefix)**; unknown second write: `#<id> closed; effort update: outcome unknown — verify in ADO` (sticky) |
 | Error state: write failed (single op, or first op) | `#<id>: write FAILED: <error>` |
-| Error state: changed since preview (single op, or first op) | `#<id>: not written — changed since preview` |
+| Error state: changed since preview (single op, or first op) | `#<id>: not written — changed since preview; press the action key again to re-check` |
 | Later op not run | `<label> not attempted` as a later part, e.g. `#5: write FAILED: <error>; effort update not attempted` |
 | Destructive confirmation | PR complete (merge), PR approve, release approve, release reject, pipeline queue, work-item state change, effort update: all use S1 with `y` as the only write key. No typed confirmation, no second prompt |
 
@@ -201,7 +202,7 @@ Locked literals from 07-CONTEXT.md are marked **(L)**. All other strings are the
 
 ## UI Considerations
 
-Applicable state considerations resolved: 9 covered, 2 backstop, 0 unresolved.
+Applicable state considerations resolved: 12 covered, 2 backstop, 0 unresolved.
 
 | Category | Element(s) | Status | Resolution / Reason |
 |----------|------------|--------|---------------------|
@@ -215,7 +216,10 @@ Applicable state considerations resolved: 9 covered, 2 backstop, 0 unresolved.
 | overflow | modal diff lines (list-collection) | ✅ covered | Lines are truncated to 60 runes and the modal content width is 60 cols (C1), so a line never wraps inside the border; the longest planned line (`#11 Microsoft.VSTS.Scheduling.CompletedWork  (none) → 4`, 55 runes) renders on one row |
 | long-text | staged marker (static-content) | ✅ covered | Actions column is 18 cols (C2); longer state names are truncated by bubble-table with `…`, full name in status hint and modal |
 | long-text | status and sticky lines with server error text (static-content) | 🧪 backstop | Server-controlled error text is control-rune-stripped and truncated to 120 runes (07-04 `clean`); verify on a narrow (80-col) terminal that the sticky line and status line remain readable and are not clipped by the help bar |
-| overflow | modal on a short or narrow terminal (nav) | 🧪 backstop | The modal is 66 cols wide and up to ~11 rows tall for the User Story resolve; verify by hand at 80x24 that `modal.Center` keeps the title and key hint visible |
+| overflow | modal on a short or narrow terminal (nav) | 🧪 backstop | The modal is 66 cols wide and up to ~11 rows tall for the User Story resolve; verify by hand at 80x24 that `modal.Center` keeps the title and key hint visible, and that the Work Items table with the 18-col Actions column (C2) does not clip row or status hints |
+| empty | Release comment / pipeline branch input (form) | ✅ covered | Existing input-modal behaviour is unchanged: a blank comment or the default branch passes through, and the confirm diff shows `(none)` or the resolved branch. No new validation |
+| long-text | Release comment / branch in the confirm diff (static-content) | ✅ covered | A long comment or branch line is truncated to the 60-rune diff-line cap with `…`; the full value is still sent and audited |
+| zero-one-many | Staged work items (list-collection) | ✅ covered | At most one item is staged at a time: D-02 confirms on any focus change, so only the focused row can hold staged edits (07-06 staging tests) |
 
 ---
 
@@ -237,18 +241,18 @@ Found while reconciling with the approved plans. Each needs a one-line plan amen
 | C2 | 07-06 Task 1, `buildRows` | staged Actions cell reads `staged → <state>` | The Actions column is 10 cols (`workitems.go:105`) and bubble-table truncates with `…` (`strlimit.go:20-22`), so `staged → Resolved` renders `staged → …` and the target state is lost on the row | Widen the Actions column to 18 cols. RowData text unchanged, so the 07-06 test and existing row-equivalence tests are unaffected |
 | C3 | 07-04 Task 1, `flow.go` WrittenMsg text | unknown part = `<label>: outcome unknown — verify in ADO`, failed = `<label> FAILED: …`, refused = `<label> not written: changed since preview` | For a single-op batch this renders `#7 approved: outcome unknown — verify in ADO`, which differs from the locked D-08 literal `#<id>: outcome unknown — verify in ADO` and opens a non-success outcome with a success word (`#7 approved FAILED: …`) | First-part rule (see Copywriting Contract). All existing plan assertions use substring matches (`outcome unknown — verify in ADO`, `#5 closed; effort update FAILED`, `not attempted`) and still pass |
 
-Minor, no contract change: `guard.CompletePR` treats an abandoned PR as a no-op, so the status reads `No change: #<id> already completed` for an abandoned PR, because the flow only has `Labels[0]`. Accept for this phase or carry to a follow-up.
+**Resolution (user, 2026-10-13):** C1, C2 and C3 approved; 07-04 and 07-06 amended accordingly. Also approved: the abandoned-PR no-op reads `No change: #<id> already abandoned` (07-04), and the changed-since-preview status carries the re-check hint (07-04).
 
 ---
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
-- [ ] Dimension 7 Inventory Provenance: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
+- [x] Dimension 7 Inventory Provenance: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-10-13 (gsd-ui-checker, 7/7 PASS)
