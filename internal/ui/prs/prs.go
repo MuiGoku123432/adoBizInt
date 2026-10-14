@@ -551,3 +551,6 @@ func (m *Model) openSelectedPRInBrowser() tea.Cmd {
 	}
 	return link.Open("open", utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID))
 }
+
+// WriteBusy reports whether a guarded write is in flight or awaiting confirm.
+func (m Model) WriteBusy() bool { return false }

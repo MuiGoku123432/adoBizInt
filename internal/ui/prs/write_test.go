@@ -128,3 +128,209 @@ func TestApproveRunsThroughGuard(t *testing.T) {
 		t.Errorf("audit record = %v, want command %q outcome %q", lines[0], "prs approve", "executed")
 	}
 }
+
+// pressAndPreview presses k and runs the preview cmd into m.
+func pressAndPreview(t *testing.T, m Model, k string) Model {
+	t.Helper()
+	m, cmd := m.Update(key(k))
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	return m
+}
+
+func TestCompleteRunsThroughGuardAfterConfirm(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var calls []string
+	w := &guardtest.Client{
+		T:                        t,
+		GetPullRequestDetailFunc: activePR(0, "active"),
+		CompletePullRequestFunc: func(_ context.Context, project, repo string, id int) error {
+			calls = append(calls, fmt.Sprintf("%s/%s/%d", project, repo, id))
+			return nil
+		},
+	}
+	m := loadWriteModel(t, w)
+
+	m, cmd := m.Update(key("c"))
+	if strings.Contains(m.statusMsg, "Merge PR") {
+		t.Errorf("status after c = %q, want no status-line merge prompt", m.statusMsg)
+	}
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	view := m.View()
+	for _, want := range []string{"status", "active → completed", "[y] write"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("View() after preview lacks %q", want)
+		}
+	}
+
+	m, cmd = m.Update(key("y"))
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, _ = feed[confirm.WrittenMsg](t, m, cmd)
+
+	if len(calls) != 1 || calls[0] != "P/r1/7" {
+		t.Errorf("CompletePullRequest calls = %v, want exactly [P/r1/7]", calls)
+	}
+	if !strings.Contains(m.statusMsg, "#7 completed") {
+		t.Errorf("status = %q, want it to contain %q", m.statusMsg, "#7 completed")
+	}
+	lines := auditLines(t)
+	if len(lines) != 1 || lines[0]["command"] != "prs complete" || lines[0]["outcome"] != "executed" {
+		t.Errorf("audit lines = %v, want one prs complete executed record", lines)
+	}
+}
+
+func TestDiscardSendsNothing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// ApprovePullRequestFunc is nil: a call fails the test by name.
+	w := &guardtest.Client{T: t, GetPullRequestDetailFunc: activePR(0, "active")}
+	m := pressAndPreview(t, loadWriteModel(t, w), "a")
+
+	m, cmd := m.Update(key("n"))
+	m, _ = feed[confirm.DiscardMsg](t, m, cmd)
+
+	if !strings.Contains(m.statusMsg, "Discarded") {
+		t.Errorf("status = %q, want it to contain %q", m.statusMsg, "Discarded")
+	}
+	if n := len(auditLines(t)); n != 0 {
+		t.Errorf("audit lines = %d, want 0", n)
+	}
+	if m.WriteBusy() {
+		t.Error("WriteBusy() = true after discard, want false")
+	}
+}
+
+func TestAlreadyApprovedIsNoChange(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	w := &guardtest.Client{T: t, GetPullRequestDetailFunc: activePR(10, "active")}
+	m := pressAndPreview(t, loadWriteModel(t, w), "a")
+
+	if want := "No change: #7 already approved"; m.statusMsg != want {
+		t.Errorf("status = %q, want %q", m.statusMsg, want)
+	}
+	if strings.Contains(m.View(), "[y] write") {
+		t.Error("View() shows the confirm modal for a no-op")
+	}
+}
+
+func TestAbandonedPRCompleteIsNoChange(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	// CompletePullRequestFunc is nil: a call fails the test by name.
+	w := &guardtest.Client{T: t, GetPullRequestDetailFunc: activePR(0, "abandoned")}
+	m := pressAndPreview(t, loadWriteModel(t, w), "c")
+
+	if want := "No change: #7 already abandoned"; m.statusMsg != want {
+		t.Errorf("status = %q, want %q", m.statusMsg, want)
+	}
+	if strings.Contains(m.View(), "[y] write") {
+		t.Error("View() shows the confirm modal for a no-op")
+	}
+	if n := len(auditLines(t)); n != 0 {
+		t.Errorf("audit lines = %d, want 0", n)
+	}
+}
+
+func TestUnwritableSinkBlocksWrite(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".config"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	// GetPullRequestDetailFunc is nil: the sink is opened before the pre-read
+	// (D-13), so a pre-read here fails the test by name.
+	w := &guardtest.Client{T: t}
+	m := pressAndPreview(t, loadWriteModel(t, w), "a")
+
+	if !strings.HasPrefix(m.statusMsg, "write blocked: audit log not writable:") {
+		t.Errorf("status = %q, want the write-blocked line", m.statusMsg)
+	}
+	if !m.statusErr {
+		t.Error("statusErr = false, want true")
+	}
+
+	// Writes are not disabled for the session: the next press previews again.
+	m, cmd := m.Update(key("a"))
+	if cmd == nil || !strings.Contains(m.statusMsg, "Checking PR #7") {
+		t.Fatalf("second a: status %q, cmd nil = %v; want a new preview", m.statusMsg, cmd == nil)
+	}
+	feed[confirm.PreviewedMsg](t, m, cmd)
+}
+
+func TestUnknownOutcomeIsSticky(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	w := &guardtest.Client{
+		T:                        t,
+		GetPullRequestDetailFunc: activePR(0, "active"),
+		ApprovePullRequestFunc: func(context.Context, string, string, int) error {
+			return context.DeadlineExceeded
+		},
+	}
+	m := pressAndPreview(t, loadWriteModel(t, w), "a")
+	m, cmd := m.Update(key("y"))
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, cmd = feed[confirm.WrittenMsg](t, m, cmd)
+
+	const want = "#7: outcome unknown — verify in ADO"
+	if got := m.flow.Sticky(); got != want {
+		t.Fatalf("Sticky() = %q, want %q", got, want)
+	}
+	if !strings.Contains(m.View(), want) {
+		t.Error("View() lacks the sticky unknown line")
+	}
+	if cmd == nil {
+		t.Error("no refresh cmd returned after an unknown outcome")
+	}
+
+	m, _ = m.Update(PRsMsg{Result: ado.Result[ado.PullRequest]{
+		Items:    []ado.PullRequest{{ID: 7, Title: "a pull request", Project: "P", RepositoryID: "r1"}},
+		Complete: true,
+	}})
+	if got := m.flow.Sticky(); got != want {
+		t.Errorf("Sticky() after refresh = %q, want it kept", got)
+	}
+
+	m, _ = m.Update(key("j"))
+	if got := m.flow.Sticky(); got != "" {
+		t.Errorf("Sticky() after a keypress = %q, want cleared", got)
+	}
+}
+
+func TestTickDoesNotRefreshWhileConfirmOpen(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	w := &guardtest.Client{T: t, GetPullRequestDetailFunc: activePR(0, "active")}
+	m := pressAndPreview(t, loadWriteModel(t, w), "a")
+
+	m, cmd := m.Update(TickMsg{})
+	if m.loading {
+		t.Error("loading = true after a tick with the confirm modal open, want no refresh")
+	}
+	if cmd == nil {
+		t.Error("tick cmd = nil, want the tick re-armed")
+	}
+}
+
+func TestTabHeldWhileWriteBusy(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	w := &guardtest.Client{
+		T:                        t,
+		GetPullRequestDetailFunc: activePR(0, "active"),
+		ApprovePullRequestFunc:   func(context.Context, string, string, int) error { return nil },
+	}
+	m := loadWriteModel(t, w)
+	held := func(stage string) {
+		t.Helper()
+		if !m.IsTextInputFocused() || !m.WriteBusy() {
+			t.Errorf("%s: IsTextInputFocused %v, WriteBusy %v; want both true", stage, m.IsTextInputFocused(), m.WriteBusy())
+		}
+	}
+
+	m, cmd := m.Update(key("a"))
+	held("preview in flight")
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	held("modal open")
+	m, cmd = m.Update(key("y"))
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	held("write in flight")
+	m, _ = feed[confirm.WrittenMsg](t, m, cmd)
+	if m.IsTextInputFocused() || m.WriteBusy() {
+		t.Errorf("settled: IsTextInputFocused %v, WriteBusy %v; want both false", m.IsTextInputFocused(), m.WriteBusy())
+	}
+}
