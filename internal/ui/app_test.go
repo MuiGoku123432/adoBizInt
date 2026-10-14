@@ -9,6 +9,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/guard"
 	"sentinovo.ai/bizInt/internal/ui/confirm"
+	"sentinovo.ai/bizInt/internal/ui/prs"
 	"sentinovo.ai/bizInt/internal/ui/workitems"
 )
 
@@ -132,5 +133,126 @@ func TestQuitWithStagedEditConfirmsFirst(t *testing.T) {
 	_, cmd = update(m, workitems.ProceedMsg{})
 	if !yields[tea.QuitMsg](run(cmd)) {
 		t.Errorf("ProceedMsg did not replay the quit")
+	}
+}
+
+// leaveAndPreview stages #1, presses the leave key k, and applies the crafted
+// preview, so the confirm modal is open.
+func leaveAndPreview(t *testing.T, k string) Model {
+	t.Helper()
+	m := stagedApp(t)
+	m, _ = press(m, k)
+	m, _ = update(m, confirm.PreviewedMsg{Batch: batch(guard.OutcomeDryRun)})
+	if !strings.Contains(m.View(), "Confirm #1") {
+		t.Fatalf("setup: View() after %s and the preview lacks %q", k, "Confirm #1")
+	}
+	return m
+}
+
+// answer presses k on the open modal, applies the one message it yields, and
+// returns the flattened messages of the cmd that follows. Not for y, whose
+// follow-up cmd is the Execute the tests never run.
+func answer(t *testing.T, m Model, k string) (Model, []tea.Msg) {
+	t.Helper()
+	m, cmd := press(m, k)
+	msgs := run(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("%s on the modal yielded %v, want one message", k, msgs)
+	}
+	m, cmd = update(m, msgs[0])
+	return m, run(cmd)
+}
+
+func TestTabSwitchWithStagedEditDiscardProceeds(t *testing.T) {
+	m := leaveAndPreview(t, "3")
+	if m.view != WorkItemsView {
+		t.Fatalf("view = %v with the confirm open, want WorkItemsView", m.view)
+	}
+
+	m, msgs := answer(t, m, "n")
+	if !yields[workitems.ProceedMsg](msgs) {
+		t.Fatalf("n on the modal yielded %v, want a workitems.ProceedMsg", msgs)
+	}
+	m, _ = update(m, workitems.ProceedMsg{}) // prs Init is not run
+	if m.view != PRsView {
+		t.Errorf("view = %v after ProceedMsg, want PRsView", m.view)
+	}
+	if m.workitems.HasStaged() {
+		t.Errorf("HasStaged() = true after n discarded the edit")
+	}
+}
+
+func TestEscKeepsViewAndStagedEdit(t *testing.T) {
+	m := leaveAndPreview(t, "3")
+
+	m, msgs := answer(t, m, "esc")
+	if yields[workitems.ProceedMsg](msgs) {
+		t.Errorf("esc on the modal yielded a ProceedMsg")
+	}
+	if m.view != WorkItemsView {
+		t.Errorf("view = %v after esc, want WorkItemsView", m.view)
+	}
+	if !m.workitems.HasStaged() {
+		t.Errorf("HasStaged() = false after esc, want the edit kept")
+	}
+}
+
+func TestUnknownOutcomeCancelsQuit(t *testing.T) {
+	m := leaveAndPreview(t, "q")
+
+	m, cmd := press(m, "y")
+	msgs := run(cmd)
+	if len(msgs) != 1 {
+		t.Fatalf("y yielded %v, want one confirm.WriteMsg", msgs)
+	}
+	m, _ = update(m, msgs[0]) // the Execute cmd it returns is not run
+
+	m, cmd = update(m, confirm.WrittenMsg{Batch: batch(guard.OutcomeUnknown)})
+	msgs = run(cmd)
+	if yields[workitems.ProceedMsg](msgs) || yields[tea.QuitMsg](msgs) {
+		t.Errorf("an unknown outcome yielded %v, want neither ProceedMsg nor QuitMsg", msgs)
+	}
+	if want := "outcome unknown — verify in ADO"; !strings.Contains(m.View(), want) {
+		t.Errorf("View() after an unknown outcome lacks %q", want)
+	}
+	if m.view != WorkItemsView {
+		t.Errorf("view = %v after an unknown outcome, want WorkItemsView", m.view)
+	}
+}
+
+func TestQuitHeldWhileWriteBusy(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := NewModel(&ado.Client{}, "https://dev.azure.com/org", nil, nil, nil, 0, nil)
+	m, _ = press(m, "3") // the prs Init cmd is not run
+	m, _ = update(m, prs.PRsMsg{Result: ado.Result[ado.PullRequest]{
+		Items:    []ado.PullRequest{{ID: 7, Title: "a pull request", Project: "P", RepositoryID: "r1"}},
+		Complete: true,
+	}})
+	m, _ = press(m, "a") // the preview cmd is not run
+	if !m.prs.WriteBusy() {
+		t.Fatalf("setup: a did not start the PR approve flow")
+	}
+
+	for _, k := range []string{"q", "ctrl+c"} {
+		var cmd tea.Cmd
+		m, cmd = press(m, k)
+		if yields[tea.QuitMsg](run(cmd)) {
+			t.Errorf("%s quit while the PR write was busy", k)
+		}
+	}
+}
+
+func TestPlainQuitAndTabUnchanged(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m := NewModel(&ado.Client{}, "https://dev.azure.com/org", nil, nil, nil, 0, nil)
+
+	_, cmd := press(m, "q")
+	if !yields[tea.QuitMsg](run(cmd)) {
+		t.Errorf("q on the dashboard with nothing staged did not quit")
+	}
+
+	m, _ = press(m, "2") // the workitems Init cmd is not run
+	if m.view != WorkItemsView {
+		t.Errorf("view = %v after 2, want WorkItemsView", m.view)
 	}
 }
