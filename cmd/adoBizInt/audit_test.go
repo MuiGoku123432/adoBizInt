@@ -79,7 +79,7 @@ func TestExecutedWriteAppendsAuditRecord(t *testing.T) {
 	}
 	sort.Strings(gotKeys)
 
-	wantKeys := []string{"changes", "command", "outcome", "target", "timestamp"}
+	wantKeys := []string{"actor", "changes", "command", "outcome", "target", "timestamp", "user_approved"}
 	if !reflect.DeepEqual(gotKeys, wantKeys) {
 		t.Errorf("audit record keys = %v, want %v", gotKeys, wantKeys)
 	}
@@ -98,8 +98,8 @@ func TestExecutedWriteAppendsAuditRecord(t *testing.T) {
 // file is persisted, and argv is caller-controlled and can carry a secret
 // someone passed on a command line — which would make this file a
 // credential-disclosure path, the same class the no-stack-trace rule closed for
-// crash records. Actor identity is omitted separately (D-15): there is one
-// identity, the PAT's, and its resolution is non-fatal.
+// crash records. Actor is a fixed surface label (tui, cli-human or agent,
+// GUARD-04), not an identity; user identity is still never recorded.
 func TestAuditRecordOmitsArgvAndCredentialFields(t *testing.T) {
 	withConfiguredProjects(t, "P")
 	sink := tempAuditSink(t)
@@ -116,7 +116,7 @@ func TestAuditRecordOmitsArgvAndCredentialFields(t *testing.T) {
 
 	// Scan the raw line rather than only the top level: a forbidden key nested
 	// inside target or changes is the same disclosure.
-	forbidden := []string{"argv", "actor", "url", "headers", "token", "pat", "authorization"}
+	forbidden := []string{"argv", "url", "headers", "token", "pat", "authorization"}
 	lower := strings.ToLower(lines[0])
 	for _, key := range forbidden {
 		if strings.Contains(lower, `"`+key+`"`) {

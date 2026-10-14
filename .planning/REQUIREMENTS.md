@@ -25,6 +25,7 @@ an empty sprint, and one failing team.
 - [ ] **GUARD-04**: Every audit record carries an `actor` key (`tui`, `cli-human` or `agent`) and records whether `--user-approved` was supplied (AGENT-03)
 - [ ] **GUARD-05**: The TUI effort modal carries "leave unchanged" as absent, not zero. An end-to-end test drives the modal through the guard
 - [ ] **GUARD-06**: Extraction is behaviour-preserving for the CLI: the existing CLI write tests pass unchanged
+  - Approved Phase 7 exception (07-03 checkpoint, 2026-10-13): three locked key-set assertions were amended for GUARD-04 and one test was relocated. TestExecutedWriteAppendsAuditRecord: expected audit keys gain `actor` and `user_approved`. TestPanicAfterWriteIssuedIsAudited: expected audit keys gain the same two keys. TestAuditRecordOmitsArgvAndCredentialFields: "actor" leaves the forbidden-key list, because actor is now a fixed surface label rather than an identity; argv, url, headers, token, pat and authorization stay forbidden. TestWriteRecoverPrecedesMutate moved from cmd/adoBizInt/crash_test.go to internal/guard/structural_test.go as TestRunRecoverPrecedesMutate (plan 07-02, GUARD-01), because the recover moved into the shared guard. Every other CLI test file is byte-identical, enforced by `.planning/phases/07-guarded-tui-writes/07-cli-tests.sha256`.
 
 ### Platform
 

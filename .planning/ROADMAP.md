@@ -67,7 +67,7 @@ template is resolved per project; working days come from team settings only.
   2. A TUI resolve (state plus effort) runs as two sequential guarded writes with two audit records, and leaving the effort modal's field blank leaves that field unchanged rather than zeroing it, proven by an end-to-end test that drives the modal through the guard
   3. A structural test fails if any `internal/ui` file calls an `ado` mutation method directly, and every existing TUI write runs with the real project and a bounded context
   4. Every audit record, from the CLI or the TUI, carries an `actor` key (`tui`, `cli-human` or `agent`) and a field recording whether `--user-approved` was supplied
-  5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process
+  5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process. Approved Phase 7 exception (07-03 checkpoint): TestExecutedWriteAppendsAuditRecord and TestPanicAfterWriteIssuedIsAudited expect the two GUARD-04 keys `actor` and `user_approved`, TestAuditRecordOmitsArgvAndCredentialFields no longer forbids "actor", and TestWriteRecoverPrecedesMutate is relocated to internal/guard as TestRunRecoverPrecedesMutate; see REQUIREMENTS.md GUARD-06 for the detail
 
 **Plans**: 2/8 plans executed
 Plans:

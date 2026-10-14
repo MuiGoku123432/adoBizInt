@@ -495,7 +495,7 @@ func TestPanicAfterWriteIssuedIsAudited(t *testing.T) {
 				keys = append(keys, k)
 			}
 			sort.Strings(keys)
-			if want := []string{"changes", "command", "outcome", "target", "timestamp"}; !reflect.DeepEqual(keys, want) {
+			if want := []string{"actor", "changes", "command", "outcome", "target", "timestamp", "user_approved"}; !reflect.DeepEqual(keys, want) {
 				t.Errorf("audit keys = %v, want %v", keys, want)
 			}
 			if got["outcome"] != tc.wantOutcome || got["command"] != "workitems set-state" {
