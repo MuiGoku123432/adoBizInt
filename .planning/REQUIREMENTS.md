@@ -19,7 +19,7 @@ an empty sprint, and one failing team.
 
 ### Guarded TUI Writes (BL-01)
 
-- [ ] **GUARD-01**: The guarded-write sequence (audit open, pre-read and diff, no-op refusal, confirm gate, mutate under recover, outcome classification, audit append) lives in one package both the CLI and the TUI call. It never writes stdout and never exits the process
+- [x] **GUARD-01**: The guarded-write sequence (audit open, pre-read and diff, no-op refusal, confirm gate, mutate under recover, outcome classification, audit append) lives in one package both the CLI and the TUI call. It never writes stdout and never exits the process
 - [ ] **GUARD-02**: All existing TUI write call sites go through that guard with the real project and a bounded context. A structural test fails if any `internal/ui` file calls an `ado` mutation method directly
 - [ ] **GUARD-03**: The TUI confirms once per item: edits to one item are staged and confirmed once when the user moves on, with one audit record per changed field. The compound resolve (state plus effort) is two sequential guarded writes
 - [ ] **GUARD-04**: Every audit record carries an `actor` key (`tui`, `cli-human` or `agent`) and records whether `--user-approved` was supplied (AGENT-03)
@@ -184,7 +184,7 @@ Deferred. Tracked but not in this roadmap.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GUARD-01 | Phase 7 | Pending |
+| GUARD-01 | Phase 7 | Complete |
 | GUARD-02 | Phase 7 | Pending |
 | GUARD-03 | Phase 7 | Pending |
 | GUARD-04 | Phase 7 | Pending |

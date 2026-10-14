@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 7
 current_phase_name: Guarded TUI Writes
 status: executing
-stopped_at: Phase 7 UI-SPEC approved
-last_updated: "2026-10-13T21:07:53.842Z"
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-10-14T03:46:31.058Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 7 execution started
-state_head: 3519976376c2e698904a7859ca62270e6d743b81
+state_head: b278292273b2002993b94168b5f25c7c34a9e2b0
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 8
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 7 execution started
 
@@ -97,6 +97,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06 P04 | 4min | 2 tasks | 6 files |
 | Phase 06 P05 | 3min | 2 tasks | 4 files |
 | Phase 07 P01 | 2 min | 2 tasks | 13 files |
+| Phase 07 P02 | 8 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -196,6 +197,9 @@ Full log in PROJECT.md Key Decisions.
 - [v2.0 roadmap]: TEAM-06 (area-path intersection) mapped to Phase 10 rather than the Team phase, because its behaviour is only observable once work items are read and the same filter must serve the live set and the baseline. AGENT-05 (create/update field allow-list) mapped to Phase 14 with the verbs it constrains. PLAT-04 (shape caps) mapped to Phase 9, ahead of the first fan-out
 - [Phase 07]: fetchctx relocated to internal/fetchctx so internal/guard can import it without depending on internal/ui (GUARD-01 prerequisite)
 - [Phase 07]: CLI test lock taken at 059a4d1: seven CLI test files locked for the whole phase, audit_test.go until 07-03, crash_test.go unlocked (07-02 relocates TestWriteRecoverPrecedesMutate); inventory 85 tests
+- [Phase 07]: 07-02: internal/guard is imported as writeguard in package main because package main already declares func guard
+- [Phase 07]: 07-02: guard.Run recovers a Mutate panic and returns it as Report.Panic (never re-panics); the CLI maps it to handlePanic exit 5
+- [Phase 07]: 07-02: writeExitCodeFor(outcome, err) only splits auth from other failures; 5xx/timeout/no-status/cancelled-parent rules live only in guard.classify
 
 ### Roadmap Evolution
 
@@ -263,9 +267,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-13T21:07:53.827Z
-Stopped at: Phase 7 UI-SPEC approved
-Resume file: .planning/phases/07-guarded-tui-writes/07-UI-SPEC.md
+Last session: 2026-10-14T03:46:31.042Z
+Stopped at: Completed 07-02-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

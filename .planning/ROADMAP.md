@@ -69,13 +69,13 @@ template is resolved per project; working days come from team settings only.
   4. Every audit record, from the CLI or the TUI, carries an `actor` key (`tui`, `cli-human` or `agent`) and a field recording whether `--user-approved` was supplied
   5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process
 
-**Plans**: 1/8 plans executed
+**Plans**: 2/8 plans executed
 Plans:
 **Wave 1**
 - [x] 07-01-PLAN.md — Lock the CLI write tests (sha256 + inventory) and move fetchctx to internal/fetchctx
 
 **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 07-02-PLAN.md — Extract internal/guard (Run, audit sink 0600/0700, ops) and make the CLI a thin adapter
+- [x] 07-02-PLAN.md — Extract internal/guard (Run, audit sink 0600/0700, ops) and make the CLI a thin adapter
 
 **Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 07-03-PLAN.md — Persist `actor` and `user_approved` on every audit record (decision checkpoint: CLI actor label)
@@ -248,7 +248,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Guarded TUI Writes | v2.0 | 1/8 | In Progress | - |
+| 7. Guarded TUI Writes | v2.0 | 2/8 | In Progress | - |
 | 8. Platform Upgrade and Pacing | v2.0 | 0/TBD | Not started | - |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
