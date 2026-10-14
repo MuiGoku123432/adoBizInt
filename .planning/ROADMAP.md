@@ -69,7 +69,7 @@ template is resolved per project; working days come from team settings only.
   4. Every audit record, from the CLI or the TUI, carries an `actor` key (`tui`, `cli-human` or `agent`) and a field recording whether `--user-approved` was supplied
   5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process. Approved Phase 7 exception (07-03 checkpoint): TestExecutedWriteAppendsAuditRecord and TestPanicAfterWriteIssuedIsAudited expect the two GUARD-04 keys `actor` and `user_approved`, TestAuditRecordOmitsArgvAndCredentialFields no longer forbids "actor", and TestWriteRecoverPrecedesMutate is relocated to internal/guard as TestRunRecoverPrecedesMutate; see REQUIREMENTS.md GUARD-06 for the detail
 
-**Plans**: 2/8 plans executed
+**Plans**: 3/8 plans executed
 Plans:
 **Wave 1**
 - [x] 07-01-PLAN.md — Lock the CLI write tests (sha256 + inventory) and move fetchctx to internal/fetchctx
@@ -78,7 +78,7 @@ Plans:
 - [x] 07-02-PLAN.md — Extract internal/guard (Run, audit sink 0600/0700, ops) and make the CLI a thin adapter
 
 **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 07-03-PLAN.md — Persist `actor` and `user_approved` on every audit record (decision checkpoint: CLI actor label)
+- [x] 07-03-PLAN.md — Persist `actor` and `user_approved` on every audit record (decision checkpoint: CLI actor label)
 - [ ] 07-04-PLAN.md — Shared confirm flow (diff modal, preview/execute) and PR approve/complete through the guard
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -248,7 +248,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Guarded TUI Writes | v2.0 | 2/8 | In Progress | - |
+| 7. Guarded TUI Writes | v2.0 | 3/8 | In Progress | - |
 | 8. Platform Upgrade and Pacing | v2.0 | 0/TBD | Not started | - |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |

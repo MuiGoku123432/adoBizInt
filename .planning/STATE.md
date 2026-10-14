@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 7
 current_phase_name: Guarded TUI Writes
 status: executing
-stopped_at: Completed 07-02-PLAN.md
-last_updated: "2026-10-14T03:46:31.058Z"
+stopped_at: Completed 07-03-PLAN.md
+last_updated: "2026-10-14T03:58:03.223Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 7 execution started
-state_head: b278292273b2002993b94168b5f25c7c34a9e2b0
+state_head: 264666941851ff4951f18213a24d8f4e1bba570c
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 8
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 7 execution started
 
@@ -98,6 +98,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 06 P05 | 3min | 2 tasks | 4 files |
 | Phase 07 P01 | 2 min | 2 tasks | 13 files |
 | Phase 07 P02 | 8 min | 2 tasks | 14 files |
+| Phase 07 P03 | 3min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -200,6 +201,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 07]: 07-02: internal/guard is imported as writeguard in package main because package main already declares func guard
 - [Phase 07]: 07-02: guard.Run recovers a Mutate panic and returns it as Report.Panic (never re-panics); the CLI maps it to handlePanic exit 5
 - [Phase 07]: 07-02: writeExitCodeFor(outcome, err) only splits auth from other failures; 5xx/timeout/no-status/cancelled-parent rules live only in guard.classify
+- [Phase 07]: 07-03: CLI audit actor is tty-derived: cli-human when stdin is an interactive terminal, otherwise agent; never from a flag, env var or config (user decision 2026-10-13)
+- [Phase 07]: 07-03: Audit records append actor (string) and user_approved (JSON bool, always present) after outcome; older five-key lines are never migrated
+- [Phase 07]: 07-03: guard.Run refuses an actor outside tui/cli-human/agent via Report.SinkErr before opening the sink
 
 ### Roadmap Evolution
 
@@ -267,8 +271,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T03:46:31.042Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-10-14T03:58:03.209Z
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
