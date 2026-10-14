@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 7
 current_phase_name: Guarded TUI Writes
 status: executing
-stopped_at: Completed 07-03-PLAN.md
-last_updated: "2026-10-14T03:58:03.223Z"
+stopped_at: Completed 07-04-PLAN.md
+last_updated: "2026-10-14T04:08:30.479Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 7 execution started
-state_head: 264666941851ff4951f18213a24d8f4e1bba570c
+state_head: cd607e4ad81aa6329d016bd652744697919eb4a7
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 7 execution started
 
@@ -99,6 +99,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P01 | 2 min | 2 tasks | 13 files |
 | Phase 07 P02 | 8 min | 2 tasks | 14 files |
 | Phase 07 P03 | 3min | 3 tasks | 11 files |
+| Phase 07 P04 | 8 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -204,6 +205,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 07]: 07-03: CLI audit actor is tty-derived: cli-human when stdin is an interactive terminal, otherwise agent; never from a flag, env var or config (user decision 2026-10-13)
 - [Phase 07]: 07-03: Audit records append actor (string) and user_approved (JSON bool, always present) after outcome; older five-key lines are never migrated
 - [Phase 07]: 07-03: guard.Run refuses an actor outside tui/cli-human/agent via Report.SinkErr before opening the sink
+- [Phase 07]: 07-04: The PR view replaces its status whenever confirm.Flow settles, so an unknown outcome (sticky line, empty Status) never leaves a stale in-flight status
+- [Phase 07]: 07-04: confirm.Flow swallows its own messages that arrive in the wrong state, so a double y cannot send two writes
+- [Phase 07]: 07-04: completing an abandoned PR reads 'No change: #<id> already abandoned' via a per-press prStatusClient wrapper; guard.CompletePR is unchanged (CLI parity)
 
 ### Roadmap Evolution
 
@@ -271,8 +275,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T03:58:03.209Z
-Stopped at: Completed 07-03-PLAN.md
+Last session: 2026-10-14T04:08:30.463Z
+Stopped at: Completed 07-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
