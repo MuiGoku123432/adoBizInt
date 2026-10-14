@@ -1,7 +1,6 @@
 package releases
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/guard"
+	"sentinovo.ai/bizInt/internal/ui/confirm"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -47,13 +47,6 @@ type ReleasesMsg struct {
 type ApprovalsMsg struct {
 	Result ado.Result[ado.ReleaseApproval]
 	Err    error
-}
-
-// ApprovalResultMsg is sent when an approval action completes
-type ApprovalResultMsg struct {
-	ApprovalID int
-	Action     string // "approve" or "reject"
-	Err        error
 }
 
 // TickMsg is used for auto-refresh polling
@@ -101,6 +94,10 @@ type Model struct {
 
 	// Auto-refresh
 	autoRefresh bool
+
+	// flow previews, confirms and executes approve and reject through
+	// internal/guard, after the approval modal's input step (D-06).
+	flow confirm.Flow
 }
 
 func New(client *ado.Client, orgURL string, projects []string, pollInterval time.Duration) Model {
@@ -205,23 +202,24 @@ func (m *Model) applyResult(result ado.Result[ado.Release]) {
 	m.partialWarning = "could not read: " + styles.SummarizeFailures(result.Failures)
 }
 
-func (m Model) approveRelease(approvalID int, project, comment string) tea.Cmd {
-	client := m.client
-	return func() tea.Msg {
-		err := client.ApproveRelease(context.Background(), project, approvalID, comment)
-		return ApprovalResultMsg{ApprovalID: approvalID, Action: "approve", Err: err}
-	}
-}
-
-func (m Model) rejectRelease(approvalID int, project, comment string) tea.Cmd {
-	client := m.client
-	return func() tea.Msg {
-		err := client.RejectRelease(context.Background(), project, approvalID, comment)
-		return ApprovalResultMsg{ApprovalID: approvalID, Action: "reject", Err: err}
-	}
-}
-
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// The write flow sees every message first: while it is busy it owns the
+	// keyboard, and its own messages never reach the view's bindings.
+	var flowCmd tea.Cmd
+	var res confirm.Result
+	m.flow, flowCmd, res = m.flow.Update(msg)
+	if res.Handled {
+		if res.Status != "" || res.Proceed || res.Stay {
+			m.statusMsg = res.Status
+			m.statusErr = res.IsErr
+		}
+		if res.Refresh {
+			m.loading = true
+			return m, tea.Batch(flowCmd, m.fetchReleases(), m.fetchApprovals())
+		}
+		return m, flowCmd
+	}
+
 	var cmds []tea.Cmd
 
 	// Handle approval modal close
@@ -231,23 +229,32 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle approval submit
+	// Approval submit is the input step; the guard's pre-read and the diff
+	// modal follow, and only y there sends (D-05, D-06, GUARD-02).
 	if submitMsg, ok := msg.(ApprovalSubmitMsg); ok {
 		m.showApproval = false
 		m.approvalModal = nil
-		m.statusMsg = fmt.Sprintf("Processing %s...", submitMsg.Action)
-		m.statusErr = false
-		if submitMsg.Action == "approve" {
-			return m, m.approveRelease(submitMsg.ApprovalID, submitMsg.Project, submitMsg.Comment)
-		} else {
-			return m, m.rejectRelease(submitMsg.ApprovalID, submitMsg.Project, submitMsg.Comment)
+		b := confirm.Batch{
+			ID:     submitMsg.ApprovalID,
+			Ops:    []guard.Op{guard.ApproveRelease(m.writer, submitMsg.Project, submitMsg.ApprovalID, submitMsg.Comment)},
+			Labels: []string{"approved"},
 		}
+		if submitMsg.Action == "reject" {
+			b.Ops = []guard.Op{guard.RejectRelease(m.writer, submitMsg.Project, submitMsg.ApprovalID, submitMsg.Comment)}
+			b.Labels = []string{"rejected"}
+		}
+		var cmd tea.Cmd
+		m.flow, cmd = m.flow.Start(b, m.client.FetchTimeout())
+		m.statusMsg = fmt.Sprintf("Checking approval #%d...", submitMsg.ApprovalID)
+		m.statusErr = false
+		return m, cmd
 	}
 
 	// The modal delegation below consumes every message, which would swallow the
 	// tick and stop the auto-refresh chain for good. Re-arm the timer instead,
-	// without refreshing rows out from under the open modal.
-	if _, ok := msg.(TickMsg); ok && m.showApproval && m.approvalModal != nil {
+	// without refreshing rows out from under the open modal or a guarded write
+	// that is previewing, awaiting confirm or in flight.
+	if _, ok := msg.(TickMsg); ok && (m.showApproval && m.approvalModal != nil || m.flow.Busy()) {
 		return m, m.tickCmd()
 	}
 
@@ -307,18 +314,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			// Update pending approval counts in releases
 			m.updatePendingCounts()
 			m.table = m.table.WithRows(m.buildRows())
-		}
-
-	case ApprovalResultMsg:
-		if msg.Err != nil {
-			m.statusMsg = "Error: " + msg.Err.Error()
-			m.statusErr = true
-		} else {
-			m.statusMsg = fmt.Sprintf("Successfully %sd approval #%d", msg.Action, msg.ApprovalID)
-			m.statusErr = false
-			// Refresh to show updated status
-			m.loading = true
-			return m, tea.Batch(m.fetchReleases(), m.fetchApprovals())
 		}
 
 	case link.ActionMsg:
@@ -447,7 +442,7 @@ func (m Model) View() string {
 		return modal.Center(m.approvalModal.View(), m.renderTableView())
 	}
 
-	return m.renderTableView()
+	return m.flow.View(m.renderTableView())
 }
 
 func (m Model) renderTableView() string {
@@ -514,6 +509,13 @@ func (m Model) renderTableView() string {
 	}
 
 	b.WriteString("\n")
+
+	// D-08: an unknown outcome stays on its own line above the status line
+	// until the next keypress.
+	if sticky := m.flow.Sticky(); sticky != "" {
+		b.WriteString(styles.ErrorStyle.Render(sticky))
+		b.WriteString("\n")
+	}
 
 	// Status message
 	if m.statusMsg != "" {
@@ -647,19 +649,21 @@ func getEnvStatusIndicator(status, deploymentStatus string) string {
 	}
 }
 
-// IsTextInputFocused returns true when search input or approval modal is focused
+// IsTextInputFocused returns true when the search input or approval modal is
+// focused, or a guarded write owns the keyboard (preview, confirm modal or
+// write in flight), so app.go holds tab navigation.
 func (m Model) IsTextInputFocused() bool {
 	// Check if approval modal is open (it has a text input)
 	if m.showApproval && m.approvalModal != nil {
 		return true
 	}
 	// Check if search input is focused
-	return m.filterFocused == 1
+	return m.filterFocused == 1 || m.flow.Busy()
 }
 
 // WriteBusy reports whether a guarded write is previewing, awaiting confirm or
 // in flight.
-func (m Model) WriteBusy() bool { return false }
+func (m Model) WriteBusy() bool { return m.flow.Busy() }
 
 // getSelectedRelease returns the currently selected release or nil
 func (m *Model) getSelectedRelease() *ado.Release {
