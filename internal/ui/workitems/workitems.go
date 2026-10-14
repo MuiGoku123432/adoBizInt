@@ -16,6 +16,7 @@ import (
 	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/guard"
+	"sentinovo.ai/bizInt/internal/ui/confirm"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -88,6 +89,12 @@ type Model struct {
 	// Effort modal for Task state transitions
 	effortModal *EffortModal
 	showEffort  bool
+	// flow confirms staged edits through internal/guard (staging.go). staged
+	// is the one edit waiting for confirmation; pendingKey is the navigation
+	// held until the confirm settles.
+	flow       confirm.Flow
+	staged     *stagedEdit
+	pendingKey *tea.KeyMsg
 }
 
 func New(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string, priorities *config.Priorities) Model {
@@ -106,7 +113,7 @@ func New(client *ado.Client, orgURL string, projects []string, stateTransitions 
 		table.NewColumn(columnKeySummary, "Summary", 22),
 		table.NewColumn(columnKeyAssignee, "Assignee", 15),
 		table.NewColumn(columnKeyPoints, "Points", 6).WithStyle(lipgloss.NewStyle().Align(lipgloss.Right)),
-		table.NewColumn(columnKeyActions, "Actions", 10),
+		table.NewColumn(columnKeyActions, "Actions", 18),
 	}
 
 	t := table.New(columns).
@@ -230,16 +237,22 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 		}
 	}
 
+	// Pressing n again on a staged item cycles on from the staged state.
+	from := item.State
+	if m.staged != nil && m.staged.item.ID == id {
+		from = m.staged.state
+	}
+
 	// Get the next state from config
-	nextState, hasNext := ado.GetNextState(m.stateTransitions, item.Type, item.State)
+	nextState, hasNext := ado.GetNextState(m.stateTransitions, item.Type, from)
 	if !hasNext {
 		return func() tea.Msg {
-			return StateUpdateMsg{Err: fmt.Errorf("no next state defined for %s in %s", item.Type, item.State)}
+			return StateUpdateMsg{Err: fmt.Errorf("no next state defined for %s in %s", item.Type, from)}
 		}
 	}
 
 	// For Tasks going from Active to Closed, show the effort modal
-	if item.Type == "Task" && item.State == "Active" && nextState == "Closed" {
+	if item.Type == "Task" && from == "Active" && nextState == "Closed" {
 		effortModal := NewEffortModal(id, item.Title, nextState)
 		effortModal.width = m.width
 		effortModal.height = m.height
@@ -249,7 +262,7 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 	}
 
 	// For User Stories going from Active to Resolved, fetch children first to find dev task
-	if item.Type == "User Story" && item.State == "Active" && nextState == "Resolved" {
+	if item.Type == "User Story" && from == "Active" && nextState == "Resolved" {
 		client := m.client
 		itemID := id
 		itemTitle := item.Title
@@ -265,15 +278,21 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 		}
 	}
 
-	// Create async command to update the state
-	client := m.client
-	return func() tea.Msg {
-		err := client.UpdateWorkItemState(context.Background(), "", id, nextState)
-		return StateUpdateMsg{ItemID: id, NewState: nextState, Err: err}
-	}
+	// Stage the change; it is confirmed when the user moves on (GUARD-03).
+	m.stage(*item, nextState)
+	return nil
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// The write flow sees every message first: while it is busy it owns the
+	// keyboard, and its own messages never reach the view's bindings.
+	var flowCmd tea.Cmd
+	var res confirm.Result
+	m.flow, flowCmd, res = m.flow.Update(msg)
+	if res.Handled {
+		return m.applyFlow(res, flowCmd)
+	}
+
 	var cmds []tea.Cmd
 
 	// Handle detail modal close message
@@ -601,10 +620,15 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		// Only pass key events to table if table is focused
+		// Only pass key events to table if table is focused. A move off a
+		// staged item is held until its confirm settles (D-02).
 		if m.filterFocused == 0 {
-			var cmd tea.Cmd
-			m.table, cmd = m.table.Update(msg)
+			moved, cmd := m.table.Update(msg)
+			if m.staged != nil && highlightedID(moved) != highlightedID(m.table) {
+				m.pendingKey = &msg
+				return m, m.startConfirm()
+			}
+			m.table = moved
 			cmds = append(cmds, cmd)
 		}
 	}
@@ -673,6 +697,9 @@ func (m Model) buildRows() []table.Row {
 		if _, hasNext := ado.GetNextState(m.stateTransitions, item.Type, item.State); hasNext {
 			actionText = "[n] Next"
 		}
+		if m.staged != nil && m.staged.item.ID == item.ID {
+			actionText = styles.WarningStyle.Render("staged → " + m.staged.state)
+		}
 
 		// Style the type with color
 		styledType := getTypeStyle(item.Type).Render(item.Type)
@@ -713,7 +740,7 @@ func (m Model) View() string {
 		return modal.Center(m.detailModal.View(), m.renderTableView())
 	}
 
-	return m.renderTableView()
+	return m.flow.View(m.renderTableView())
 }
 
 // renderTableView renders the work items table view
@@ -766,6 +793,13 @@ func (m Model) renderTableView() string {
 	}
 
 	b.WriteString("\n")
+
+	// D-08: an unknown outcome stays on its own line above the status line
+	// until the next keypress.
+	if sticky := m.flow.Sticky(); sticky != "" {
+		b.WriteString(styles.ErrorStyle.Render(sticky))
+		b.WriteString("\n")
+	}
 
 	// Show status message if any
 	if m.statusMsg != "" {
