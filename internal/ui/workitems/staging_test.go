@@ -359,3 +359,90 @@ func TestEnterOnAnotherItemConfirmsFirst(t *testing.T) {
 	}
 	wantNoAudit(t)
 }
+
+func proceedCount(msgs []tea.Msg) int {
+	n := 0
+	for _, msg := range msgs {
+		if _, ok := msg.(ProceedMsg); ok {
+			n++
+		}
+	}
+	return n
+}
+
+// stageAndLeave stages #1, asks the view to confirm before leaving, and
+// applies the preview.
+func stageAndLeave(t *testing.T, m Model) Model {
+	t.Helper()
+	m, _ = press(m, "n")
+	m, cmd := m.ConfirmLeave()
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	return m
+}
+
+func TestConfirmLeaveProceedsAfterWrite(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, _, writes := newStagingModel(t)
+
+	m = stageAndLeave(t, m)
+	if !m.WriteBusy() {
+		t.Errorf("WriteBusy() = false with the confirm open")
+	}
+	m, cmd := press(m, "y")
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, cmd = feed[confirm.WrittenMsg](t, m, cmd)
+
+	if n := proceedCount(run(cmd)); n != 1 {
+		t.Errorf("ProceedMsg count after the write = %d, want 1", n)
+	}
+	if len(*writes) != 1 {
+		t.Errorf("writes = %v, want one", *writes)
+	}
+	if m.HasStaged() {
+		t.Errorf("HasStaged() = true after the write")
+	}
+}
+
+func TestConfirmLeaveEscDoesNotProceed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil
+
+	m = stageAndLeave(t, m)
+	m, cmd := press(m, "esc")
+	m, cmd = feed[confirm.StayMsg](t, m, cmd)
+
+	if n := proceedCount(run(cmd)); n != 0 {
+		t.Errorf("ProceedMsg count after esc = %d, want 0", n)
+	}
+	if !m.HasStaged() {
+		t.Errorf("HasStaged() = false after esc, want the edit kept")
+	}
+}
+
+func TestConfirmLeaveDiscardProceeds(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil // a write fails the test
+
+	m = stageAndLeave(t, m)
+	m, cmd := press(m, "n")
+	_, cmd = feed[confirm.DiscardMsg](t, m, cmd)
+
+	if n := proceedCount(run(cmd)); n != 1 {
+		t.Errorf("ProceedMsg count after discard = %d, want 1", n)
+	}
+	wantNoAudit(t)
+}
+
+func TestConfirmLeaveWithNothingStagedProceedsImmediately(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, _, _ := newStagingModel(t)
+	m.writer = &guardtest.Client{T: t} // any call fails the test
+
+	_, cmd := m.ConfirmLeave()
+	msgs := run(cmd)
+	if len(msgs) != 1 || proceedCount(msgs) != 1 {
+		t.Errorf("ConfirmLeave with nothing staged yielded %v, want one ProceedMsg", msgs)
+	}
+}

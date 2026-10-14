@@ -104,3 +104,14 @@ func (m Model) applyFlow(res confirm.Result, flowCmd tea.Cmd) (Model, tea.Cmd) {
 	}
 	return m, tea.Batch(cmds...)
 }
+
+// ProceedMsg tells app.go that a confirm started by ConfirmLeave settled in a
+// way that lets the user leave the view.
+type ProceedMsg struct{}
+
+// WriteBusy reports whether a staged edit is previewing, awaiting confirm or
+// being written.
+func (m Model) WriteBusy() bool { return false }
+
+// ConfirmLeave is a stub until the leave API lands.
+func (m Model) ConfirmLeave() (Model, tea.Cmd) { return m, nil }
