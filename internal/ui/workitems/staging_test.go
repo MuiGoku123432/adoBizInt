@@ -2,6 +2,8 @@ package workitems
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,6 +85,40 @@ func feed[T tea.Msg](t *testing.T, m Model, cmd tea.Cmd) (Model, tea.Cmd) {
 	return m.Update(msg)
 }
 
+// run runs cmd and returns the messages it yields, with tea.BatchMsg
+// flattened, since applyFlow batches the refresh with replayed cmds.
+func run(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+	var msgs []tea.Msg
+	for _, c := range batch {
+		msgs = append(msgs, run(c)...)
+	}
+	return msgs
+}
+
+// stageAndPreview stages #1 with n, moves down, and applies the preview.
+func stageAndPreview(t *testing.T, m Model) Model {
+	t.Helper()
+	m, _ = press(m, "n")
+	m, cmd := press(m, "down")
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	return m
+}
+
+func wantNoAudit(t *testing.T) {
+	t.Helper()
+	if records := guardtest.AuditRecords(t); len(records) != 0 {
+		t.Errorf("audit records = %v, want none", records)
+	}
+}
+
 func actionsCell(t *testing.T, m Model, id string) string {
 	t.Helper()
 	for _, row := range m.buildRows() {
@@ -152,4 +188,174 @@ func TestStagedStateConfirmsOnRowMove(t *testing.T) {
 	if change["field"] != "System.State" || change["from"] != "Active" || change["to"] != "Resolved" {
 		t.Errorf("audit change = %v, want System.State Active → Resolved", change)
 	}
+}
+
+func TestDiscardDropsStagedAndMoves(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil // a write fails the test
+
+	m = stageAndPreview(t, m)
+	m, cmd := press(m, "n")
+	m, _ = feed[confirm.DiscardMsg](t, m, cmd)
+
+	wantNoAudit(t)
+	if id := highlightedID(m.table); id != 2 {
+		t.Errorf("highlight = #%d after discard, want #2", id)
+	}
+	if m.HasStaged() {
+		t.Errorf("HasStaged() = true after discard")
+	}
+}
+
+func TestStayKeepsStagedAndPosition(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil
+
+	m = stageAndPreview(t, m)
+	m, cmd := press(m, "esc")
+	m, _ = feed[confirm.StayMsg](t, m, cmd)
+
+	if id := highlightedID(m.table); id != 1 {
+		t.Errorf("highlight = #%d after esc, want #1", id)
+	}
+	if !m.HasStaged() {
+		t.Errorf("HasStaged() = false after esc, want the edit kept")
+	}
+	if !strings.Contains(m.statusMsg, "still staged") {
+		t.Errorf("status = %q, want it to contain %q", m.statusMsg, "still staged")
+	}
+	wantNoAudit(t)
+
+	m, cmd = press(m, "down")
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	if !strings.Contains(m.View(), "Confirm #1") {
+		t.Errorf("second down did not open the confirm again")
+	}
+}
+
+func TestNoOpSkipsModalAndMoves(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil
+	w.GetWorkItemDetailFunc = func(_ context.Context, id int) (*ado.WorkItemDetail, error) {
+		return &ado.WorkItemDetail{WorkItem: ado.WorkItem{ID: id, Project: "P", Type: "Bug", State: "Resolved"}}, nil
+	}
+
+	m = stageAndPreview(t, m)
+
+	if m.statusMsg != "No change: #1 already resolved" {
+		t.Errorf("status = %q, want %q", m.statusMsg, "No change: #1 already resolved")
+	}
+	if m.flow.Busy() || strings.Contains(m.View(), "Confirm #1") {
+		t.Errorf("a no-op pre-read left the confirm open")
+	}
+	if id := highlightedID(m.table); id != 2 {
+		t.Errorf("highlight = #%d after no-op, want #2", id)
+	}
+	if m.HasStaged() {
+		t.Errorf("HasStaged() = true after no-op")
+	}
+	wantNoAudit(t)
+}
+
+func TestUnknownOutcomeStaysSticky(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = func(context.Context, string, int, string) error {
+		return context.DeadlineExceeded
+	}
+
+	m = stageAndPreview(t, m)
+	m, cmd := press(m, "y")
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, cmd = feed[confirm.WrittenMsg](t, m, cmd)
+
+	if sticky := m.flow.Sticky(); !strings.Contains(sticky, "outcome unknown — verify in ADO") {
+		t.Errorf("Sticky() = %q, want it to contain %q", sticky, "outcome unknown — verify in ADO")
+	}
+	if id := highlightedID(m.table); id != 1 {
+		t.Errorf("highlight = #%d after unknown outcome, want #1", id)
+	}
+	if m.HasStaged() {
+		t.Errorf("HasStaged() = true after unknown outcome")
+	}
+	refreshed := false
+	for _, msg := range run(cmd) {
+		if _, ok := msg.(WorkItemsMsg); ok {
+			refreshed = true
+		}
+	}
+	if !refreshed {
+		t.Errorf("unknown outcome did not re-fetch the list")
+	}
+	records := guardtest.AuditRecords(t)
+	if len(records) != 1 || records[0]["outcome"] != "unknown" {
+		t.Errorf("audit records = %v, want one with outcome unknown", records)
+	}
+}
+
+func TestUnwritableSinkDropsStagedAndStays(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".config"), []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	m, w, _ := newStagingModel(t)
+	w.GetWorkItemDetailFunc = nil // the sink check comes before any pre-read
+	w.UpdateWorkItemStateFunc = nil
+
+	m = stageAndPreview(t, m)
+
+	if !strings.HasPrefix(m.statusMsg, "write blocked: audit log not writable:") {
+		t.Errorf("status = %q, want the D-10 sink message", m.statusMsg)
+	}
+	if m.HasStaged() {
+		t.Errorf("HasStaged() = true after a failed preview; the user would be trapped")
+	}
+	if id := highlightedID(m.table); id != 1 {
+		t.Errorf("highlight = #%d after a failed preview, want #1", id)
+	}
+
+	m, cmd := press(m, "down")
+	for _, msg := range run(cmd) {
+		if _, ok := msg.(confirm.PreviewedMsg); ok {
+			t.Errorf("the next down started another preview")
+		}
+	}
+	if id := highlightedID(m.table); id != 2 {
+		t.Errorf("highlight = #%d after the next down, want #2", id)
+	}
+}
+
+func TestEnterOnAnotherItemConfirmsFirst(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil
+
+	m, _ = press(m, "n")
+	m, _ = press(m, "/")
+	m, _ = press(m, "2")
+	m, _ = press(m, "enter") // leaves the search box
+	if id := highlightedID(m.table); id != 2 {
+		t.Fatalf("highlight = #%d after searching for 2, want #2", id)
+	}
+
+	// Checked before the cmd runs: the detail's fetch would reach the client.
+	m, cmd := press(m, "enter")
+	if m.showDetail {
+		t.Fatalf("enter opened #2's detail before the staged #1 was confirmed")
+	}
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	if !m.IsTextInputFocused() {
+		t.Errorf("IsTextInputFocused() = false with the confirm open; tab keys would leave the view")
+	}
+
+	m, cmd = press(m, "n")
+	m, _ = feed[confirm.DiscardMsg](t, m, cmd)
+	if !m.showDetail || m.detailModal == nil || m.detailModal.itemID != 2 {
+		t.Errorf("replayed enter did not open #2's detail")
+	}
+	wantNoAudit(t)
 }
