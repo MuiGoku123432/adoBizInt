@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -407,96 +404,6 @@ func TestPanicBeforeWriteIssuedExitsThree(t *testing.T) {
 		t.Errorf("kind = %q, want %q", env.Error.Kind, crashKindPanic)
 	}
 	assertAuditLineCount(t, sink, 0)
-}
-
-// TestWriteRecoverPrecedesMutate pins D-12's boundary structurally. The
-// recover's POSITION is the request-issued signal: it must be the statement
-// immediately before op.mutate, and it must follow defer sink.Close() so that,
-// with defers running last-in first-out, the sink is still open when it runs.
-//
-// note: this is the second inline parser.ParseFile in package main, after
-// TestValidateGuardsCLIAndTUI in main_test.go; a shared helper waits for a
-// third use (rule of three).
-func TestWriteRecoverPrecedesMutate(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "write.go", nil, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatalf("parse write.go: %v", err)
-	}
-
-	var runWrite *ast.FuncDecl
-	for _, decl := range file.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "runWrite" {
-			runWrite = fn
-		}
-	}
-	if runWrite == nil {
-		t.Fatalf("func runWrite not found in write.go")
-	}
-
-	isSelector := func(e ast.Expr, x, sel string) bool {
-		s, ok := e.(*ast.SelectorExpr)
-		if !ok || s.Sel.Name != sel {
-			return false
-		}
-		id, ok := s.X.(*ast.Ident)
-		return ok && id.Name == x
-	}
-	contains := func(n ast.Node, match func(*ast.CallExpr) bool) bool {
-		hit := false
-		ast.Inspect(n, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok && match(call) {
-				hit = true
-			}
-			return !hit
-		})
-		return hit
-	}
-
-	iClose, iRecover, iMutate := -1, -1, -1
-	var recoverLit *ast.FuncLit
-	set := func(what string, idx *int, i int) {
-		if *idx != -1 {
-			t.Fatalf("%s found in more than one statement of runWrite", what)
-		}
-		*idx = i
-	}
-	for i, stmt := range runWrite.Body.List {
-		if d, ok := stmt.(*ast.DeferStmt); ok {
-			if isSelector(d.Call.Fun, "sink", "Close") {
-				set("defer sink.Close()", &iClose, i)
-			}
-			if lit, ok := d.Call.Fun.(*ast.FuncLit); ok && contains(lit, func(c *ast.CallExpr) bool {
-				id, ok := c.Fun.(*ast.Ident)
-				return ok && id.Name == "recover"
-			}) {
-				set("deferred recover", &iRecover, i)
-				recoverLit = lit
-			}
-		}
-		if contains(stmt, func(c *ast.CallExpr) bool { return isSelector(c.Fun, "op", "mutate") }) {
-			set("op.mutate", &iMutate, i)
-		}
-	}
-	if iClose == -1 || iRecover == -1 || iMutate == -1 {
-		t.Fatalf("defer sink.Close() at %d, deferred recover at %d, op.mutate at %d; each must be found", iClose, iRecover, iMutate)
-	}
-	if iClose >= iRecover {
-		t.Errorf("deferred recover (%d) must follow defer sink.Close() (%d) so it runs while the sink is open", iRecover, iClose)
-	}
-	if iRecover != iMutate-1 {
-		t.Errorf("deferred recover is statement %d, op.mutate %d; the recover must be immediately before the mutate", iRecover, iMutate)
-	}
-
-	if !contains(recoverLit, func(c *ast.CallExpr) bool {
-		id, ok := c.Fun.(*ast.Ident)
-		if !ok || id.Name != "handlePanic" || len(c.Args) != 2 {
-			return false
-		}
-		code, ok := c.Args[1].(*ast.Ident)
-		return ok && code.Name == "exitOutcomeUnknown"
-	}) {
-		t.Errorf("the deferred recover must call handlePanic(..., exitOutcomeUnknown)")
-	}
 }
 
 // panicOnFirstWrite panics on its first Write and forwards every later Write to

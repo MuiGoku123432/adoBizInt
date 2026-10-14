@@ -13,6 +13,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
+	writeguard "sentinovo.ai/bizInt/internal/guard"
 	"sentinovo.ai/bizInt/internal/logging"
 )
 
@@ -75,58 +76,13 @@ type readClient interface {
 	CurrentUserEmail() string
 }
 
-// writeClient is the sibling seam every write verb calls through. It is a
-// SEPARATE interface rather than an extension of readClient: readClient's doc
-// comment pins its membership to the eight aggregate reads returning
-// ado.Result[T], and a write returns a bare error with no failure list and no
-// completeness flag, so the two contracts cannot share a mapper.
-//
-// The by-id pre-read belongs here, not in readClient, for the same reason:
-// GetWorkItemDetail returns a bare type and is deliberately excluded there.
-type writeClient interface {
-	// GetWorkItemDetail is the write path's pre-read. D-01 makes a dry run
-	// report current -> proposed rather than echoing intent, and D-03 uses the
-	// same read to refuse a no-op on the --confirm path.
-	GetWorkItemDetail(ctx context.Context, id int) (*ado.WorkItemDetail, error)
-
-	UpdateWorkItemState(ctx context.Context, project string, itemID int, newState string) error
-
-	// UpdateWorkItemStateWithEffort carries the three nullable effort values. A
-	// nil pointer means the caller did not name the field, so no JSON-Patch
-	// operation is emitted for it and ADO leaves it untouched (D-17/D-18). The
-	// write path routes here only when at least one effort flag was set, so an
-	// effort-free write never hands this method three nils.
-	UpdateWorkItemStateWithEffort(ctx context.Context, project string, itemID int, newState string, originalEstimate, remaining, completed *float64) error
-
-	// The three by-id pre-reads added for the non-work-item verbs. Unlike
-	// GetWorkItemDetail they never return (nil, nil) for a missing target —
-	// internal/ado's TestPreReadNeverReturnsNilNilStructural enforces that
-	// structurally — so a caller here can never read a missing target as an
-	// empty diff (D-02, threat T-04-13).
-	GetPullRequestDetail(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error)
-	GetReleaseApprovalDetail(ctx context.Context, project string, approvalID int) (*ado.ReleaseApprovalDetail, error)
-	GetPipelineDefinitionDetail(ctx context.Context, project string, definitionID int) (*ado.PipelineDefinitionDetail, error)
-
-	// The five remaining mutations. Each is reachable through exactly one CLI
-	// verb (CLI-03), and each returns a bare error, which is why writeExitCodeFor
-	// exists separately from the read path's exitCodeFor.
-	ApprovePullRequest(ctx context.Context, project, repositoryID string, prID int) error
-	CompletePullRequest(ctx context.Context, project, repositoryID string, prID int) error
-	ApproveRelease(ctx context.Context, project string, approvalID int, comment string) error
-	RejectRelease(ctx context.Context, project string, approvalID int, comment string) error
-
-	// QueuePipeline returns the queued run; the write path discards it. The
-	// envelope reports the change that was requested, not a second read of what
-	// ADO then created, because those are different claims.
-	QueuePipeline(ctx context.Context, project string, definitionID int, branch string) (*ado.PipelineRun, error)
-}
-
-// client is what the dispatch table is handed. It embeds both seams so one
-// value serves read and write verbs without either interface widening to
-// accommodate the other. *ado.Client satisfies it structurally.
+// client is what the dispatch table is handed. It embeds the read seam and the
+// guard's write seam (writeguard.Client) so one value serves read and write verbs
+// without either interface widening to accommodate the other. *ado.Client
+// satisfies it structurally.
 type client interface {
 	readClient
-	writeClient
+	writeguard.Client
 }
 
 // commandFunc runs one `noun verb` command over the remaining arguments and
@@ -201,10 +157,10 @@ var commands = map[string]commandFunc{
 		return runWrite(ctx, prsCompleteOp(c), args)
 	},
 	"releases approve": func(ctx context.Context, c client, args []string) int {
-		return runWrite(ctx, releaseApprovalOp("releases approve", "approved", c.ApproveRelease, c), args)
+		return runWrite(ctx, releasesApproveOp(c), args)
 	},
 	"releases reject": func(ctx context.Context, c client, args []string) int {
-		return runWrite(ctx, releaseApprovalOp("releases reject", "rejected", c.RejectRelease, c), args)
+		return runWrite(ctx, releasesRejectOp(c), args)
 	},
 	"pipelines queue": func(ctx context.Context, c client, args []string) int {
 		return runWrite(ctx, pipelinesQueueOp(c), args)

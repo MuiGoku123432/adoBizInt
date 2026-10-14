@@ -307,8 +307,3 @@ func (wf *writeFlags) promoteEffort(fs *flag.FlagSet) {
 		wf.completed = &wf.completedVal
 	}
 }
-
-// hasEffort reports whether the caller named any effort field.
-func (wf *writeFlags) hasEffort() bool {
-	return wf.originalEstimate != nil || wf.remaining != nil || wf.completed != nil
-}
