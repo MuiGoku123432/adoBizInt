@@ -446,3 +446,22 @@ func TestConfirmLeaveWithNothingStagedProceedsImmediately(t *testing.T) {
 		t.Errorf("ConfirmLeave with nothing staged yielded %v, want one ProceedMsg", msgs)
 	}
 }
+
+// The confirm modal must be drawn on top of an open detail modal: the flow
+// takes the keys first, so a hidden confirm would swallow them unseen.
+func TestConfirmLeaveShowsOverDetail(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, _ := newStagingModel(t)
+	w.UpdateWorkItemStateFunc = nil
+
+	m, _ = press(m, "n")
+	m, _ = press(m, "enter") // the staged item's own detail; its fetch is not run
+	if !m.showDetail {
+		t.Fatalf("enter on the staged item did not open its detail")
+	}
+	m, cmd := m.ConfirmLeave()
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	if !strings.Contains(m.View(), "Confirm #1") {
+		t.Errorf("View() hides the confirm modal behind the detail modal")
+	}
+}
