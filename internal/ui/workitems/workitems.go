@@ -91,10 +91,12 @@ type Model struct {
 	showEffort  bool
 	// flow confirms staged edits through internal/guard (staging.go). staged
 	// is the one edit waiting for confirmation; pendingKey is the navigation
-	// held until the confirm settles.
+	// held until the confirm settles, and leaving marks a confirm started by
+	// ConfirmLeave.
 	flow       confirm.Flow
 	staged     *stagedEdit
 	pendingKey *tea.KeyMsg
+	leaving    bool
 }
 
 func New(client *ado.Client, orgURL string, projects []string, stateTransitions map[string]map[string]string, priorities *config.Priorities) Model {

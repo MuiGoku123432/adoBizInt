@@ -65,7 +65,8 @@ func (m *Model) startConfirm() tea.Cmd {
 
 // applyFlow applies a message the flow handled. When the flow settles, the
 // staged edit is dropped unless the user pressed esc (Kept), and the held
-// navigation is replayed on Proceed or forgotten on Stay. Every settle that is
+// navigation is replayed on Proceed or forgotten on Stay; a confirm started by
+// ConfirmLeave yields ProceedMsg on Proceed. Every settle that is
 // not Proceed (failed, unknown, failed preview) keeps the user on the item, and
 // none of them leave the edit staged, so a failing preview cannot trap them.
 func (m Model) applyFlow(res confirm.Result, flowCmd tea.Cmd) (Model, tea.Cmd) {
@@ -102,6 +103,12 @@ func (m Model) applyFlow(res confirm.Result, flowCmd tea.Cmd) (Model, tea.Cmd) {
 		m, cmd = m.Update(*key)
 		cmds = append(cmds, cmd)
 	}
+	if res.Proceed && m.leaving {
+		cmds = append(cmds, func() tea.Msg { return ProceedMsg{} })
+	}
+	if settled {
+		m.leaving = false
+	}
 	return m, tea.Batch(cmds...)
 }
 
@@ -111,7 +118,23 @@ type ProceedMsg struct{}
 
 // WriteBusy reports whether a staged edit is previewing, awaiting confirm or
 // being written.
-func (m Model) WriteBusy() bool { return false }
+func (m Model) WriteBusy() bool { return m.flow.Busy() }
 
-// ConfirmLeave is a stub until the leave API lands.
-func (m Model) ConfirmLeave() (Model, tea.Cmd) { return m, nil }
+// ConfirmLeave is what app.go calls when the user switches tabs or quits with
+// an edit staged (D-02). It confirms the staged edit and yields ProceedMsg once
+// leaving is safe: at once when nothing is staged, otherwise when the confirm
+// settles with Proceed (y wrote, n discarded, or a no-op). esc, a failed write
+// and a failed preview yield nothing. The navigation itself is app.go's to
+// replay when ProceedMsg arrives, so a write is never cut off by a quit. While
+// the flow is busy it does nothing; app.go holds keys then.
+func (m Model) ConfirmLeave() (Model, tea.Cmd) {
+	if m.staged == nil {
+		return m, func() tea.Msg { return ProceedMsg{} }
+	}
+	if m.flow.Busy() {
+		return m, nil
+	}
+	m.leaving = true
+	cmd := m.startConfirm()
+	return m, cmd
+}
