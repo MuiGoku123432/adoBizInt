@@ -14,6 +14,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
+	"sentinovo.ai/bizInt/internal/guard"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
@@ -50,6 +51,7 @@ type PRActionMsg struct {
 
 type Model struct {
 	client       *ado.Client
+	writer       guard.Client
 	orgURL       string
 	projects     []string
 	repositories []string
