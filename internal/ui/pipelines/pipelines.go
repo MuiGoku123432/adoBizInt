@@ -1,7 +1,6 @@
 package pipelines
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/guard"
+	"sentinovo.ai/bizInt/internal/ui/confirm"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -44,13 +44,6 @@ type PipelinesMsg struct {
 type DefinitionsMsg struct {
 	Result ado.Result[ado.PipelineDefinition]
 	Err    error
-}
-
-// TriggerResultMsg is sent when a pipeline is triggered
-type TriggerResultMsg struct {
-	PipelineName string
-	BuildNumber  string
-	Err          error
 }
 
 // TickMsg is used for auto-refresh polling
@@ -98,6 +91,10 @@ type Model struct {
 
 	// Auto-refresh
 	autoRefresh bool
+
+	// flow previews, confirms and executes a queue through internal/guard,
+	// after the trigger modal's input step (D-06).
+	flow confirm.Flow
 }
 
 func New(client *ado.Client, orgURL string, projects []string, pollInterval time.Duration) Model {
@@ -204,23 +201,24 @@ func (m *Model) applyResult(result ado.Result[ado.PipelineRun]) {
 	m.partialWarning = "could not read: " + styles.SummarizeFailures(result.Failures)
 }
 
-func (m Model) queuePipeline(definitionID int, branch, project, pipelineName string) tea.Cmd {
-	client := m.client
-	return func() tea.Msg {
-		run, err := client.QueuePipeline(context.Background(), project, definitionID, branch)
-		var buildNumber string
-		if run != nil {
-			buildNumber = run.BuildNumber
-		}
-		return TriggerResultMsg{
-			PipelineName: pipelineName,
-			BuildNumber:  buildNumber,
-			Err:          err,
-		}
-	}
-}
-
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// The write flow sees every message first: while it is busy it owns the
+	// keyboard, and its own messages never reach the view's bindings.
+	var flowCmd tea.Cmd
+	var res confirm.Result
+	m.flow, flowCmd, res = m.flow.Update(msg)
+	if res.Handled {
+		if res.Status != "" || res.Proceed || res.Stay {
+			m.statusMsg = res.Status
+			m.statusErr = res.IsErr
+		}
+		if res.Refresh {
+			m.loading = true
+			return m, tea.Batch(flowCmd, m.fetchPipelineRuns())
+		}
+		return m, flowCmd
+	}
+
 	var cmds []tea.Cmd
 
 	// Handle trigger modal close
@@ -230,13 +228,23 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle trigger submit
+	// Trigger submit is the input step; the guard's pre-read and the diff
+	// modal follow, and only y there queues (D-05, D-06, GUARD-02). The success
+	// status names the requested change, not the build number: the guard
+	// reports what was asked for, and the refreshed table shows the new run.
 	if triggerMsg, ok := msg.(TriggerSubmitMsg); ok {
 		m.showTrigger = false
 		m.triggerModal = nil
-		m.statusMsg = fmt.Sprintf("Queuing %s on %s...", triggerMsg.PipelineName, triggerMsg.Branch)
+		b := confirm.Batch{
+			ID:     triggerMsg.DefinitionID,
+			Ops:    []guard.Op{guard.QueuePipeline(m.writer, triggerMsg.Project, triggerMsg.DefinitionID, triggerMsg.Branch)},
+			Labels: []string{"queued on " + triggerMsg.Branch},
+		}
+		var cmd tea.Cmd
+		m.flow, cmd = m.flow.Start(b, m.client.FetchTimeout())
+		m.statusMsg = fmt.Sprintf("Checking %s on %s...", triggerMsg.PipelineName, triggerMsg.Branch)
 		m.statusErr = false
-		return m, m.queuePipeline(triggerMsg.DefinitionID, triggerMsg.Branch, triggerMsg.Project, triggerMsg.PipelineName)
+		return m, cmd
 	}
 
 	// Delegate to trigger modal when open
@@ -261,8 +269,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.table = m.table.WithTargetWidth(msg.Width - 4)
 
 	case TickMsg:
-		// Auto-refresh if enabled
-		if m.autoRefresh && !m.loading {
+		// Auto-refresh if enabled. Skipped while a guarded write is previewing,
+		// awaiting confirm or in flight, so the rows cannot shift under it; the
+		// tick is still re-armed.
+		if m.autoRefresh && !m.loading && !m.flow.Busy() {
 			m.loading = true
 			cmds = append(cmds, m.fetchPipelineRuns(), m.tickCmd())
 		} else {
@@ -299,18 +309,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		if msg.Err == nil {
 			m.definitions = msg.Result.Items
-		}
-
-	case TriggerResultMsg:
-		if msg.Err != nil {
-			m.statusMsg = "Error: " + msg.Err.Error()
-			m.statusErr = true
-		} else {
-			m.statusMsg = fmt.Sprintf("Queued %s: Build #%s", msg.PipelineName, msg.BuildNumber)
-			m.statusErr = false
-			// Refresh to show new build
-			m.loading = true
-			return m, m.fetchPipelineRuns()
 		}
 
 	case link.ActionMsg:
@@ -421,7 +419,7 @@ func (m Model) View() string {
 		return modal.Center(m.triggerModal.View(), m.renderTableView())
 	}
 
-	return m.renderTableView()
+	return m.flow.View(m.renderTableView())
 }
 
 func (m Model) renderTableView() string {
@@ -487,6 +485,13 @@ func (m Model) renderTableView() string {
 	}
 
 	b.WriteString("\n")
+
+	// D-08: an unknown outcome stays on its own line above the status line
+	// until the next keypress.
+	if sticky := m.flow.Sticky(); sticky != "" {
+		b.WriteString(styles.ErrorStyle.Render(sticky))
+		b.WriteString("\n")
+	}
 
 	// Status message
 	if m.statusMsg != "" {
@@ -621,19 +626,21 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
 }
 
-// IsTextInputFocused returns true when search input or trigger modal is focused
+// IsTextInputFocused returns true when the search input or trigger modal is
+// focused, or a guarded write owns the keyboard (preview, confirm modal or
+// write in flight), so app.go holds tab navigation.
 func (m Model) IsTextInputFocused() bool {
 	// Check if trigger modal is open (it has text inputs)
 	if m.showTrigger && m.triggerModal != nil {
 		return true
 	}
 	// Check if search input is focused
-	return m.filterFocused == 1
+	return m.filterFocused == 1 || m.flow.Busy()
 }
 
 // WriteBusy reports whether a guarded write is previewing, awaiting confirm or
 // in flight.
-func (m Model) WriteBusy() bool { return false }
+func (m Model) WriteBusy() bool { return m.flow.Busy() }
 
 // getSelectedPipelineRun returns the currently selected pipeline run or nil
 func (m *Model) getSelectedPipelineRun() *ado.PipelineRun {
