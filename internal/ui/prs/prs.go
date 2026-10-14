@@ -1,7 +1,6 @@
 package prs
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/guard"
+	"sentinovo.ai/bizInt/internal/ui/confirm"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/styles"
 	"sentinovo.ai/bizInt/internal/utils"
@@ -50,7 +50,9 @@ type PRActionMsg struct {
 }
 
 type Model struct {
-	client       *ado.Client
+	client *ado.Client
+	// writer is the guarded-write seam; New sets it to client and tests
+	// replace it with a fake.
 	writer       guard.Client
 	orgURL       string
 	projects     []string
@@ -84,6 +86,9 @@ type Model struct {
 	confirmComplete bool
 
 	autoRefresh bool
+
+	// flow previews, confirms and executes PR writes through internal/guard.
+	flow confirm.Flow
 }
 
 func New(client *ado.Client, orgURL string, projects []string, repositories []string, pollInterval time.Duration) Model {
@@ -113,6 +118,7 @@ func New(client *ado.Client, orgURL string, projects []string, repositories []st
 
 	return Model{
 		client:        client,
+		writer:        client,
 		orgURL:        orgURL,
 		projects:      projects,
 		repositories:  repositories,
@@ -185,6 +191,23 @@ func (m *Model) applyResult(result ado.Result[ado.PullRequest]) {
 }
 
 func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
+	// The write flow sees every message first: while it is busy it owns the
+	// keyboard, and its own messages never reach the view's bindings.
+	var flowCmd tea.Cmd
+	var res confirm.Result
+	m.flow, flowCmd, res = m.flow.Update(msg)
+	if res.Handled {
+		if res.Status != "" || res.Proceed || res.Stay {
+			m.statusMsg = res.Status
+			m.statusErr = res.IsErr
+		}
+		if res.Refresh {
+			m.loading = true
+			return m, tea.Batch(flowCmd, m.fetchPRs())
+		}
+		return m, flowCmd
+	}
+
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -265,44 +288,35 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
-		// A pending merge confirmation swallows the next keypress, so it must be
-		// checked before the regular bindings (notably "y", which copies a link).
-		if m.confirmComplete {
-			m.confirmComplete = false
-			if msg.String() == "y" {
-				cmd := m.completeSelectedPR()
-				return m, cmd
-			}
-			m.statusMsg = "Merge cancelled"
-			m.statusErr = false
-			return m, nil
-		}
-
 		switch msg.String() {
 		case "/":
 			m.filterFocused = 1
 			m.searchInput.Focus()
 			return m, nil
-		case "a":
-			// Approve selected PR
-			if m.filterFocused == 0 && !m.actionPending {
-				cmd := m.approveSelectedPR()
-				return m, cmd
-			}
-		case "c":
-			// Completing a PR merges it, so ask for confirmation first
-			if m.filterFocused == 0 && !m.actionPending {
+		case "a", "c":
+			// Approve, or complete (merge), through the guard: pre-read, the
+			// diff modal, then y (D-01, D-05, GUARD-02).
+			if m.filterFocused == 0 {
 				pr := m.getSelectedPR()
 				if pr == nil {
 					m.statusMsg = "No PR selected"
 					m.statusErr = true
 					return m, nil
 				}
-				m.confirmComplete = true
-				m.statusMsg = fmt.Sprintf("Merge PR #%d %s? [y] confirm  [any other key] cancel",
-					pr.ID, utils.Truncate(pr.Title, 40))
+				b := confirm.Batch{
+					ID:     pr.ID,
+					Ops:    []guard.Op{guard.ApprovePR(m.writer, pr.Project, pr.RepositoryID, pr.ID)},
+					Labels: []string{"approved"},
+				}
+				if msg.String() == "c" {
+					b.Ops = []guard.Op{guard.CompletePR(m.writer, pr.Project, pr.RepositoryID, pr.ID)}
+					b.Labels = []string{"completed"}
+				}
+				var cmd tea.Cmd
+				m.flow, cmd = m.flow.Start(b, m.client.FetchTimeout())
+				m.statusMsg = fmt.Sprintf("Checking PR #%d...", pr.ID)
 				m.statusErr = false
-				return m, nil
+				return m, cmd
 			}
 		case "t":
 			// Toggle auto-refresh
@@ -340,52 +354,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
-}
-
-func (m *Model) approveSelectedPR() tea.Cmd {
-	pr := m.getSelectedPR()
-	if pr == nil {
-		return func() tea.Msg {
-			return PRActionMsg{Err: fmt.Errorf("no PR selected")}
-		}
-	}
-
-	m.actionPending = true
-	m.statusMsg = fmt.Sprintf("Approving PR #%d...", pr.ID)
-	m.statusErr = false
-
-	client := m.client
-	prID := pr.ID
-	project := pr.Project
-	repoID := pr.RepositoryID
-
-	return func() tea.Msg {
-		err := client.ApprovePullRequest(context.Background(), project, repoID, prID)
-		return PRActionMsg{PRID: prID, Action: "approve", Err: err}
-	}
-}
-
-func (m *Model) completeSelectedPR() tea.Cmd {
-	pr := m.getSelectedPR()
-	if pr == nil {
-		return func() tea.Msg {
-			return PRActionMsg{Err: fmt.Errorf("no PR selected")}
-		}
-	}
-
-	m.actionPending = true
-	m.statusMsg = fmt.Sprintf("Completing PR #%d...", pr.ID)
-	m.statusErr = false
-
-	client := m.client
-	prID := pr.ID
-	project := pr.Project
-	repoID := pr.RepositoryID
-
-	return func() tea.Msg {
-		err := client.CompletePullRequest(context.Background(), project, repoID, prID)
-		return PRActionMsg{PRID: prID, Action: "complete", Err: err}
-	}
 }
 
 func (m Model) getSelectedPR() *ado.PullRequest {
@@ -493,7 +461,7 @@ func (m Model) View() string {
 	helpText := styles.HelpStyle.Render("[/] search  [a] approve  [c] merge  [r] refresh  [t] auto  [y] copy link  [o] open")
 	b.WriteString(helpText)
 
-	return b.String()
+	return m.flow.View(b.String())
 }
 
 func (m Model) buildRows() []table.Row {
