@@ -13,6 +13,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
+	"sentinovo.ai/bizInt/internal/guard"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -56,7 +57,10 @@ type TriggerResultMsg struct {
 type TickMsg struct{}
 
 type Model struct {
-	client       *ado.Client
+	client *ado.Client
+	// writer is the guarded-write seam; New sets it to client and tests
+	// replace it with a fake.
+	writer       guard.Client
 	orgURL       string
 	projects     []string
 	pollInterval time.Duration
@@ -123,6 +127,7 @@ func New(client *ado.Client, orgURL string, projects []string, pollInterval time
 
 	return Model{
 		client:       client,
+		writer:       client,
 		orgURL:       orgURL,
 		projects:     projects,
 		pollInterval: pollInterval,
@@ -625,6 +630,10 @@ func (m Model) IsTextInputFocused() bool {
 	// Check if search input is focused
 	return m.filterFocused == 1
 }
+
+// WriteBusy reports whether a guarded write is previewing, awaiting confirm or
+// in flight.
+func (m Model) WriteBusy() bool { return false }
 
 // getSelectedPipelineRun returns the currently selected pipeline run or nil
 func (m *Model) getSelectedPipelineRun() *ado.PipelineRun {
