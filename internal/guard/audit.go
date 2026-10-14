@@ -42,37 +42,47 @@ func OpenAuditSink(path string) (*os.File, error) {
 	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 }
 
-// auditRecord is one line of the audit file: exactly five keys and nothing else
-// (D-15).
+// auditRecord is one line of the audit file: exactly seven keys and nothing
+// else (D-15, extended by GUARD-04).
 //
-// It carries no actor identity: there is one identity, the PAT's, and Phase 1
-// D-12 makes its resolution non-fatal so the field could legitimately be empty.
+// The key set is a one-way door. D-12 makes the file append-only, so records
+// already written can never be migrated: a key added later leaves every older
+// line permanently without it. It moved once, deliberately, in Phase 7
+// (GUARD-04): actor and user_approved were appended after outcome. Lines written
+// before then carry the original five keys and are never migrated.
+//
+// Actor is a fixed surface label (tui, cli-human or agent), never an identity:
+// there is one identity, the PAT's, and Phase 1 D-12 makes its resolution
+// non-fatal. Run refuses any other value, so no user name, email or credential
+// can reach this field. UserApproved is always present, never omitted, so a
+// reader never has to treat an absent key as false.
+//
 // It carries no argv: argv is caller-controlled and could hold a secret someone
 // passed on a command line, which would make this persisted file a
 // credential-disclosure path, the same class Phase 3 D-24 closed for stack
 // traces (threat T-04-01). It carries no URL and no headers for the same reason,
 // and it never embeds a raw error value.
-//
-// The key set is a one-way door. D-12 makes the file append-only, so records
-// already written can never be migrated: a key added later leaves every older
-// line permanently without it.
 type auditRecord struct {
-	Timestamp string        `json:"timestamp"`
-	Command   string        `json:"command"`
-	Target    Target        `json:"target"`
-	Changes   []FieldChange `json:"changes"`
-	Outcome   string        `json:"outcome"`
+	Timestamp    string        `json:"timestamp"`
+	Command      string        `json:"command"`
+	Target       Target        `json:"target"`
+	Changes      []FieldChange `json:"changes"`
+	Outcome      string        `json:"outcome"`
+	Actor        string        `json:"actor"`
+	UserApproved bool          `json:"user_approved"`
 }
 
 // newAuditRecord stamps the record at the moment of the append. The timestamp
 // is RFC3339 in UTC so lines sort lexically in the order they were written.
-func newAuditRecord(command string, target Target, changes []FieldChange, outcome string) auditRecord {
+func newAuditRecord(command string, target Target, changes []FieldChange, outcome, actor string, userApproved bool) auditRecord {
 	return auditRecord{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Command:   command,
-		Target:    target,
-		Changes:   changes,
-		Outcome:   outcome,
+		Timestamp:    time.Now().UTC().Format(time.RFC3339),
+		Command:      command,
+		Target:       target,
+		Changes:      changes,
+		Outcome:      outcome,
+		Actor:        actor,
+		UserApproved: userApproved,
 	}
 }
 

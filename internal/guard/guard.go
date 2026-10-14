@@ -10,6 +10,7 @@ package guard
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"time"
 
@@ -30,9 +31,9 @@ const (
 	OutcomeUnknown  = "unknown"
 )
 
-// Actor labels name the surface that issued a write. Options.Actor and
-// Options.UserApproved are carried from plan 07-02 so the TUI can set them;
-// plan 07-03 persists them in the audit record.
+// Actor labels name the surface that issued a write (GUARD-04). They are the
+// only values Run accepts for Options.Actor, and each is persisted verbatim as
+// the audit record's actor key, so they are a one-way door like the outcomes.
 const (
 	ActorTUI      = "tui"
 	ActorCLIHuman = "cli-human"
@@ -112,6 +113,18 @@ func Run(ctx context.Context, op Op, opts Options) (report Report) {
 	writeCtx, cancel := fetchctx.NewWithParent(ctx, opts.Budget)
 	defer cancel()
 
+	// GUARD-04: an executed write must say which surface issued it. An actor
+	// outside the three labels cannot produce a compliant record, which is the
+	// same position as an unopenable sink: refuse before anything is opened,
+	// read or sent (D-13). The value is never free text, so an identity or an
+	// email cannot reach the persisted record through this field (T-07-11).
+	switch opts.Actor {
+	case ActorTUI, ActorCLIHuman, ActorAgent:
+	default:
+		log.Error("Audit actor invalid", "command", op.Name)
+		return Report{SinkErr: fmt.Errorf("audit actor %q is not one of %q, %q or %q", opts.Actor, ActorTUI, ActorCLIHuman, ActorAgent)}
+	}
+
 	// D-13. This is the load-bearing line of the whole function and its POSITION
 	// is the decision: the sink is proven writable before any request leaves, so
 	// there is no window in which ADO changed and nothing recorded it. Moving it
@@ -165,13 +178,12 @@ func Run(ctx context.Context, op Op, opts Options) (report Report) {
 		}
 		// D-13 best effort: leave a trace, unless the normal path already
 		// appended one (never two records for one write). The record carries no
-		// panic text, so the five-key D-15 shape and the T-04-01 no-argv rule
-		// hold. A refused write that later panics is recorded unknown, which
+		// panic text, so the D-15 key set and the T-04-01 no-argv rule hold. A refused write that later panics is recorded unknown, which
 		// over-reports in the safe direction.
 		// note: this append-and-report sequence also appears in the normal path
 		// below; two uses is below the rule of three, so it is not extracted.
 		if !audited {
-			if auditErr := appendAuditRecord(sink, newAuditRecord(op.Name, op.Target, changes, OutcomeUnknown)); auditErr != nil {
+			if auditErr := appendAuditRecord(sink, newAuditRecord(op.Name, op.Target, changes, OutcomeUnknown, opts.Actor, opts.UserApproved)); auditErr != nil {
 				log.Error("Failed to append audit record", "command", op.Name, "error", auditErr)
 				report.AuditErr = auditErr
 			}
@@ -193,7 +205,7 @@ func Run(ctx context.Context, op Op, opts Options) (report Report) {
 	// mutation may or may not have landed is precisely the case most worth a
 	// trail.
 	if outcome == OutcomeExecuted || outcome == OutcomeUnknown {
-		record := newAuditRecord(op.Name, op.Target, changes, outcome)
+		record := newAuditRecord(op.Name, op.Target, changes, outcome, opts.Actor, opts.UserApproved)
 		audited = true
 		if auditErr := appendAuditRecord(sink, record); auditErr != nil {
 			log.Error("Failed to append audit record", "command", op.Name, "error", auditErr)

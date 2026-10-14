@@ -5,7 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
 	"strconv"
+
+	"github.com/charmbracelet/x/term"
 
 	// Aliased because package main already declares func guard, the
 	// top-level panic boundary in main.go.
@@ -87,6 +90,27 @@ func oneRepo(name string, wf *writeFlags) (string, error) {
 	return wf.repo[0], nil
 }
 
+// stdinIsTerminal reports whether stdin is an interactive terminal. Like
+// auditOpen, it is a package-level var only so a test can swap it; nothing ever
+// assigns it from argv, the environment or the config.
+var stdinIsTerminal = func() bool { return term.IsTerminal(os.Stdin.Fd()) }
+
+// cliActor is the audit actor label for a CLI write (GUARD-04, decided at the
+// 07-03 checkpoint). An interactive terminal on stdin is cli-human; anything
+// else is agent, so an agent-run write is never recorded as a human action, the
+// dangerous direction for segregation-of-duties evidence. A human running a
+// script or CI job is labelled agent, the accepted cost. Phase 13 (AGENT-03)
+// uses the same definition of a human for its tier gate.
+//
+// It reads no flag, no environment variable and no config value: a caller able
+// to choose its own label would defeat the evidence it exists to provide.
+func cliActor() string {
+	if stdinIsTerminal() {
+		return writeguard.ActorCLIHuman
+	}
+	return writeguard.ActorAgent
+}
+
 // runWrite is the CLI adapter over the guarded-write body, the sibling of
 // runRead. It parses and checks arity, hands the Op to writeguard.Run, and maps
 // the Report to stderr, one stdout document and an exit code. Run owns the order
@@ -143,6 +167,10 @@ func runWrite(ctx context.Context, op writeOp, args []string) (code int) {
 		Budget:  budget,
 		Confirm: func([]fieldChange) bool { return wf.confirm },
 		Open:    auditOpen,
+		Actor:   cliActor(),
+		// --user-approved arrives in Phase 13 (AGENT-03); nothing in the CLI
+		// can assert approval before then.
+		UserApproved: false,
 	})
 
 	switch {
