@@ -1,9 +1,7 @@
 package prs
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,29 +50,6 @@ func feed[T tea.Msg](t *testing.T, m Model, cmd tea.Cmd) (Model, tea.Cmd) {
 	return m.Update(msg)
 }
 
-// auditLines reads $HOME/.config/adoBizInt/audit.jsonl; a missing file is zero lines.
-func auditLines(t *testing.T) []map[string]any {
-	t.Helper()
-	f, err := os.Open(filepath.Join(os.Getenv("HOME"), ".config", "adoBizInt", "audit.jsonl"))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		t.Fatalf("open audit file: %v", err)
-	}
-	defer f.Close()
-	var lines []map[string]any
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		var rec map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
-			t.Fatalf("audit line %q: %v", scanner.Text(), err)
-		}
-		lines = append(lines, rec)
-	}
-	return lines
-}
-
 func activePR(vote int, status string) func(context.Context, string, string, int) (*ado.PullRequestDetail, error) {
 	return func(_ context.Context, _, _ string, id int) (*ado.PullRequestDetail, error) {
 		return &ado.PullRequestDetail{ID: id, Status: status, MyVote: vote}, nil
@@ -120,7 +95,7 @@ func TestApproveRunsThroughGuard(t *testing.T) {
 	if cmd == nil {
 		t.Error("no refresh cmd returned after the write")
 	}
-	lines := auditLines(t)
+	lines := guardtest.AuditRecords(t)
 	if len(lines) != 1 {
 		t.Fatalf("audit lines = %d, want 1", len(lines))
 	}
@@ -172,7 +147,7 @@ func TestCompleteRunsThroughGuardAfterConfirm(t *testing.T) {
 	if !strings.Contains(m.statusMsg, "#7 completed") {
 		t.Errorf("status = %q, want it to contain %q", m.statusMsg, "#7 completed")
 	}
-	lines := auditLines(t)
+	lines := guardtest.AuditRecords(t)
 	if len(lines) != 1 || lines[0]["command"] != "prs complete" || lines[0]["outcome"] != "executed" {
 		t.Errorf("audit lines = %v, want one prs complete executed record", lines)
 	}
@@ -190,7 +165,7 @@ func TestDiscardSendsNothing(t *testing.T) {
 	if !strings.Contains(m.statusMsg, "Discarded") {
 		t.Errorf("status = %q, want it to contain %q", m.statusMsg, "Discarded")
 	}
-	if n := len(auditLines(t)); n != 0 {
+	if n := len(guardtest.AuditRecords(t)); n != 0 {
 		t.Errorf("audit lines = %d, want 0", n)
 	}
 	if m.WriteBusy() {
@@ -223,7 +198,7 @@ func TestAbandonedPRCompleteIsNoChange(t *testing.T) {
 	if strings.Contains(m.View(), "[y] write") {
 		t.Error("View() shows the confirm modal for a no-op")
 	}
-	if n := len(auditLines(t)); n != 0 {
+	if n := len(guardtest.AuditRecords(t)); n != 0 {
 		t.Errorf("audit lines = %d, want 0", n)
 	}
 }
