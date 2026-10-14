@@ -738,18 +738,17 @@ func (m Model) buildRows() []table.Row {
 }
 
 func (m Model) View() string {
+	view := m.renderTableView()
 	// If effort modal is open, composite it over the table
 	if m.showEffort && m.effortModal != nil {
-		return modal.Center(m.effortModal.View(), m.renderTableView())
+		view = modal.Center(m.effortModal.View(), view)
+	} else if m.showDetail && m.detailModal != nil {
+		// If detail modal is open, composite it over the table. Rendered fresh
+		// from current state each time - avoids stale pointer issues.
+		view = modal.Center(m.detailModal.View(), view)
 	}
-
-	// If detail modal is open, composite it over the table. Rendered fresh from
-	// current state each time - avoids stale pointer issues.
-	if m.showDetail && m.detailModal != nil {
-		return modal.Center(m.detailModal.View(), m.renderTableView())
-	}
-
-	return m.flow.View(m.renderTableView())
+	// The confirm modal goes on top of everything: it takes the keys first.
+	return m.flow.View(view)
 }
 
 // renderTableView renders the work items table view
