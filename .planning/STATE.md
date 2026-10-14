@@ -5,11 +5,11 @@ milestone_name: Scrum Master
 current_phase: 7
 current_phase_name: Guarded TUI Writes
 status: executing
-stopped_at: Completed 07-06-PLAN.md
-last_updated: "2026-10-14T04:24:10.790Z"
+stopped_at: Completed 07-07-PLAN.md
+last_updated: "2026-10-14T04:32:05.678Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 7 execution started
-state_head: 09fd198f62d345390fae196e8dbaa3ac724e7ba5
+state_head: 132420bc95cd44bd280749bbb0eff0b03cb38559
 progress:
   total_phases: 10
   completed_phases: 0
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 7 execution started
 
@@ -102,6 +102,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P04 | 8 min | 2 tasks | 6 files |
 | Phase 07 P05 | 4 min | 2 tasks | 6 files |
 | Phase 07 P06 | 5 min | 3 tasks | 3 files |
+| Phase 07 P07 | 6 min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -213,6 +214,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 07]: 07-05: pipeline queue success reads '#<id> queued on <branch>' with no build number; the guard reports the requested change, and the refreshed table shows the new run
 - [Phase 07]: 07-05: guardtest.AuditRecords is the shared audit.jsonl reader for TUI view tests (rule of three: prs, releases, pipelines)
 - [Phase 07]: 07-06: work-item state changes are staged and confirmed on move-on; applyFlow does not set loading on refresh, replaces status on every settle, and the confirm modal is drawn above the detail/effort modals
+- [Phase 07]: 07-07: TestNoUIFileCallsADOMutation exempts calls through the file's own guard import (guard.ApproveRelease, guard.QueuePipeline, guard.RejectRelease are op constructors that share the ado method names); any other selector call naming an ado mutation fails
+- [Phase 07]: 07-07: a User Story resolve stages one batch of three guarded ops (story state, 'task #<id> closed', 'effort update'), the dev task written under the story's project so CR-01 refuses a cross-project child; no dev task found stages the story state only
 
 ### Roadmap Evolution
 
@@ -280,8 +283,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T04:24:10.775Z
-Stopped at: Completed 07-06-PLAN.md
+Last session: 2026-10-14T04:32:05.662Z
+Stopped at: Completed 07-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
