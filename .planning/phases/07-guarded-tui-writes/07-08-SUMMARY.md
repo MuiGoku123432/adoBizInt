@@ -237,3 +237,8 @@ None. No external service configuration is required.
 ---
 *Phase: 07-guarded-tui-writes*
 *Completed: 2026-10-14*
+
+## Self-Check: PASSED
+
+- Files found: internal/ui/app.go, internal/ui/app_test.go, 07-08-SUMMARY.md
+- Commits found on HEAD: a7b0561, 2e37e9d, ed77bcd
