@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 7
 current_phase_name: Guarded TUI Writes
 status: executing
-stopped_at: Completed 07-05-PLAN.md
-last_updated: "2026-10-14T04:15:01.869Z"
+stopped_at: Completed 07-06-PLAN.md
+last_updated: "2026-10-14T04:24:10.790Z"
 last_activity: 2026-10-13
 last_activity_desc: Phase 7 execution started
-state_head: 98d54a62b31678de3fe6f65b8539ded7c38eff4a
+state_head: 09fd198f62d345390fae196e8dbaa3ac724e7ba5
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-13 — Phase 7 execution started
 
@@ -101,6 +101,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P03 | 3min | 3 tasks | 11 files |
 | Phase 07 P04 | 8 min | 2 tasks | 6 files |
 | Phase 07 P05 | 4 min | 2 tasks | 6 files |
+| Phase 07 P06 | 5 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -211,6 +212,7 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 07]: 07-04: completing an abandoned PR reads 'No change: #<id> already abandoned' via a per-press prStatusClient wrapper; guard.CompletePR is unchanged (CLI parity)
 - [Phase 07]: 07-05: pipeline queue success reads '#<id> queued on <branch>' with no build number; the guard reports the requested change, and the refreshed table shows the new run
 - [Phase 07]: 07-05: guardtest.AuditRecords is the shared audit.jsonl reader for TUI view tests (rule of three: prs, releases, pipelines)
+- [Phase 07]: 07-06: work-item state changes are staged and confirmed on move-on; applyFlow does not set loading on refresh, replaces status on every settle, and the confirm modal is drawn above the detail/effort modals
 
 ### Roadmap Evolution
 
@@ -278,8 +280,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T04:15:01.854Z
-Stopped at: Completed 07-05-PLAN.md
+Last session: 2026-10-14T04:24:10.775Z
+Stopped at: Completed 07-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
