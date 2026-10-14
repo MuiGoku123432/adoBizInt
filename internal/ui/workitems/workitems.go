@@ -15,6 +15,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/fetchctx"
+	"sentinovo.ai/bizInt/internal/guard"
 	"sentinovo.ai/bizInt/internal/ui/link"
 	"sentinovo.ai/bizInt/internal/ui/modal"
 	"sentinovo.ai/bizInt/internal/ui/styles"
@@ -49,7 +50,10 @@ type StateUpdateMsg struct {
 }
 
 type Model struct {
-	client             *ado.Client
+	client *ado.Client
+	// writer is the guarded-write seam; New sets it to client and tests
+	// replace it with a fake.
+	writer             guard.Client
 	orgURL             string
 	projects           []string
 	table              table.Model
@@ -123,6 +127,7 @@ func New(client *ado.Client, orgURL string, projects []string, stateTransitions 
 
 	return Model{
 		client:             client,
+		writer:             client,
 		orgURL:             orgURL,
 		projects:           projects,
 		table:              t,
