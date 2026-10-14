@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/microsoft/azure-devops-go-api/azuredevops"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/guard/guardtest"
@@ -198,5 +199,191 @@ func TestTaskResolveIsTwoGuardedWrites(t *testing.T) {
 	}
 	if id := highlightedID(m.table); id != 6 {
 		t.Errorf("highlight = #%d after y, want #6", id)
+	}
+}
+
+// previewTaskResolve stages Task #5's resolve with remaining 0 and completed 2
+// and opens the confirm modal.
+func previewTaskResolve(t *testing.T, m Model) Model {
+	t.Helper()
+	m, _ = press(m, "n")
+	m, _ = submitEffort(t, m, "", "0", "2")
+	m, cmd := press(m, "down")
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	return m
+}
+
+func TestResolveEffortFailureReportsBoth(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, calls := newTaskResolveModel(t)
+	w.UpdateWorkItemStateWithEffortFunc = func(_ context.Context, project string, id int, state string, oe, rem, comp *float64) error {
+		*calls = append(*calls, writeCall{"UpdateWorkItemStateWithEffort", project, id, state, oe, rem, comp})
+		status, message := 409, "conflict"
+		return azuredevops.WrappedError{Message: &message, StatusCode: &status}
+	}
+
+	m = previewTaskResolve(t, m)
+	m, cmd := press(m, "y")
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, cmd = feed[confirm.WrittenMsg](t, m, cmd)
+
+	var methods []string
+	for _, c := range *calls {
+		methods = append(methods, c.method)
+	}
+	if !slices.Equal(methods, []string{"UpdateWorkItemState", "UpdateWorkItemStateWithEffort"}) {
+		t.Errorf("calls = %v, want one state write then one effort write and no compensation", methods)
+	}
+	for _, want := range []string{"#5 closed", "effort update FAILED"} {
+		if !strings.Contains(m.statusMsg, want) {
+			t.Errorf("status = %q, want it to contain %q", m.statusMsg, want)
+		}
+	}
+	if !m.statusErr {
+		t.Errorf("statusErr = false after a failed effort write")
+	}
+	refreshed := false
+	for _, msg := range run(cmd) {
+		if _, ok := msg.(WorkItemsMsg); ok {
+			refreshed = true
+		}
+	}
+	if !refreshed {
+		t.Errorf("no refresh after a partially applied resolve")
+	}
+	if id := highlightedID(m.table); id != 5 {
+		t.Errorf("highlight = #%d after a failed effort write, want #5", id)
+	}
+	if records := guardtest.AuditRecords(t); len(records) != 1 {
+		t.Errorf("audit records = %d, want 1 (the executed state write)", len(records))
+	}
+}
+
+// newStoryResolveModel loads User Story #10 and Bug #12, both Active in "P";
+// the story's development task #11 lives in devTaskProject.
+func newStoryResolveModel(t *testing.T, devTaskProject string) (Model, *guardtest.Client, *[]writeCall) {
+	t.Helper()
+	transitions := map[string]map[string]string{"User Story": {"Active": "Resolved"}}
+	items := []ado.WorkItem{
+		{ID: 10, Title: "story", Project: "P", Type: "User Story", State: "Active"},
+		{ID: 12, Title: "bug", Project: "P", Type: "Bug", State: "Active"},
+	}
+	details := map[int]*ado.WorkItemDetail{
+		10: {WorkItem: ado.WorkItem{ID: 10, Project: "P", Type: "User Story", State: "Active"}},
+		11: {WorkItem: ado.WorkItem{ID: 11, Project: devTaskProject, Type: "Task", State: "Active"}},
+		12: {WorkItem: ado.WorkItem{ID: 12, Project: "P", Type: "Bug", State: "Active"}},
+	}
+	return newResolveModel(t, transitions, items, details)
+}
+
+// stageStoryResolve presses n on story #10, answers the children fetch with
+// children (the fetch cmd itself is not run), enters completed hours 4 and
+// submits.
+func stageStoryResolve(t *testing.T, m Model, children []ado.WorkItem) Model {
+	t.Helper()
+	m, _ = press(m, "n")
+	m, _ = m.Update(ChildTasksLoadedMsg{ParentID: 10, ParentTitle: "story", NewState: "Resolved", Children: children})
+	m, cmd := submitEffort(t, m, "", "", "4")
+	if cmd != nil || !m.HasStaged() {
+		t.Fatalf("effort submit: cmd = %v, HasStaged = %v; want the resolve staged and nothing sent", cmd != nil, m.HasStaged())
+	}
+	return m
+}
+
+var devTask = []ado.WorkItem{{ID: 11, Type: "Task", Title: "Development", State: "Active"}}
+
+func TestUserStoryResolveClosesDevTaskThenRecordsEffort(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, _, calls := newStoryResolveModel(t, "P")
+
+	m = stageStoryResolve(t, m, devTask)
+	m, cmd := press(m, "down")
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	view := m.View()
+	for _, want := range []string{
+		"System.State  Active → Resolved",
+		"#11 System.State  Active → Closed",
+		"#11 Microsoft.VSTS.Scheduling.CompletedWork  (none) → 4",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("preview lacks %q", want)
+		}
+	}
+
+	m, cmd = press(m, "y")
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, _ = feed[confirm.WrittenMsg](t, m, cmd)
+
+	if len(*calls) != 3 {
+		t.Fatalf("calls = %+v, want story state, task close, task effort", *calls)
+	}
+	wantCalls := []writeCall{
+		{method: "UpdateWorkItemState", project: "P", id: 10, state: "Resolved"},
+		{method: "UpdateWorkItemState", project: "P", id: 11, state: "Closed"},
+		{method: "UpdateWorkItemStateWithEffort", project: "P", id: 11, state: "Closed"},
+	}
+	for i, want := range wantCalls {
+		got := (*calls)[i]
+		if got.method != want.method || got.project != want.project || got.id != want.id || got.state != want.state {
+			t.Errorf("call %d = %+v, want %s(%s, %d, %s)", i, got, want.method, want.project, want.id, want.state)
+		}
+	}
+	effort := (*calls)[2]
+	wantPtr(t, "originalEstimate", effort.oe, nil)
+	wantPtr(t, "remaining", effort.rem, nil)
+	wantPtr(t, "completed", effort.comp, ptr(4))
+
+	records := guardtest.AuditRecords(t)
+	if len(records) != 3 {
+		t.Fatalf("audit records = %d, want 3", len(records))
+	}
+	for i, rec := range records {
+		if rec["actor"] != "tui" {
+			t.Errorf("audit record %d actor = %v, want tui", i, rec["actor"])
+		}
+	}
+
+	t.Run("dev task in another project", func(t *testing.T) {
+		t.Setenv("HOME", t.TempDir())
+		m, w, calls := newStoryResolveModel(t, "Q")
+		w.UpdateWorkItemStateFunc = nil // any write fails the test
+		w.UpdateWorkItemStateWithEffortFunc = nil
+
+		m = stageStoryResolve(t, m, devTask)
+		m, cmd := press(m, "down")
+		m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+
+		for _, want := range []string{"could not read before writing", "belongs to project"} {
+			if !strings.Contains(m.statusMsg, want) {
+				t.Errorf("status = %q, want it to contain %q", m.statusMsg, want)
+			}
+		}
+		if len(*calls) != 0 || m.HasStaged() {
+			t.Errorf("calls = %v, HasStaged = %v; want nothing sent and nothing staged", *calls, m.HasStaged())
+		}
+		wantNoAudit(t)
+	})
+}
+
+func TestUserStoryResolveWithoutDevTaskWritesStateOnly(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	m, w, calls := newStoryResolveModel(t, "P")
+	w.UpdateWorkItemStateWithEffortFunc = nil // an effort write fails the test
+
+	m = stageStoryResolve(t, m, nil)
+	m, cmd := press(m, "down")
+	m, _ = feed[confirm.PreviewedMsg](t, m, cmd)
+	if view := m.View(); strings.Contains(view, "#11") || strings.Contains(view, "CompletedWork") {
+		t.Errorf("preview names the development task or effort with no dev task found")
+	}
+	m, cmd = press(m, "y")
+	m, cmd = feed[confirm.WriteMsg](t, m, cmd)
+	m, _ = feed[confirm.WrittenMsg](t, m, cmd)
+
+	if len(*calls) != 1 || (*calls)[0] != (writeCall{method: "UpdateWorkItemState", project: "P", id: 10, state: "Resolved"}) {
+		t.Errorf("calls = %+v, want only UpdateWorkItemState(P, 10, Resolved)", *calls)
+	}
+	if m.statusMsg != "#10 resolved" {
+		t.Errorf("status = %q, want %q (a one-op batch)", m.statusMsg, "#10 resolved")
 	}
 }
