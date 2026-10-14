@@ -43,11 +43,10 @@ type WorkItemsMsg struct {
 	Err    error
 }
 
-// StateUpdateMsg is sent when a work item state is updated
+// StateUpdateMsg carries an error from pressing n before anything is staged
+// (no item selected, no next state). Writes report through the confirm flow.
 type StateUpdateMsg struct {
-	ItemID   int
-	NewState string
-	Err      error
+	Err error
 }
 
 type Model struct {
@@ -337,54 +336,33 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		return m, m.effortModal.Init()
 	}
 
-	// Handle effort modal submit
+	// Handle effort modal submit: stage the resolve; it is confirmed when the
+	// user moves on (GUARD-03). The message's pointers are forwarded as they
+	// are. Taking the address of a copy would turn a blank field into a zero
+	// write (BL-01).
 	if effortMsg, ok := msg.(EffortSubmitMsg); ok {
 		m.showEffort = false
 		m.effortModal = nil
-
-		client := m.client
-
-		if effortMsg.IsUserStory {
-			// User Story flow: update dev task effort (if found), then update story state
-			return m, func() tea.Msg {
-				// Update the dev task's effort if we have one
-				if !effortMsg.SkipTaskUpdate && effortMsg.TargetTaskID > 0 {
-					// A nil effort pointer means the user left that field blank;
-					// the corresponding work item field is left untouched.
-					err := client.UpdateWorkItemStateWithEffort(
-						context.Background(),
-						"",
-						effortMsg.TargetTaskID,
-						"Closed", // Close the dev task
-						effortMsg.OriginalEstimate,
-						effortMsg.Remaining,
-						effortMsg.Completed,
-					)
-					if err != nil {
-						return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: fmt.Errorf("failed to update dev task: %w", err)}
-					}
-				}
-
-				// Now update the User Story state
-				err := client.UpdateWorkItemState(context.Background(), "", effortMsg.ItemID, effortMsg.NewState)
-				return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: err}
-			}
-		}
-
-		// Task flow: stage the resolve; it is confirmed when the user moves on.
-		// The message's pointers are forwarded as they are. Taking the address
-		// of a copy would turn a blank field into a zero write (BL-01).
 		item := m.itemByID(effortMsg.ItemID)
 		if item == nil {
 			m.statusMsg = fmt.Sprintf("Error: work item #%d not found", effortMsg.ItemID)
 			m.statusErr = true
 			return m, nil
 		}
-		m.stage(*item, effortMsg.NewState, &effortEdit{taskID: effortMsg.ItemID, values: guard.Effort{
+		effort := &effortEdit{taskID: effortMsg.ItemID, values: guard.Effort{
 			OriginalEstimate: effortMsg.OriginalEstimate,
 			Remaining:        effortMsg.Remaining,
 			Completed:        effortMsg.Completed,
-		}})
+		}}
+		if effortMsg.IsUserStory {
+			// A story records its hours on its development task. With none
+			// found, the modal already warned that hours will not be recorded.
+			effort.taskID = effortMsg.TargetTaskID
+			if effortMsg.SkipTaskUpdate || effortMsg.TargetTaskID == 0 {
+				effort = nil
+			}
+		}
+		m.stage(*item, effortMsg.NewState, effort)
 		return m, nil
 	}
 
@@ -449,19 +427,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 	case StateUpdateMsg:
+		// Only updateSelectedItemState's pre-check errors arrive here; every
+		// write is a staged edit settled by applyFlow.
 		if msg.Err != nil {
 			m.statusMsg = "Error: " + msg.Err.Error()
 			m.statusErr = true
-		} else {
-			m.statusMsg = fmt.Sprintf("Updated #%d to %s", msg.ItemID, msg.NewState)
-			m.statusErr = false
-			// Auto-remove from priorities if transitioning to a "done" state
-			if ado.IsDoneState(msg.NewState) && m.priorities != nil {
-				m.priorities.Remove(msg.ItemID)
-				m.priorities.Save()
-			}
-			// Refresh work items to get updated state
-			return m, m.fetchWorkItems()
 		}
 
 	case tea.KeyMsg:

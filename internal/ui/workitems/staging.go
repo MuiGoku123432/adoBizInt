@@ -28,7 +28,8 @@ type stagedEdit struct {
 }
 
 // effortEdit is the effort half of a resolve: the values the effort modal
-// returned, for taskID. A nil value is a field the user left blank. It stays
+// returned, for taskID (the staged item for a Task, the development task for a
+// User Story). A nil value is a field the user left blank. It stays
 // nil all the way to the client, so that field is left unchanged (GUARD-05,
 // BL-01).
 type effortEdit struct {
@@ -36,23 +37,33 @@ type effortEdit struct {
 	values guard.Effort
 }
 
-// batch is the guarded write for s: the staged item's state first, then its
-// effort (D-09). Each op is its own guarded write with its own audit record.
-// The effort op re-sends the state, but its fresh pre-read already shows the
-// new state, so its diff and record carry only the effort fields (GUARD-03).
-// Execute stops at the first op that does not land and reports the rest as not
-// attempted; nothing is rolled back, because a compensating write would be an
-// unguarded guess (D-09).
+// batch is the guarded write for s: the staged item's state first, then, for a
+// User Story, closing its development task, then the effort (D-09). Each op is
+// its own guarded write with its own audit record. The effort op re-sends the
+// state, but its fresh pre-read already shows the new state, so its diff and
+// record carry only the effort fields (GUARD-03). Execute stops at the first op
+// that does not land and reports the rest as not attempted; nothing is rolled
+// back, because a compensating write would be an unguarded guess (D-09).
 func (s stagedEdit) batch(w guard.Client) confirm.Batch {
 	b := confirm.Batch{
 		ID:     s.item.ID,
 		Ops:    []guard.Op{guard.SetState(w, s.item.Project, s.item.ID, s.state, guard.Effort{})},
 		Labels: []string{strings.ToLower(s.state)},
 	}
-	if s.effort != nil {
-		b.Ops = append(b.Ops, guard.SetState(w, s.item.Project, s.item.ID, s.state, s.effort.values))
-		b.Labels = append(b.Labels, "effort update")
+	if s.effort == nil {
+		return b
 	}
+	taskState := s.state
+	if s.effort.taskID != s.item.ID {
+		// The development task is written under the story's project, because
+		// GetChildWorkItems does not report a child's project. guard.SetState
+		// refuses the write when the task lives in another project (CR-01).
+		taskState = "Closed"
+		b.Ops = append(b.Ops, guard.SetState(w, s.item.Project, s.effort.taskID, taskState, guard.Effort{}))
+		b.Labels = append(b.Labels, fmt.Sprintf("task #%d closed", s.effort.taskID))
+	}
+	b.Ops = append(b.Ops, guard.SetState(w, s.item.Project, s.effort.taskID, taskState, s.effort.values))
+	b.Labels = append(b.Labels, "effort update")
 	return b
 }
 
