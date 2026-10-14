@@ -22,9 +22,9 @@ an empty sprint, and one failing team.
 - [x] **GUARD-01**: The guarded-write sequence (audit open, pre-read and diff, no-op refusal, confirm gate, mutate under recover, outcome classification, audit append) lives in one package both the CLI and the TUI call. It never writes stdout and never exits the process
 - [ ] **GUARD-02**: All existing TUI write call sites go through that guard with the real project and a bounded context. A structural test fails if any `internal/ui` file calls an `ado` mutation method directly
 - [ ] **GUARD-03**: The TUI confirms once per item: edits to one item are staged and confirmed once when the user moves on, with one audit record per changed field. The compound resolve (state plus effort) is two sequential guarded writes
-- [x] **GUARD-04**: Every audit record carries an `actor` key (`tui`, `cli-human` or `agent`) and records whether `--user-approved` was supplied (AGENT-03)
+- [ ] **GUARD-04**: Every audit record carries an `actor` key (`tui`, `cli-human` or `agent`) and records whether `--user-approved` was supplied (AGENT-03)
 - [ ] **GUARD-05**: The TUI effort modal carries "leave unchanged" as absent, not zero. An end-to-end test drives the modal through the guard
-- [x] **GUARD-06**: Extraction is behaviour-preserving for the CLI: the existing CLI write tests pass unchanged
+- [ ] **GUARD-06**: Extraction is behaviour-preserving for the CLI: the existing CLI write tests pass unchanged
   - Approved Phase 7 exception (07-03 checkpoint, 2026-10-13): three locked key-set assertions were amended for GUARD-04 and one test was relocated. TestExecutedWriteAppendsAuditRecord: expected audit keys gain `actor` and `user_approved`. TestPanicAfterWriteIssuedIsAudited: expected audit keys gain the same two keys. TestAuditRecordOmitsArgvAndCredentialFields: "actor" leaves the forbidden-key list, because actor is now a fixed surface label rather than an identity; argv, url, headers, token, pat and authorization stay forbidden. TestWriteRecoverPrecedesMutate moved from cmd/adoBizInt/crash_test.go to internal/guard/structural_test.go as TestRunRecoverPrecedesMutate (plan 07-02, GUARD-01), because the recover moved into the shared guard. Every other CLI test file is byte-identical, enforced by `.planning/phases/07-guarded-tui-writes/07-cli-tests.sha256`.
 
 ### Platform
@@ -188,9 +188,9 @@ Deferred. Tracked but not in this roadmap.
 | GUARD-01 | Phase 7 | Complete |
 | GUARD-02 | Phase 7 | Pending |
 | GUARD-03 | Phase 7 | Pending |
-| GUARD-04 | Phase 7 | Complete |
+| GUARD-04 | Phase 7 | Pending |
 | GUARD-05 | Phase 7 | Pending |
-| GUARD-06 | Phase 7 | Complete |
+| GUARD-06 | Phase 7 | Pending |
 | PLAT-02 | Phase 8 | Pending |
 | PLAT-03 | Phase 8 | Pending |
 | PLAT-04 | Phase 9 | Pending |
