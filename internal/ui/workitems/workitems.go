@@ -502,6 +502,13 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
+		// Opening or staging another item first confirms the staged one (D-02).
+		if k := msg.String(); m.staged != nil && m.filterFocused == 0 && (k == "enter" || k == "n") &&
+			highlightedID(m.table) != m.staged.item.ID {
+			m.pendingKey = &msg
+			return m, m.startConfirm()
+		}
+
 		switch msg.String() {
 		case "tab":
 			m.filterFocused = (m.filterFocused + 1) % 5
@@ -911,14 +918,15 @@ func getTypeStyle(itemType string) lipgloss.Style {
 	}
 }
 
-// IsTextInputFocused returns true when search input or effort modal is focused
+// IsTextInputFocused returns true when search input or effort modal is focused,
+// or while a staged edit is previewing, awaiting confirm or being written.
 func (m Model) IsTextInputFocused() bool {
 	// Check if effort modal is open (it has text inputs)
 	if m.showEffort && m.effortModal != nil {
 		return true
 	}
 	// Check if search input is focused (filterFocused == 4)
-	return m.filterFocused == 4
+	return m.filterFocused == 4 || m.flow.Busy()
 }
 
 // getSelectedWorkItem returns the currently selected work item or nil
