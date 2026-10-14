@@ -225,14 +225,7 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 		}
 	}
 
-	// Find the work item in our items list
-	var item *ado.WorkItem
-	for i := range m.items {
-		if m.items[i].ID == id {
-			item = &m.items[i]
-			break
-		}
-	}
+	item := m.itemByID(id)
 	if item == nil {
 		return func() tea.Msg {
 			return StateUpdateMsg{Err: fmt.Errorf("work item #%d not found", id)}
@@ -281,7 +274,7 @@ func (m *Model) updateSelectedItemState() tea.Cmd {
 	}
 
 	// Stage the change; it is confirmed when the user moves on (GUARD-03).
-	m.stage(*item, nextState)
+	m.stage(*item, nextState, nil)
 	return nil
 }
 
@@ -378,21 +371,21 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
-		// Original Task flow
-		return m, func() tea.Msg {
-			// A nil effort pointer means the user left that field blank; the
-			// corresponding work item field is left untouched.
-			err := client.UpdateWorkItemStateWithEffort(
-				context.Background(),
-				"",
-				effortMsg.ItemID,
-				effortMsg.NewState,
-				effortMsg.OriginalEstimate,
-				effortMsg.Remaining,
-				effortMsg.Completed,
-			)
-			return StateUpdateMsg{ItemID: effortMsg.ItemID, NewState: effortMsg.NewState, Err: err}
+		// Task flow: stage the resolve; it is confirmed when the user moves on.
+		// The message's pointers are forwarded as they are. Taking the address
+		// of a copy would turn a blank field into a zero write (BL-01).
+		item := m.itemByID(effortMsg.ItemID)
+		if item == nil {
+			m.statusMsg = fmt.Sprintf("Error: work item #%d not found", effortMsg.ItemID)
+			m.statusErr = true
+			return m, nil
 		}
+		m.stage(*item, effortMsg.NewState, &effortEdit{taskID: effortMsg.ItemID, values: guard.Effort{
+			OriginalEstimate: effortMsg.OriginalEstimate,
+			Remaining:        effortMsg.Remaining,
+			Completed:        effortMsg.Completed,
+		}})
+		return m, nil
 	}
 
 	// Delegate to effort modal when open
@@ -932,7 +925,11 @@ func (m Model) IsTextInputFocused() bool {
 
 // getSelectedWorkItem returns the currently selected work item or nil
 func (m *Model) getSelectedWorkItem() *ado.WorkItem {
-	id := highlightedID(m.table)
+	return m.itemByID(highlightedID(m.table))
+}
+
+// itemByID returns the loaded work item with id, or nil.
+func (m *Model) itemByID(id int) *ado.WorkItem {
 	for i := range m.items {
 		if m.items[i].ID == id {
 			return &m.items[i]

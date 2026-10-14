@@ -19,19 +19,41 @@ import (
 
 // stagedEdit is a state change waiting for confirmation. item is the row as it
 // was when staged, so the write carries the row's own project; guard.SetState
-// refuses a project that does not own the item (CR-01).
+// refuses a project that does not own the item (CR-01). effort is set when the
+// change came from the effort modal (a resolve).
 type stagedEdit struct {
-	item  ado.WorkItem
-	state string
+	item   ado.WorkItem
+	state  string
+	effort *effortEdit
 }
 
-// batch is the guarded write for s: one set-state op on the staged item.
+// effortEdit is the effort half of a resolve: the values the effort modal
+// returned, for taskID. A nil value is a field the user left blank. It stays
+// nil all the way to the client, so that field is left unchanged (GUARD-05,
+// BL-01).
+type effortEdit struct {
+	taskID int
+	values guard.Effort
+}
+
+// batch is the guarded write for s: the staged item's state first, then its
+// effort (D-09). Each op is its own guarded write with its own audit record.
+// The effort op re-sends the state, but its fresh pre-read already shows the
+// new state, so its diff and record carry only the effort fields (GUARD-03).
+// Execute stops at the first op that does not land and reports the rest as not
+// attempted; nothing is rolled back, because a compensating write would be an
+// unguarded guess (D-09).
 func (s stagedEdit) batch(w guard.Client) confirm.Batch {
-	return confirm.Batch{
+	b := confirm.Batch{
 		ID:     s.item.ID,
 		Ops:    []guard.Op{guard.SetState(w, s.item.Project, s.item.ID, s.state, guard.Effort{})},
 		Labels: []string{strings.ToLower(s.state)},
 	}
+	if s.effort != nil {
+		b.Ops = append(b.Ops, guard.SetState(w, s.item.Project, s.item.ID, s.state, s.effort.values))
+		b.Labels = append(b.Labels, "effort update")
+	}
+	return b
 }
 
 // highlightedID is the work item ID on t's highlighted row, or 0 when there is
@@ -45,9 +67,10 @@ func highlightedID(t table.Model) int {
 // HasStaged reports whether an edit is staged and not yet confirmed.
 func (m Model) HasStaged() bool { return m.staged != nil }
 
-// stage replaces any staged edit with item → state. Nothing is sent.
-func (m *Model) stage(item ado.WorkItem, state string) {
-	m.staged = &stagedEdit{item: item, state: state}
+// stage replaces any staged edit with item → state, plus effort when the
+// change came from the effort modal (nil otherwise). Nothing is sent.
+func (m *Model) stage(item ado.WorkItem, state string, effort *effortEdit) {
+	m.staged = &stagedEdit{item: item, state: state, effort: effort}
 	m.statusMsg = fmt.Sprintf("#%d staged: %s — move to another row to confirm", item.ID, state)
 	m.statusErr = false
 	m.table = m.table.WithRows(m.buildRows())
