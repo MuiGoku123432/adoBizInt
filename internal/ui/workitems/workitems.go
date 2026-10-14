@@ -878,20 +878,8 @@ func stripHTML(s string) string {
 
 // openDetailModal opens the detail modal for the currently selected work item
 func (m *Model) openDetailModal() tea.Cmd {
-	// Get the highlighted row from the table
-	highlightedRow := m.table.HighlightedRow()
-	if highlightedRow.Data == nil {
-		return nil
-	}
-
-	// Get the ID from the row data
-	idStr, ok := highlightedRow.Data[columnKeyID].(string)
-	if !ok {
-		return nil
-	}
-
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
+	id := highlightedID(m.table)
+	if id == 0 {
 		return nil
 	}
 
@@ -935,21 +923,7 @@ func (m Model) IsTextInputFocused() bool {
 
 // getSelectedWorkItem returns the currently selected work item or nil
 func (m *Model) getSelectedWorkItem() *ado.WorkItem {
-	highlightedRow := m.table.HighlightedRow()
-	if highlightedRow.Data == nil {
-		return nil
-	}
-
-	idStr, ok := highlightedRow.Data[columnKeyID].(string)
-	if !ok {
-		return nil
-	}
-
-	id, err := strconv.Atoi(idStr)
-	if err != nil {
-		return nil
-	}
-
+	id := highlightedID(m.table)
 	for i := range m.items {
 		if m.items[i].ID == id {
 			return &m.items[i]
