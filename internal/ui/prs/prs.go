@@ -1,6 +1,7 @@
 package prs
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -42,13 +43,6 @@ type PRsMsg struct {
 // TickMsg is used for auto-refresh polling
 type TickMsg struct{}
 
-// PRActionMsg is sent when a PR action (approve/complete) completes
-type PRActionMsg struct {
-	PRID   int
-	Action string // "approve" or "complete"
-	Err    error
-}
-
 type Model struct {
 	client *ado.Client
 	// writer is the guarded-write seam; New sets it to client and tests
@@ -80,10 +74,6 @@ type Model struct {
 	filterFocused int // 0 = table, 1 = search
 	statusMsg     string
 	statusErr     bool
-	actionPending bool
-
-	// confirmComplete is set while awaiting confirmation of a merge
-	confirmComplete bool
 
 	autoRefresh bool
 
@@ -217,9 +207,10 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 		m.table = m.table.WithTargetWidth(msg.Width - 4)
 
 	case TickMsg:
-		// Auto-refresh if enabled. Skipped while a merge confirmation is pending,
-		// so the rows cannot shift between the prompt and the confirming keypress.
-		if m.autoRefresh && !m.loading && !m.actionPending && !m.confirmComplete {
+		// Auto-refresh if enabled. Skipped while a guarded write is previewing,
+		// awaiting confirm or in flight, so the rows cannot shift under it; the
+		// tick is still re-armed.
+		if m.autoRefresh && !m.loading && !m.flow.Busy() {
 			m.loading = true
 			cmds = append(cmds, m.fetchPRs(), m.tickCmd())
 		} else {
@@ -237,18 +228,6 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			m.err = nil
 			m.stale = false
 			m.applyResult(msg.Result)
-		}
-
-	case PRActionMsg:
-		m.actionPending = false
-		if msg.Err != nil {
-			m.statusMsg = fmt.Sprintf("Error: %s", msg.Err.Error())
-			m.statusErr = true
-		} else {
-			m.statusMsg = fmt.Sprintf("PR #%d %sd successfully", msg.PRID, msg.Action)
-			m.statusErr = false
-			// Refresh PR list
-			return m, m.fetchPRs()
 		}
 
 	case link.ActionMsg:
@@ -309,8 +288,12 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 					Labels: []string{"approved"},
 				}
 				if msg.String() == "c" {
-					b.Ops = []guard.Op{guard.CompletePR(m.writer, pr.Project, pr.RepositoryID, pr.ID)}
+					// The no-op status names the terminal status the pre-read
+					// saw: "already abandoned" or "already completed".
+					seen := new(string)
+					b.Ops = []guard.Op{guard.CompletePR(prStatusClient{Client: m.writer, seen: seen}, pr.Project, pr.RepositoryID, pr.ID)}
 					b.Labels = []string{"completed"}
+					b.NoOpLabel = func() string { return *seen }
 				}
 				var cmd tea.Cmd
 				m.flow, cmd = m.flow.Start(b, m.client.FetchTimeout())
@@ -445,6 +428,13 @@ func (m Model) View() string {
 
 	b.WriteString("\n")
 
+	// D-08: an unknown outcome stays on its own line above the status line
+	// until the next keypress.
+	if sticky := m.flow.Sticky(); sticky != "" {
+		b.WriteString(styles.ErrorStyle.Render(sticky))
+		b.WriteString("\n")
+	}
+
 	// Show status message if any
 	if m.statusMsg != "" {
 		if m.statusErr {
@@ -529,9 +519,33 @@ func getApprovalStyle(status string) lipgloss.Style {
 	}
 }
 
-// IsTextInputFocused returns true when the search input is focused
+// IsTextInputFocused returns true when the search input is focused or a
+// guarded write owns the keyboard (preview, confirm modal or write in flight),
+// so app.go holds tab navigation.
 func (m Model) IsTextInputFocused() bool {
-	return m.filterFocused == 1
+	return m.filterFocused == 1 || m.flow.Busy()
+}
+
+// WriteBusy reports whether a guarded write is previewing, awaiting confirm or
+// in flight.
+func (m Model) WriteBusy() bool { return m.flow.Busy() }
+
+// prStatusClient records the PR status the complete pre-read saw.
+// guard.CompletePR refuses completed and abandoned PRs alike as an empty diff
+// (CLI parity) and guard.Report carries no pre-read state, so this is how the
+// no-op status can say "already abandoned". seen is written inside the preview
+// cmd and read only after PreviewedMsg is delivered.
+type prStatusClient struct {
+	guard.Client
+	seen *string
+}
+
+func (c prStatusClient) GetPullRequestDetail(ctx context.Context, project, repositoryID string, prID int) (*ado.PullRequestDetail, error) {
+	detail, err := c.Client.GetPullRequestDetail(ctx, project, repositoryID, prID)
+	if detail != nil {
+		*c.seen = strings.ToLower(detail.Status)
+	}
+	return detail, err
 }
 
 // copySelectedPRLink copies the URL of the selected PR to clipboard
@@ -551,6 +565,3 @@ func (m *Model) openSelectedPRInBrowser() tea.Cmd {
 	}
 	return link.Open("open", utils.BuildPRURL(m.orgURL, pr.Project, pr.RepositoryName, pr.ID))
 }
-
-// WriteBusy reports whether a guarded write is in flight or awaiting confirm.
-func (m Model) WriteBusy() bool { return false }
