@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -342,5 +343,79 @@ func TestOpNamesArePinned(t *testing.T) {
 		if tt.op.Name != tt.want {
 			t.Errorf("Op.Name = %q, want %q", tt.op.Name, tt.want)
 		}
+	}
+}
+
+// TestAuditRecordCarriesActorAndUserApproved pins GUARD-04's seven-key record
+// on both audited paths: the normal executed append and the panic-path unknown
+// append. user_approved must be present as JSON false, never absent.
+func TestAuditRecordCarriesActorAndUserApproved(t *testing.T) {
+	tests := []struct {
+		name        string
+		mutate      func(context.Context) error
+		wantOutcome string
+	}{
+		{name: "executed", mutate: func(context.Context) error { return nil }, wantOutcome: OutcomeExecuted},
+		{name: "panic path", mutate: func(context.Context) error { panic("deliberate") }, wantOutcome: OutcomeUnknown},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, open := tempSink(t)
+			Run(context.Background(), testOp(planOne, tt.mutate), Options{Confirm: confirmed, Open: open, Actor: ActorTUI})
+
+			lines := auditLines(t, path)
+			if len(lines) != 1 {
+				t.Fatalf("audit lines = %d, want 1", len(lines))
+			}
+			var rec map[string]any
+			if err := json.Unmarshal([]byte(lines[0]), &rec); err != nil {
+				t.Fatalf("decode audit line: %v", err)
+			}
+			keys := make([]string, 0, len(rec))
+			for k := range rec {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			want := []string{"actor", "changes", "command", "outcome", "target", "timestamp", "user_approved"}
+			if !reflect.DeepEqual(keys, want) {
+				t.Errorf("audit keys = %v, want %v", keys, want)
+			}
+			if rec["actor"] != ActorTUI {
+				t.Errorf("actor = %v, want %q", rec["actor"], ActorTUI)
+			}
+			if approved, ok := rec["user_approved"].(bool); !ok || approved {
+				t.Errorf("user_approved = %#v, want JSON false", rec["user_approved"])
+			}
+			if rec["outcome"] != tt.wantOutcome {
+				t.Errorf("outcome = %v, want %q", rec["outcome"], tt.wantOutcome)
+			}
+		})
+	}
+}
+
+// TestRunRefusesUnknownActor pins that an unattributable write never starts:
+// an actor outside the three labels is refused before the sink is opened, so
+// nothing is read, sent or audited (T-07-11, T-07-12).
+func TestRunRefusesUnknownActor(t *testing.T) {
+	for _, actor := range []string{"", "Tui", "alice@example.com"} {
+		t.Run(actor, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "audit.jsonl")
+			open := func() (*os.File, error) {
+				t.Fatalf("Open was called")
+				return nil, nil
+			}
+
+			got := Run(context.Background(), testOp(mustNotPlan(t), mustNotMutate(t)), Options{Confirm: confirmed, Open: open, Actor: actor})
+
+			if got.SinkErr == nil {
+				t.Fatalf("SinkErr = nil, want the actor refusal")
+			}
+			if got.Outcome != "" {
+				t.Errorf("Outcome = %q, want empty when nothing was attempted", got.Outcome)
+			}
+			if _, err := os.Stat(path); err == nil {
+				t.Errorf("audit file %s exists; a refused actor must create nothing", path)
+			}
+		})
 	}
 }
