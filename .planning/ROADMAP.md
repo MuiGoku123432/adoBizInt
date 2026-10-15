@@ -69,7 +69,7 @@ template is resolved per project; working days come from team settings only.
   4. Every audit record, from the CLI or the TUI, carries an `actor` key (`tui`, `cli-human` or `agent`) and a field recording whether `--user-approved` was supplied
   5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process. Approved Phase 7 exception (07-03 checkpoint): TestExecutedWriteAppendsAuditRecord and TestPanicAfterWriteIssuedIsAudited expect the two GUARD-04 keys `actor` and `user_approved`, TestAuditRecordOmitsArgvAndCredentialFields no longer forbids "actor", and TestWriteRecoverPrecedesMutate is relocated to internal/guard as TestRunRecoverPrecedesMutate; see REQUIREMENTS.md GUARD-06 for the detail
 
-**Plans**: 8/8 plans executed
+**Plans**: 8/9 plans executed
 Plans:
 **Wave 1**
 - [x] 07-01-PLAN.md — Lock the CLI write tests (sha256 + inventory) and move fetchctx to internal/fetchctx
@@ -88,6 +88,9 @@ Plans:
 **Wave 5** *(blocked on Wave 4 completion)*
 - [x] 07-07-PLAN.md — Compound resolve as sequential guarded writes, blank-effort end-to-end test, no-bypass structural test
 - [x] 07-08-PLAN.md — App-level D-02: tab switch and quit confirm staged edits; quit held while a write is busy
+
+**Gap closure**
+- [ ] 07-09-PLAN.md — Gap closure, Wave 1 (CR-01): signal-aware parent for TUI guard.Run and an in-flight write wait in main, so an interrupted TUI write is audited unknown like a CLI write
 
 **UI hint**: yes
 **Research**: Skip. Internal refactor, protected by the existing CLI write tests
