@@ -192,10 +192,11 @@ All six greps from the Task 2 verify block pass (CR-01 row, 14 `| open | - |` ro
 
 ### Notes (no code change)
 
-**1. Plan wording correction: edge-disposition row 1 ("at most one TUI write is in flight at a time") is inaccurate**
-- **Found during:** Task 1 (reading flow.go and app.go)
-- **Issue:** The busy gate is per-Flow, and each write-capable tab embeds its own Flow. Writes on different tabs (for example PRs and Releases) can each have an Execute in flight at the same time, and q on a non-busy tab can end the program while another tab is still writing (the 07-08 quit hold checks only the current view's WriteBusy()).
-- **Disposition:** No design change. The WaitGroup counts every concurrent Execute, so confirm.Wait() after p.Run() covers any number of in-flight writes, including the q-on-another-tab case, which this plan therefore also closes. Recorded here rather than by editing the plan.
+**1. Relayed note on edge-disposition row 1 checked against the code: the plan's statement holds**
+- **Found during:** close-out, verifying the orchestrator's note before recording it
+- **Note as relayed:** row 1 ("at most one TUI write is in flight at a time") was said to be inaccurate, because writes on different tabs (for example PRs and Releases) could each have an Execute in flight, and q on a non-busy tab could exit while another tab writes.
+- **What the code shows:** each write-capable view's `IsTextInputFocused()` returns true while its `flow.Busy()` (prs.go:526, releases.go:661, pipelines.go:638, workitems.go:893). app.go refuses a tab switch while the current view reports that (the `tab` guard and the `if !m.isCurrentViewTextInputFocused()` block), and `TestTabHeldWhileWriteBusy` pins the PRs case. A Flow is busy from Start until WrittenMsg settles it, and WrittenMsg exists only after Execute returns. So the user cannot leave a tab while its write is in flight, no other tab can have one in flight, and q is held on the busy tab. Row 1 is accurate for every key-driven path in the current code. The first committed version of this SUMMARY repeated the relayed note as fact; this entry corrects it.
+- **Disposition:** No design change. The WaitGroup counts any number of concurrent Executes, so the fix does not depend on row 1. If a later change lets tabs switch during a write, confirm.Wait() still covers every in-flight Execute.
 
 **2. Tracer feedback gate ran in its automated form**
 - **Found during:** after Task 1
@@ -205,11 +206,11 @@ All six greps from the Task 2 verify block pass (CR-01 row, 14 `| open | - |` ro
 ---
 
 **Total deviations:** 0 auto-fixed code deviations; 2 recorded notes.
-**Impact on plan:** None on the design or the code. Note 1 widens what the fix is known to cover.
+**Impact on plan:** None on the design or the code. Note 1 confirms the plan's row 1 rather than changing it.
 
 ## Issues Encountered
 
-- **Residual R1 also has a WaitGroup-reuse edge (observation, accepted with R1).** In Go's sync.WaitGroup, if main is blocked in Wait on an in-flight Execute, that Execute's Done resets the counter, and a late Execute's `inflight.Add(1)` lands before the woken waiter re-checks the state, Wait panics with "sync: WaitGroup is reused before previous Wait has returned". run's `guard` recover turns that into a crash record and exit 3. The audit guarantee still holds: every counted Execute has appended its record, and the late one has only just started (no pre-read done, nothing sent). This needs two concurrent writes plus a third starting inside a nanosecond-scale window after p.Run returned. It sits inside the accepted R1 window (T-07-38), so it is recorded, not fixed.
+- **Residual R1 also has a WaitGroup-reuse edge (observation, accepted with R1).** In Go's sync.WaitGroup, if main is blocked in Wait on an in-flight Execute, that Execute's Done resets the counter, and a late Execute's `inflight.Add(1)` lands before the woken waiter re-checks the state, Wait panics with "sync: WaitGroup is reused before previous Wait has returned". run's `guard` recover turns that into a crash record and exit 3. The audit guarantee still holds: every counted Execute has appended its record, and the late one has only just started (no pre-read done, nothing sent). It needs one Execute counted when Wait starts plus a second Execute starting late, and with at most one write in flight (note 1) that is unreachable on the current key paths. It would sit inside the accepted R1 window (T-07-38), so it is recorded, not fixed.
 
 ## Known Residuals (from the plan, unchanged)
 
