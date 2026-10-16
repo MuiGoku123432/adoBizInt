@@ -13,6 +13,7 @@ import (
 	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/logging"
 	"sentinovo.ai/bizInt/internal/ui"
+	"sentinovo.ai/bizInt/internal/ui/confirm"
 )
 
 // main holds the only process-exit call site in this package. Every failure
@@ -140,8 +141,27 @@ func run() int {
 	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.Repositories, cfg.StateTransitions, cfg.PollInterval, priorities)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
+	// CR-01. Bubbletea turns SIGTERM, and SIGINT when stdin is not a TTY, into a
+	// quit that its event loop handles before Model.Update, so the 07-08 quit
+	// hold never sees it, and Program.Run does not wait for command goroutines.
+	// Every TUI guarded write therefore runs under this signal context, so the
+	// guard classifies an interrupted write unknown and audits it (Phase 4
+	// D-22), as the CLI does, and confirm.Wait holds the exit until that record
+	// is appended. The deferred stop keeps both signals captured through the
+	// wait, so a second SIGTERM cannot kill the process mid-append. The context
+	// is deliberately not handed to the bubbletea program: its signal goroutine
+	// makes a blocking send that a cancelled event loop never receives, which
+	// would hang shutdown with the terminal still raw.
+	tuiSignalCtx, stopTUISignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopTUISignals()
+	confirm.SetParent(tuiSignalCtx)
+
 	log.Info("Starting TUI")
-	if _, err := p.Run(); err != nil {
+	_, err = p.Run()
+	// Before the error branch: Run returns an error after a panic it recovered,
+	// which is exactly when another goroutine may be mid-write.
+	confirm.Wait()
+	if err != nil {
 		log.Error("TUI error", "error", err)
 		fmt.Fprintf(stderrWriter, "Error running app: %v\n", err)
 		// Unchanged from the pre-CLI behavior: CLI-01 forbids altering the TUI path.
