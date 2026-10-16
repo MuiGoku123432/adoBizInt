@@ -63,34 +63,41 @@ template is resolved per project; working days come from team settings only.
 **Depends on**: Nothing (first phase of v2.0)
 **Requirements**: GUARD-01, GUARD-02, GUARD-03, GUARD-04, GUARD-05, GUARD-06
 **Success Criteria** (what must be TRUE):
+
   1. A state or effort change made in the TUI shows the pre-read diff, refuses a no-op without sending a request, and is confirmed once per item when the user moves on, leaving one audit record per changed field
   2. A TUI resolve (state plus effort) runs as two sequential guarded writes with two audit records, and leaving the effort modal's field blank leaves that field unchanged rather than zeroing it, proven by an end-to-end test that drives the modal through the guard
   3. A structural test fails if any `internal/ui` file calls an `ado` mutation method directly, and every existing TUI write runs with the real project and a bounded context
   4. Every audit record, from the CLI or the TUI, carries an `actor` key (`tui`, `cli-human` or `agent`) and a field recording whether `--user-approved` was supplied
   5. The existing CLI write tests pass unchanged, and the shared guard never writes to stdout and never exits the process. Approved Phase 7 exception (07-03 checkpoint): TestExecutedWriteAppendsAuditRecord and TestPanicAfterWriteIssuedIsAudited expect the two GUARD-04 keys `actor` and `user_approved`, TestAuditRecordOmitsArgvAndCredentialFields no longer forbids "actor", and TestWriteRecoverPrecedesMutate is relocated to internal/guard as TestRunRecoverPrecedesMutate; see REQUIREMENTS.md GUARD-06 for the detail
 
-**Plans**: 8/9 plans executed
+**Plans**: 9/9 plans executed
 Plans:
 **Wave 1**
+
 - [x] 07-01-PLAN.md — Lock the CLI write tests (sha256 + inventory) and move fetchctx to internal/fetchctx
 
 **Wave 2** *(blocked on Wave 1 completion)*
+
 - [x] 07-02-PLAN.md — Extract internal/guard (Run, audit sink 0600/0700, ops) and make the CLI a thin adapter
 
 **Wave 3** *(blocked on Wave 2 completion)*
+
 - [x] 07-03-PLAN.md — Persist `actor` and `user_approved` on every audit record (decision checkpoint: CLI actor label)
 - [x] 07-04-PLAN.md — Shared confirm flow (diff modal, preview/execute) and PR approve/complete through the guard
 
 **Wave 4** *(blocked on Wave 3 completion)*
+
 - [x] 07-05-PLAN.md — Release approve/reject and pipeline queue: input step, then diff confirm, then guarded write
 - [x] 07-06-PLAN.md — Work items: stage state changes and confirm on move-on (row, other item), leave API
 
 **Wave 5** *(blocked on Wave 4 completion)*
+
 - [x] 07-07-PLAN.md — Compound resolve as sequential guarded writes, blank-effort end-to-end test, no-bypass structural test
 - [x] 07-08-PLAN.md — App-level D-02: tab switch and quit confirm staged edits; quit held while a write is busy
 
 **Gap closure**
-- [ ] 07-09-PLAN.md — Gap closure, Wave 1 (CR-01): signal-aware parent for TUI guard.Run and an in-flight write wait in main, so an interrupted TUI write is audited unknown like a CLI write
+
+- [x] 07-09-PLAN.md — Gap closure, Wave 1 (CR-01): signal-aware parent for TUI guard.Run and an in-flight write wait in main, so an interrupted TUI write is audited unknown like a CLI write
 
 **UI hint**: yes
 **Research**: Skip. Internal refactor, protected by the existing CLI write tests
@@ -103,6 +110,7 @@ Plans:
 **Depends on**: Phase 7
 **Requirements**: PLAT-02, PLAT-03, PLAT-05
 **Success Criteria** (what must be TRUE):
+
   1. CI runs `govulncheck` and fails on any reachable vulnerability; the upgraded build (`azuredevops/v7` v7.1.0, Go 1.27, patched `golang.org/x/sys`) passes it, and no `v1.0.0-b5` import remains
   2. A rejected PAT under v7 still exits with the auth-failure code, proven by a test
   3. After a response carrying `Retry-After` or rate-limit headers, including an HTTP 200, later requests wait as instructed; a rate-limited read retries a bounded number of times within its deadline, and a rate-limited write is never retried and exits with the write-failure code
@@ -119,6 +127,7 @@ Plans:
 **Depends on**: Phase 8
 **Requirements**: TEAM-01, TEAM-02, TEAM-03, TEAM-04, TEAM-05, TEAM-07, TEAM-08, PLAT-04
 **Success Criteria** (what must be TRUE):
+
   1. `teams list` discovers each configured project's teams (paged), and configuring an unknown team or zero teams stops the tool at startup with exit 3 and a named config error
   2. Each configured team's current sprint resolves to civil start and inclusive finish dates that stay correct under `TZ=America/Chicago` and `TZ=Asia/Kolkata`; a team with no current iteration or null dates is a per-team failure, never an empty sprint, and every read failure carries a `team` key (empty for project-scoped reads)
   3. A scrum read covers all configured teams by default, `--team P/T` narrows it to one, output never contains a synthetic "all teams" row, and teams whose sprint cadences differ produce a mismatch finding
@@ -135,6 +144,7 @@ Plans:
 **Depends on**: Phase 9
 **Requirements**: TEAM-06, DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-06
 **Success Criteria** (what must be TRUE):
+
   1. `sprint items` returns each team's sprint including completed and closed items, selected by the team's iteration id and intersected with the team's area paths (honouring include-children), with the team, area paths and points field disclosed in `scope`
   2. Story points, RemainingWork, CompletedWork and OriginalEstimate appear as `null` when absent and keep fractional values when present, while the v1 `story_points` integer field is unchanged
   3. Tasks arrive in one query per team grouped under their parent, and any id requested but not returned by a batch read is reported as dropped
@@ -151,6 +161,7 @@ Plans:
 **Depends on**: Phase 10
 **Requirements**: NAG-01, NAG-02, NAG-03, NAG-04, NAG-05, NAG-06, NAG-07, NAG-08, NAG-09, NAG-10, NAG-11, NAG-12, NAG-13
 **Success Criteria** (what must be TRUE):
+
   1. `sprint nag` reports readiness gaps (no assignee, points absent rather than zero, empty acceptance criteria, task with no parent, story with no Development task with the matching method recorded) as JSON findings carrying team, item, rule, a stable `rule:item` key and a suggested CLI verb that would fix it
   2. State-lie findings appear for an Active item with zero remaining work, a New or Active item whose linked pull request was completed into the default branch (PR reads capped, with an incomplete marker when the cap is hit), and an Active parent whose child tasks are all terminal
   3. Slippage findings appear for items still New with fewer than N working days left, for remaining hours running ahead of remaining working days beyond tolerance (or "insufficient data" below the RemainingWork coverage threshold, with working days taken from team settings and that source disclosed), and for linked pull requests still open past the sprint finish
@@ -167,6 +178,7 @@ Plans:
 **Depends on**: Phase 10, Phase 11
 **Requirements**: CEREMONY-01, CEREMONY-02, CEREMONY-03, CEREMONY-04, CEREMONY-05
 **Success Criteria** (what must be TRUE):
+
   1. `sprint report` emits exactly five fields: committed, delivered, scope change (added, removed and re-pointed as three separate numbers), carryover, and the raw velocity series (default 6 sprints, maximum 12, no average); `scope` discloses the baseline and close instants and the Resolved + Closed delivered definition, and carryover for a sprint still in progress is `null` with a reason
   2. `standup --since T` groups items with a state transition or a RemainingWork decrease since T by current assignee, read from revision history, and lists members with no movement; running it without `--since` is a usage error
   3. `planning` lists the backlog in ADO rank order with each item marked ready or not ready, its readiness gaps named, and the raw velocity series, with no capacity figure
@@ -183,6 +195,7 @@ Plans:
 **Depends on**: Phase 7
 **Requirements**: AGENT-01, AGENT-02, AGENT-03, AGENT-04
 **Success Criteria** (what must be TRUE):
+
   1. Every write verb in the command table has a tier (`agent` or `human`), a table test fails on any verb without one, and a newly added verb is `human` unless declared otherwise
   2. Run non-interactively with `--confirm` but without `--user-approved`, every human-tier verb (state change, effort update, PR approve, PR complete, release approve and reject, pipeline queue) is refused with exit code 6 before any request; with `--user-approved`, or from an interactive terminal, it proceeds
   3. The agent tier (comments, story points, assignee, sprint assignment, work item creation including tasks under a story, link add) is recorded in the table and requires only `--confirm`
@@ -199,6 +212,7 @@ Plans:
 **Depends on**: Phase 13
 **Requirements**: STORY-01, STORY-02, STORY-03, STORY-04, AGENT-05
 **Success Criteria** (what must be TRUE):
+
   1. `workitems create` creates a work item, a child inherits area and iteration from its parent, the dry run uses the server's validate-only mode, and creating a Development task where one already exists is a no-op
   2. Comments on a work item can be read (paged) and posted in Markdown
   3. A link can be added with `--confirm` alone, while removing one is human-tier and checks the item revision first, aborting if it changed
@@ -215,6 +229,7 @@ Plans:
 **Depends on**: Phase 10, Phase 11
 **Requirements**: SPRINT-01, SPRINT-02, SPRINT-03, SPRINT-04, SPRINT-05
 **Success Criteria** (what must be TRUE):
+
   1. A Sprint tab shows points, pace and risk count per team on an elapsed-working-day-fraction axis, so teams with different cadences line up
   2. Drilling into one team shows per-person load
   3. Capacity appears only when labelled unreliable and changes no finding, pace figure or risk count
@@ -233,6 +248,7 @@ Plans:
 **Depends on**: Phase 7, Phase 9, Phase 11, Phase 14, Phase 15
 **Requirements**: GROOM-01, GROOM-02, GROOM-03, GROOM-04, GROOM-05, GROOM-06
 **Success Criteria** (what must be TRUE):
+
   1. Launched from the Sprint tab, grooming shows one item full screen and advances to the next using only the keyboard
   2. Points, assignee (chosen from the team's resolved members) and sprint can be edited inline, and acceptance-criteria text is appended below existing content without rewriting it
   3. Every grooming edit goes through the guard: edits to one item are confirmed once on advancing and leave one audit record per changed field with actor `tui`
@@ -251,7 +267,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Guarded TUI Writes | v2.0 | 8/8 | In Progress | - |
+| 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
 | 8. Platform Upgrade and Pacing | v2.0 | 0/TBD | Not started | - |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |

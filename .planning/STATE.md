@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 7
 current_phase_name: Guarded TUI Writes
 status: executing
-stopped_at: Completed 07-08-PLAN.md
-last_updated: "2026-10-15T16:06:15.081Z"
-last_activity: 2026-10-13
-last_activity_desc: Phase 7 execution started
+stopped_at: Completed 07-09-PLAN.md
+last_updated: "2026-10-16T13:44:12.499Z"
+last_activity: 2026-10-16
+last_activity_desc: Completed 07-09-PLAN.md (CR-01 gap closure)
 progress:
   total_phases: 10
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 9
-  completed_plans: 8
-  percent: 0
+  completed_plans: 9
+  percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
 
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-10-13 — Phase 7 execution started
+Plan: 9 of 9
+Status: Gap closure 07-09 (CR-01) executed -- ready for phase re-verification
+Last activity: 2026-10-16 -- Completed 07-09-PLAN.md (CR-01 gap closure)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -104,6 +104,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 07 P06 | 5 min | 3 tasks | 3 files |
 | Phase 07 P07 | 6 min | 3 tasks | 5 files |
 | Phase 07 P08 | 3 min | 2 tasks | 2 files |
+| Phase 07 P09 | 6 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 07]: 07-07: TestNoUIFileCallsADOMutation exempts calls through the file's own guard import (guard.ApproveRelease, guard.QueuePipeline, guard.RejectRelease are op constructors that share the ado method names); any other selector call naming an ado mutation fails
 - [Phase 07]: 07-07: a User Story resolve stages one batch of three guarded ops (story state, 'task #<id> closed', 'effort update'), the dev task written under the story's project so CR-01 refuses a cross-project child; no dev task found stages the story state only
 - [Phase 07]: 07-08: app.go holds q/ctrl+c while the current view's WriteBusy() is true, and on Work Items with a staged edit routes quit and tab keys through ConfirmLeave, replaying the stored key on workitems.ProceedMsg (D-02, Phase 4 D-13)
+- [Phase 07]: 07-09: TUI guarded writes run under the TUI signal.NotifyContext via confirm.SetParent; confirm.Execute counts itself in an inflight WaitGroup and main calls confirm.Wait() after p.Run() and before its error branch (CR-01)
+- [Phase 07]: 07-09: the TUI signal context is not handed to the bubbletea program (G-03): its signal goroutine blocking send would hang shutdown with a raw terminal
+- [Phase 07]: 07-09: GUARD-01/02/04 left unchecked in REQUIREMENTS.md pending phase re-verification (20b8d1c reverted them as premature)
 
 ### Roadmap Evolution
 
@@ -285,8 +289,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-14T04:39:28.196Z
-Stopped at: Completed 07-08-PLAN.md
+Last session: 2026-10-16T13:44:04.476Z
+Stopped at: Completed 07-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
