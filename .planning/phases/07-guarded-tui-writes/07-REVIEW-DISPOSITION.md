@@ -5,7 +5,7 @@ titles: json
 findings:
   - id: CR-01
     severity: critical
-    disposition: open
+    disposition: fixed
     title: "A TUI write can be killed between mutate and audit append; the quit hold covers only the q / ctrl+c keys"
   - id: WR-01
     severity: warning
@@ -63,7 +63,7 @@ findings:
     severity: info
     disposition: open
     title: "A merged comment line in the recover block"
-open: 15
+open: 14
 total: 15
 recorded: 2026-10-14T05:19:15.648Z
 ---
@@ -72,7 +72,7 @@ recorded: 2026-10-14T05:19:15.648Z
 
 | Finding | Severity | Disposition | Source |
 |---------|----------|-------------|--------|
-| CR-01 | critical | open | - |
+| CR-01 | critical | fixed | 07-09 |
 | WR-01 | warning | open | - |
 | WR-02 | warning | open | - |
 | WR-03 | warning | open | - |
