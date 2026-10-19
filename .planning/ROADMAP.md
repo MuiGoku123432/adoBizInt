@@ -117,7 +117,29 @@ Plans:
   4. The PAT is only ever sent to hosts validated against the configured organization; a request aimed at any other host is refused before the credential leaves the process
   5. One live read per ADO sub-client and one dry run per write verb pass against the real organization, and the results are recorded before Phase 9 starts
 
-**Plans**: TBD
+**Plans**: 6 plans
+Plans:
+**Wave 1** *(execution waits for Phase 7 verification)*
+
+- [ ] 08-01-PLAN.md — PLAT-02 atomic swap: azuredevops/v7 v7.1.0, Go 1.27.N, x/sys v0.47.0, govulncheck in CI, real-v7 401 test
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-02-PLAN.md — Org-bound transport (D-09/D-10), org_url shape (D-12), every sub-client on the injected client (D-11)
+- [ ] 08-03-PLAN.md — Live smoke harness scripts/smoke.sh and the 08-SMOKE.md record and TUI checklist
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 08-04-PLAN.md — Header-driven pacer, deadline fail-fast as rate_limit (D-01/D-04/D-08), never-sent writes failed (D-02)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 08-05-PLAN.md — Read-only 429 retry decorators (D-03) and the one-line stderr throttle summary (D-05 to D-07)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 08-06-PLAN.md — Human live smoke run against the real org, CI green check, findings recorded (D-13, D-15, D-16)
+
 **Research**: Yes. Live behaviour after the 5.1-preview to 7.1 API version jump (PR complete, vsrm approvals, comments); request-body replay via `GetBody` on POST; `LocationUrl` host rules
 **Notes**: Kept after Phase 7 so the live smoke run also exercises the new TUI guard path. PLAT-02 lands as one change before the PLAT-03 pacer, because `http.Client` injection needs v7. Update the "Go 1.25.4" constraint in PROJECT.md. v7 does not fix offline startup (`g-01-1`); carry it forward. The PLAT-05 smoke run overlaps the deferred v1.0 live checks: record what it finds without reopening v1.0.
 
