@@ -164,6 +164,23 @@ Phase 7 verifies, because the smoke run exercises the Phase 7 TUI guard path.
   count it as a miss. The `core` client is not built in Phase 8, because a
   client with no caller is speculative generality.
 
+### User clarifications (2026-10-19, plan revision)
+- **SC2 clarification (user, 2026-10-19):** startup behaviour stays unchanged. A
+  fully rejected PAT that fails during startup resource-area discovery exits 3,
+  as it does under b5 (RESEARCH Pitfall 3, Open Question 1). SC2 ("a rejected PAT
+  under v7 still exits with the auth-failure code") is satisfied by proving exit
+  2 (`exitAuth`) on the read and write paths: a new cmd-level test, outside the
+  Phase-7-locked files, feeds a real v7 401 from a real v7 `ClientImpl` over a
+  fake transport into `exitCodeFor` and `writeExitCodeFor(outcomeFailed, err)`
+  and asserts `exitAuth`. This is a user-confirmed reading, not a planner
+  assumption.
+- **D-10a confirmation (user, 2026-10-19):** D-10a holds as written. After
+  resource-area discovery, the normalized `LocationUrl` of **every** returned
+  area, not only the five areas a sub-client is built on, is checked with the
+  transport host rule before any sub-client is built. Any foreign host stops the
+  tool with exit 3 and a named `org_url` config error that gives the host.
+  RESEARCH Open Question 3's narrowing to the used areas is not adopted.
+
 ### Claude's Discretion
 - Toolchain pin. The `go` directive goes at the 1.27 patch level that makes
   `govulncheck` clean at implementation time; research found go1.27.2 clean and
