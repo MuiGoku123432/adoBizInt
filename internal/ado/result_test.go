@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -21,9 +22,10 @@ var _ net.Error = fakeNetTimeout{}
 
 func TestClassifyFailure(t *testing.T) {
 	tests := []struct {
-		name string
-		err  error
-		want FailureKind
+		name     string
+		err      error
+		want     FailureKind
+		wantText []string // substrings the error text must carry, if any
 	}{
 		{
 			name: "nil error is not a failure",
@@ -99,12 +101,46 @@ func TestClassifyFailure(t *testing.T) {
 			err:  errors.New("boom"),
 			want: FailureOther,
 		},
+		{
+			// D-01, D-08: the transport refused to wait into the deadline.
+			// A timeout here would push agents to retry harder (Pitfall 9).
+			name:     "D-01 fail-fast is rate_limit with its cause in the text",
+			err:      failFastErr(t),
+			want:     FailureRateLimit,
+			wantText: []string{"ADO asked for", "left in budget"},
+		},
+		{
+			// Held by the pacer, then cancelled: today's cancel rule holds.
+			name: "held then cancelled is other",
+			err:  heldCancelErr(t),
+			want: FailureOther,
+		},
+		{
+			// RESEARCH Open Question 7: neither auth nor timeout, and the
+			// refused host is named.
+			name:     "refused host is other and names the host",
+			err:      refusedHostErr(t),
+			want:     FailureOther,
+			wantText: []string{"evil.example"},
+		},
+		{
+			// D-03 exhausted, as 08-07 wraps it: the 429 still classifies.
+			name:     "429 after exhausted retries is rate_limit",
+			err:      fmt.Errorf("rate limited after 2 retries: %w", wrappedErrorPointer(429, "too many requests")),
+			want:     FailureRateLimit,
+			wantText: []string{"rate limited after 2 retries"},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := classifyFailure(tt.err); got != tt.want {
 				t.Errorf("classifyFailure() kind = %v, want %v", got, tt.want)
+			}
+			for _, want := range tt.wantText {
+				if !strings.Contains(tt.err.Error(), want) {
+					t.Errorf("error text %q does not contain %q", tt.err, want)
+				}
 			}
 		})
 	}

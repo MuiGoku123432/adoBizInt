@@ -593,16 +593,14 @@ func TestRetryAfterOn200PacesNextRequest(t *testing.T) {
 	})
 }
 
-// failFastErr returns the D-01 fail-fast error as a real v7 git client sees it
-// through the transport: the first repositories GET answers 200 with
-// Retry-After: 60, then a second GetRepositories runs under a 1s deadline. The
-// 60s instruction does not fit, so the transport refuses the second request at
-// once and no real time passes. It fails the test unless exactly one
-// repositories request reached the base, so every caller also proves the
-// refused request was never sent. Each call uses its own org (Pitfall 6).
-func failFastErr(t *testing.T) error {
+// primedGitClient returns a real v7 git client over the transport whose pacer
+// has been told to wait: its first repositories GET, made here, answers 200
+// with Retry-After: 60. *repos counts the repositories requests that reached
+// the base, so a caller can prove its own request was never sent. suffix keeps
+// each caller on its own org (Pitfall 6).
+func primedGitClient(t *testing.T, suffix string) (*git.ClientImpl, *int) {
 	t.Helper()
-	orgURL := uniqueOrgURL(t) + "failfast"
+	orgURL := uniqueOrgURL(t) + suffix
 	repos := 0
 	base := withLocations(func(r *http.Request) (*http.Response, error) {
 		if r.Method == http.MethodGet && strings.HasSuffix(strings.ToLower(r.URL.Path), "/_apis/git/repositories") {
@@ -619,16 +617,72 @@ func failFastErr(t *testing.T) error {
 
 	project := "p"
 	if _, err := c.GetRepositories(context.Background(), git.GetRepositoriesArgs{Project: &project}); err != nil {
-		t.Fatalf("first GetRepositories() error = %v", err)
+		t.Fatalf("priming GetRepositories() error = %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
+	return c, &repos
+}
+
+// unsentRepositoriesErr runs GetRepositories on c under ctx and returns its
+// error, failing the test if the call succeeded or if a second repositories
+// request reached the base.
+func unsentRepositoriesErr(t *testing.T, ctx context.Context, c *git.ClientImpl, repos *int) error {
+	t.Helper()
+	project := "p"
 	_, err := c.GetRepositories(ctx, git.GetRepositoriesArgs{Project: &project})
 	if err == nil {
-		t.Fatal("second GetRepositories() error = nil, want the D-01 fail-fast")
+		t.Fatal("GetRepositories() error = nil, want the request not sent")
 	}
-	if repos != 1 {
-		t.Errorf("base saw %d repositories requests, want 1: the fail-fast must not send", repos)
+	if *repos != 1 {
+		t.Errorf("base saw %d repositories requests, want 1 (the priming request only)", *repos)
+	}
+	if !errors.Is(err, transport.ErrNotSent) {
+		t.Errorf("errors.Is(%v, transport.ErrNotSent) = false, want true", err)
+	}
+	return err
+}
+
+// failFastErr returns the D-01 fail-fast error as a real v7 git client sees it
+// through the transport: after the 60s instruction, GetRepositories runs under
+// a 1s deadline, which the wait does not fit, so the transport refuses it at
+// once and no real time passes. It fails the test unless the refused request
+// never reached the base.
+func failFastErr(t *testing.T) error {
+	t.Helper()
+	c, repos := primedGitClient(t, "failfast")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return unsentRepositoriesErr(t, ctx, c, repos)
+}
+
+// heldCancelErr returns the held-then-cancelled error from the same pacer
+// state: the context is cancelled before the call, so the pacer releases the
+// request unsent at once and no real time passes. It wraps context.Canceled.
+func heldCancelErr(t *testing.T) error {
+	t.Helper()
+	c, repos := primedGitClient(t, "heldcancel")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := unsentRepositoriesErr(t, ctx, c, repos)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("errors.Is(%v, context.Canceled) = false, want the held form", err)
+	}
+	return err
+}
+
+// refusedHostErr returns the error the transport gives a read to a host
+// outside the organization. The base must never see it.
+func refusedHostErr(t *testing.T) error {
+	t.Helper()
+	base := rtFunc(func(r *http.Request) (*http.Response, error) {
+		t.Errorf("base received %s %s; the host rule should have refused it", r.Method, r.URL)
+		return jsonResp(r, http.StatusOK, ""), nil
+	})
+	resp, err := transport.New("acme", 0, base).HTTPClient().Get("https://evil.example/x")
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if !errors.Is(err, transport.ErrNotSent) {
+		t.Fatalf("Get(https://evil.example/x) error = %v, want transport.ErrNotSent", err)
 	}
 	return err
 }

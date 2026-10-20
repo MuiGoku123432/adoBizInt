@@ -691,6 +691,32 @@ func TestHeldCancelIsNotSent(t *testing.T) {
 			wantErr:  context.Canceled,
 			wantHeld: 10 * time.Second,
 		},
+		{
+			// A context that already ended reports its own cause, even with
+			// a wait pending that its deadline could never fit: the deadline
+			// ran out before the pacer was asked, so this is a timeout, not a
+			// throttle.
+			name: "deadline already passed",
+			ctx: func() (context.Context, context.CancelFunc) {
+				return context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			},
+			wantErr:  context.DeadlineExceeded,
+			wantHeld: 0,
+		},
+		{
+			// The CLI's shape after a signal: a fetchctx deadline that the
+			// 60s wait does not fit, then a cancel. The cancel wins over the
+			// D-01 fail-fast, so an interrupted read stays other, not
+			// rate_limit.
+			name: "cancelled under a short deadline",
+			ctx: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				cancel()
+				return ctx, cancel
+			},
+			wantErr:  context.Canceled,
+			wantHeld: 0,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -726,6 +752,9 @@ func TestHeldCancelIsNotSent(t *testing.T) {
 				}
 				if !errors.Is(err, tt.wantErr) {
 					t.Errorf("errors.Is(%v, %v) = false, want the context error wrapped", err, tt.wantErr)
+				}
+				if errors.Is(err, ErrRateLimited) {
+					t.Errorf("errors.Is(%v, ErrRateLimited) = true, want false: only the D-01 fail-fast is rate limited", err)
 				}
 				if held := time.Since(start); held != tt.wantHeld {
 					t.Errorf("request held %v before release, want %v", held, tt.wantHeld)
@@ -900,6 +929,245 @@ func TestPaceLogsWaitTaken(t *testing.T) {
 		}
 		if got := waitLines(); len(got) != 1 {
 			t.Errorf("a request with no pending wait added wait lines: %q", got)
+		}
+	})
+}
+
+// assertFailFast checks that err is the D-01 fail-fast: never sent, rate
+// limited, not a deadline and not a timeout, so classifyFailure can only read
+// it as rate_limit.
+func assertFailFast(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("error = nil, want the D-01 fail-fast")
+	}
+	if !errors.Is(err, ErrNotSent) {
+		t.Errorf("errors.Is(%v, ErrNotSent) = false, want true", err)
+	}
+	if !errors.Is(err, ErrRateLimited) {
+		t.Errorf("errors.Is(%v, ErrRateLimited) = false, want true", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("errors.Is(%v, context.DeadlineExceeded) = true, want false: it would classify timeout", err)
+	}
+	var to interface{ Timeout() bool }
+	if errors.As(err, &to) && to.Timeout() {
+		t.Errorf("%v reports Timeout() = true, want false: it would classify timeout", err)
+	}
+}
+
+// TestFailFastBoundary is the PLAT-03 boundary probe for D-01: after
+// Retry-After 5, a request with less than or exactly 5s left before its
+// deadline fails fast without reaching the base, and one with a nanosecond
+// more waits exactly 5s and is sent.
+func TestFailFastBoundary(t *testing.T) {
+	tests := []struct {
+		name     string
+		left     time.Duration
+		wantSent bool
+	}{
+		{name: "minus 1ns", left: 5*time.Second - time.Nanosecond, wantSent: false},
+		{name: "equal", left: 5 * time.Second, wantSent: false},
+		{name: "plus 1ns", left: 5*time.Second + time.Nanosecond, wantSent: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var sent []time.Time
+				base := rtFunc(func(r *http.Request) (*http.Response, error) {
+					sent = append(sent, time.Now())
+					if len(sent) == 1 {
+						return emptyResp(r, http.StatusOK, "Retry-After", "5"), nil
+					}
+					return emptyResp(r, http.StatusOK), nil
+				})
+				client := New("acme", 0, base).HTTPClient()
+				if err := send(client, pacedURL); err != nil {
+					t.Fatalf("priming request error = %v", err)
+				}
+				primed := time.Now()
+
+				ctx, cancel := context.WithTimeout(context.Background(), tt.left)
+				defer cancel()
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, pacedURL, nil)
+				if err != nil {
+					t.Fatalf("NewRequest() error = %v", err)
+				}
+				resp, err := client.Do(req)
+				if resp != nil {
+					resp.Body.Close()
+				}
+
+				if !tt.wantSent {
+					assertFailFast(t, err)
+					if len(sent) != 1 {
+						t.Errorf("base saw %d requests, want 1 (the priming request only)", len(sent))
+					}
+					if held := time.Since(primed); held != 0 {
+						t.Errorf("fail-fast took %v, want no hold at all", held)
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("Do() error = %v, want the request held 5s and sent", err)
+				}
+				if len(sent) != 2 {
+					t.Fatalf("base saw %d requests, want 2", len(sent))
+				}
+				if gap := sent[1].Sub(primed); gap != 5*time.Second {
+					t.Errorf("request sent %v after Retry-After 5, want exactly 5s", gap)
+				}
+			})
+		})
+	}
+}
+
+// TestFailFastClientTimeoutIsDeadline pins the deadline source the CLI and TUI
+// rely on when no caller deadline is set: http.Client.Timeout, which
+// http.Client installs on the request context before calling a custom
+// RoundTripper. A 45s instruction with a 10s per-call budget fails fast.
+func TestFailFastClientTimeoutIsDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		calls := 0
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			calls++
+			return emptyResp(r, http.StatusOK, "Retry-After", "45"), nil
+		})
+		client := New("acme", 10*time.Second, base).HTTPClient()
+		if err := send(client, pacedURL); err != nil {
+			t.Fatalf("priming request error = %v", err)
+		}
+
+		err := send(client, pacedURL)
+
+		assertFailFast(t, err)
+		if calls != 1 {
+			t.Errorf("base called %d times, want 1 (the priming request only)", calls)
+		}
+		for _, want := range []string{"ADO asked for 45s", "10s left in budget"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("fail-fast error %q does not contain %q (D-08)", err, want)
+			}
+		}
+	})
+}
+
+// TestFailFastNotCounted pins that a fail-fast is not a wait: Stats is
+// unchanged and no wait-taken line is logged, but one Warn line records what
+// ADO asked for, what was left and the host, never the URL.
+func TestFailFastNotCounted(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		buf := captureLog(t)
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			return emptyResp(r, http.StatusOK, "Retry-After", "60"), nil
+		})
+		tr := New("acme", 0, base)
+		client := tr.HTTPClient()
+		if err := send(client, pacedURL); err != nil {
+			t.Fatalf("priming request error = %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, pacedURL, nil)
+		if err != nil {
+			t.Fatalf("NewRequest() error = %v", err)
+		}
+		resp, err := client.Do(req)
+		if resp != nil {
+			resp.Body.Close()
+		}
+		assertFailFast(t, err)
+
+		if waits, waited := tr.Stats(); waits != 0 || waited != 0 {
+			t.Errorf("Stats() after a fail-fast = %d, %v, want 0, 0", waits, waited)
+		}
+		var warn []string
+		for _, l := range logLines(buf) {
+			if strings.Contains(l, " wait=") {
+				t.Errorf("a fail-fast logged a wait-taken line %q", l)
+			}
+			if strings.Contains(l, "level=WARN") {
+				warn = append(warn, l)
+			}
+		}
+		if len(warn) != 1 {
+			t.Fatalf("a fail-fast logged %d Warn lines, want 1: %q", len(warn), warn)
+		}
+		for _, want := range []string{"asked=1m0s", "left=1s", "host=dev.azure.com"} {
+			if !strings.Contains(warn[0], want) {
+				t.Errorf("fail-fast line %q does not contain %s", warn[0], want)
+			}
+		}
+		if strings.Contains(buf.String(), "_apis") {
+			t.Errorf("transport log contains the URL path: %q", buf.String())
+		}
+	})
+}
+
+// TestFailFastWhenNotBeforeMovesPastDeadline pins that the wait is decided
+// again after every sleep: a hold that fitted, overtaken by a later response
+// that moves notBefore past the deadline, fails fast before the deadline
+// arrives. The budget is http.Client.Timeout on purpose: if the hold ran on to
+// the deadline, the client's own timer would replace the not-sent error with a
+// plain timeout, losing ErrNotSent, and a never-sent write would read unknown.
+func TestFailFastWhenNotBeforeMovesPastDeadline(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		var mu sync.Mutex
+		var seen []string
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			n := r.URL.Query().Get("n")
+			mu.Lock()
+			seen = append(seen, n)
+			mu.Unlock()
+			switch n {
+			case "slow":
+				<-release
+				return emptyResp(r, http.StatusOK, "Retry-After", "60"), nil
+			case "prime":
+				return emptyResp(r, http.StatusOK, "Retry-After", "5"), nil
+			}
+			return emptyResp(r, http.StatusOK), nil
+		})
+		tr := New("acme", 10*time.Second, base)
+		client := tr.HTTPClient()
+
+		// One request is already at ADO when the pacer starts holding.
+		slow := make(chan error, 1)
+		go func() { slow <- send(client, pacedURL+"?n=slow") }()
+		synctest.Wait()
+		if err := send(client, pacedURL+"?n=prime"); err != nil {
+			t.Fatalf("priming request error = %v", err)
+		}
+		start := time.Now()
+		held := make(chan error, 1)
+		go func() { held <- send(client, pacedURL+"?n=held") }()
+		synctest.Wait()
+
+		// 2s into the 5s hold, the slow request answers Retry-After 60.
+		time.Sleep(2 * time.Second)
+		close(release)
+		if err := <-slow; err != nil {
+			t.Fatalf("slow request error = %v", err)
+		}
+		err := <-held
+		elapsed := time.Since(start)
+
+		assertFailFast(t, err)
+		if want := "ADO asked for 57s, 5s left in budget"; err != nil && !strings.Contains(err.Error(), want) {
+			t.Errorf("fail-fast error %q does not contain %q", err, want)
+		}
+		if elapsed != 5*time.Second {
+			t.Errorf("held request failed after %v, want exactly 5s (when its first hold ended)", elapsed)
+		}
+		for _, n := range seen {
+			if n == "held" {
+				t.Errorf("the held request reached the base, want it refused")
+			}
+		}
+		if waits, waited := tr.Stats(); waits != 1 || waited != 5*time.Second {
+			t.Errorf("Stats() = %d, %v, want 1, 5s (the hold actually taken)", waits, waited)
 		}
 	})
 }
