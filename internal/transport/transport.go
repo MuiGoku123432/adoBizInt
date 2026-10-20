@@ -23,6 +23,7 @@ package transport
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"path"
@@ -152,21 +153,72 @@ func (t *Transport) untilNotBefore() time.Duration {
 	return time.Until(t.notBefore)
 }
 
-// observe reads the server's pacing instruction from a response's headers and
-// moves notBefore to the instructed time if that is later than the current
-// one. Instructions are a maximum, never added: two responses asking for the
-// same wait hold the next request once (D-04).
+// observe reads the server's pacing instructions from a response's headers,
+// on any status, and moves notBefore to the instructed time if that is later
+// than the current one (D-04). Only Retry-After and X-RateLimit-Delay are
+// instructions; X-RateLimit-Remaining, -Limit and -Resource never change
+// timing. Instructions combine as a maximum, never a sum: Retry-After and
+// X-RateLimit-Delay on one response wait the longer of the two (Pitfall 10),
+// and two responses asking for the same wait hold the next request once.
 func (t *Transport) observe(h http.Header) {
-	secs, err := strconv.Atoi(h.Get("Retry-After"))
-	if err != nil || secs < 0 {
+	now := time.Now()
+	retry, _ := retryAfter(h.Get("Retry-After"), now)
+	delay, _ := rateLimitDelay(h.Get("X-RateLimit-Delay"))
+	wait := max(retry, delay)
+	if wait <= 0 {
 		return
 	}
-	until := time.Now().Add(time.Duration(secs) * time.Second)
+	until := now.Add(wait)
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if until.After(t.notBefore) {
 		t.notBefore = until
 	}
+}
+
+// maxWaitSeconds is the longest wait, in whole seconds, a time.Duration holds.
+// A longer instruction would wrap around, so it is ignored as unusable.
+const maxWaitSeconds = math.MaxInt64 / int64(time.Second)
+
+// retryAfter parses a Retry-After value: non-negative integer seconds, or an
+// HTTP-date in any of the three formats http.ParseTime accepts, measured from
+// now. An absent value is no wait. A present value that is negative,
+// unparseable, too large or already past is no wait and an error.
+func retryAfter(v string, now time.Time) (time.Duration, error) {
+	if v == "" {
+		return 0, nil
+	}
+	if secs, err := strconv.Atoi(v); err == nil {
+		if secs < 0 || int64(secs) > maxWaitSeconds {
+			return 0, fmt.Errorf("Retry-After %d seconds is outside 0 to %d", secs, maxWaitSeconds)
+		}
+		return time.Duration(secs) * time.Second, nil
+	}
+	date, err := http.ParseTime(v)
+	if err != nil {
+		return 0, errors.New("Retry-After is neither seconds nor an HTTP-date")
+	}
+	wait := date.Sub(now)
+	if wait < 0 {
+		return 0, errors.New("Retry-After date is in the past")
+	}
+	return wait, nil
+}
+
+// rateLimitDelay parses X-RateLimit-Delay: decimal seconds, kept at nanosecond
+// precision, so 0.125 is exactly 125ms. An absent value is no wait. A present
+// value that is negative, unparseable, not finite or too large is no wait and
+// an error.
+func rateLimitDelay(v string) (time.Duration, error) {
+	if v == "" {
+		return 0, nil
+	}
+	secs, err := strconv.ParseFloat(v, 64)
+	// !(secs >= 0) also rejects NaN, and the upper bound rejects +Inf.
+	if err != nil || !(secs >= 0) || secs > float64(maxWaitSeconds) {
+		return 0, errors.New("X-RateLimit-Delay is not a usable number of seconds")
+	}
+	return time.Duration(math.Round(secs * float64(time.Second))), nil
 }
 
 // closeBody closes the request body, which the RoundTripper contract requires
