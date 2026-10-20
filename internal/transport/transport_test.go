@@ -14,7 +14,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -431,5 +433,170 @@ func TestHTTPClientTimeout(t *testing.T) {
 
 	if got := New("acme", 0, base).HTTPClient().Timeout; got != 0 {
 		t.Errorf("HTTPClient().Timeout with a zero budget = %v, want 0", got)
+	}
+}
+
+// pacedURL is an org-bound URL the pacing tests send to.
+const pacedURL = "https://dev.azure.com/acme/_apis/x"
+
+// send issues one GET to target through c and closes the response. It returns
+// the error instead of failing the test, so goroutines may call it.
+func send(c *http.Client, target string) error {
+	req, err := http.NewRequest(http.MethodGet, target, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return err
+	}
+	return resp.Body.Close()
+}
+
+// gapAfter sends two requests through a fresh transport whose first response
+// carries header (key/value pairs) on an HTTP 200, and returns how long after
+// the first the second reached the base. It must run inside a synctest bubble,
+// where the fake clock makes the gap exact and costs no wall time.
+func gapAfter(t *testing.T, header ...string) time.Duration {
+	t.Helper()
+	var sent []time.Time
+	base := rtFunc(func(r *http.Request) (*http.Response, error) {
+		sent = append(sent, time.Now())
+		if len(sent) == 1 {
+			return emptyResp(r, http.StatusOK, header...), nil
+		}
+		return emptyResp(r, http.StatusOK), nil
+	})
+	client := New("acme", 0, base).HTTPClient()
+	for i := 0; i < 2; i++ {
+		if err := send(client, pacedURL); err != nil {
+			t.Fatalf("request %d error = %v", i+1, err)
+		}
+	}
+	if len(sent) != 2 {
+		t.Fatalf("base saw %d requests, want 2", len(sent))
+	}
+	return sent[1].Sub(sent[0])
+}
+
+// TestPaceRetryAfterHTTPDate pins the HTTP-date form of Retry-After (D-04): a
+// date ten seconds ahead holds the next request exactly ten seconds.
+func TestPaceRetryAfterHTTPDate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		date := time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat)
+		if gap := gapAfter(t, "Retry-After", date); gap != 10*time.Second {
+			t.Errorf("Retry-After %q held the next request %v, want exactly 10s", date, gap)
+		}
+	})
+}
+
+// TestPaceRateLimitDelay pins X-RateLimit-Delay on a 200 at the precision ADO
+// gives it: decimal seconds, so 0.125 is exactly 125ms (D-04, Pitfall 10).
+func TestPaceRateLimitDelay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		if gap := gapAfter(t, "X-RateLimit-Delay", "0.125"); gap != 125*time.Millisecond {
+			t.Errorf("X-RateLimit-Delay 0.125 held the next request %v, want exactly 125ms", gap)
+		}
+	})
+}
+
+// TestPaceMaxNotSum pins that two instructions on one response combine as
+// their maximum, never their sum (Pitfall 10).
+func TestPaceMaxNotSum(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		if gap := gapAfter(t, "Retry-After", "3", "X-RateLimit-Delay", "5.5"); gap != 5500*time.Millisecond {
+			t.Errorf("Retry-After 3 with X-RateLimit-Delay 5.5 held the next request %v, want exactly 5.5s", gap)
+		}
+	})
+}
+
+// TestPaceSameInstructionDoesNotStack pins idempotency: two responses that
+// arrive at the same instant, each with Retry-After 5, hold the next request
+// 5s, not 10s. The fake base holds both requests behind a barrier until both
+// have arrived, so neither waited behind the other's instruction.
+func TestPaceSameInstructionDoesNotStack(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		arrived := make(chan struct{})
+		release := make(chan struct{})
+		var mu sync.Mutex
+		var sent []time.Time
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			sent = append(sent, time.Now())
+			first := len(sent) <= 2
+			mu.Unlock()
+			if first {
+				arrived <- struct{}{}
+				<-release
+				return emptyResp(r, http.StatusOK, "Retry-After", "5"), nil
+			}
+			return emptyResp(r, http.StatusOK), nil
+		})
+		client := New("acme", 0, base).HTTPClient()
+
+		errs := make(chan error, 2)
+		for i := 0; i < 2; i++ {
+			go func() { errs <- send(client, pacedURL) }()
+		}
+		<-arrived
+		<-arrived
+		answered := time.Now()
+		close(release)
+		for i := 0; i < 2; i++ {
+			if err := <-errs; err != nil {
+				t.Fatalf("concurrent request error = %v", err)
+			}
+		}
+		if err := send(client, pacedURL); err != nil {
+			t.Fatalf("third request error = %v", err)
+		}
+
+		if len(sent) != 3 {
+			t.Fatalf("base saw %d requests, want 3", len(sent))
+		}
+		if gap := sent[2].Sub(answered); gap != 5*time.Second {
+			t.Errorf("third request sent %v after two Retry-After 5 answers, want exactly 5s (the same instruction must not stack)", gap)
+		}
+	})
+}
+
+// TestPaceRemainingIgnored pins D-04's no proactive slowdown: the
+// informational headers alone never hold a request, even with nothing
+// remaining.
+func TestPaceRemainingIgnored(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		gap := gapAfter(t, "X-RateLimit-Remaining", "0", "X-RateLimit-Limit", "200", "X-RateLimit-Resource", "Core")
+		if gap != 0 {
+			t.Errorf("X-RateLimit-Remaining 0 held the next request %v, want no hold", gap)
+		}
+	})
+}
+
+// TestPaceIgnoresInvalid pins that a negative, unparseable, non-finite,
+// overflowing or past instruction holds nothing.
+func TestPaceIgnoresInvalid(t *testing.T) {
+	tests := []struct {
+		name   string
+		header func() []string // built inside the bubble, so a date uses the fake clock
+	}{
+		{"negative Retry-After", func() []string { return []string{"Retry-After", "-5"} }},
+		{"garbage Retry-After", func() []string { return []string{"Retry-After", "garbage"} }},
+		{"past HTTP-date", func() []string {
+			return []string{"Retry-After", time.Now().Add(-10 * time.Second).UTC().Format(http.TimeFormat)}
+		}},
+		{"negative X-RateLimit-Delay", func() []string { return []string{"X-RateLimit-Delay", "-1"} }},
+		{"NaN X-RateLimit-Delay", func() []string { return []string{"X-RateLimit-Delay", "NaN"} }},
+		{"infinite X-RateLimit-Delay", func() []string { return []string{"X-RateLimit-Delay", "+Inf"} }},
+		{"overflowing Retry-After", func() []string { return []string{"Retry-After", "99999999999999"} }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				header := tt.header()
+				if gap := gapAfter(t, header...); gap != 0 {
+					t.Errorf("%s %q held the next request %v, want no hold", header[0], header[1], gap)
+				}
+			})
+		})
 	}
 }
