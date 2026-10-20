@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Scrum Master
-current_phase: 7
-current_phase_name: Guarded TUI Writes
+current_phase: 08
+current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-10-19T17:44:20.562Z"
-last_activity: 2026-10-16
-last_activity_desc: Completed 07-09-PLAN.md (CR-01 gap closure)
+stopped_at: Completed 08-01-PLAN.md
+last_updated: "2026-10-20T15:41:08.585Z"
+last_activity: 2026-10-19
+last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 17
-  completed_plans: 9
+  completed_plans: 10
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -25,16 +25,16 @@ state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 See: .planning/PROJECT.md (updated 2026-10-13)
 
 **Core value:** An agent driving this tool must never mistake a broken call for an empty result.
-**Current focus:** Phase 7 — Guarded TUI Writes
+**Current focus:** Phase 08 — platform-upgrade-and-pacing
 
 ## Current Position
 
-Phase: 7 (Guarded TUI Writes) — EXECUTING
-Plan: 9 of 9
-Status: Gap closure 07-09 (CR-01) executed -- ready for phase re-verification
-Last activity: 2026-10-16 -- Completed 07-09-PLAN.md (CR-01 gap closure)
+Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-10-19 — Phase 08 execution started
 
-Progress: [██████████] 100%
+Progress: [██████░░░░] 59%
 
 ## Performance Metrics
 
@@ -105,6 +105,7 @@ Progress: [██████████] 100%
 | Phase 07 P07 | 6 min | 3 tasks | 5 files |
 | Phase 07 P08 | 3 min | 2 tasks | 2 files |
 | Phase 07 P09 | 6 min | 2 tasks | 5 files |
+| Phase 08 P01 | 8 min | 2 tasks | 35 files |
 
 ## Accumulated Context
 
@@ -222,6 +223,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 07]: 07-09: TUI guarded writes run under the TUI signal.NotifyContext via confirm.SetParent; confirm.Execute counts itself in an inflight WaitGroup and main calls confirm.Wait() after p.Run() and before its error branch (CR-01)
 - [Phase 07]: 07-09: the TUI signal context is not handed to the bubbletea program (G-03): its signal goroutine blocking send would hang shutdown with a raw terminal
 - [Phase 07]: 07-09: GUARD-01/02/04 left unchecked in REQUIREMENTS.md pending phase re-verification (20b8d1c reverted them as premature)
+- [Phase 08]: 08-01: User override (2026-10-20) - the Phase 7 verification gate moves to 08-08 only; 08-01 Task 1 precondition treated as satisfied, 08-08 keeps its own precondition
+- [Phase 08]: 08-01: go directive pinned at 1.27.2 (govulncheck v1.9.0 clean); azuredevops/v7 v7.1.0 and x/sys v0.47.0 landed in one commit with the real-v7 401 tests
+- [Phase 08]: 08-01: internal/ado/v7_test.go is the shared real-SDK harness (rtFunc, jsonResp, v7Locations, withLocations, uniqueOrgURL); later plans append to v7Locations
+- [Phase 08]: 08-01: PLAT-02 stays Pending until 08-05, 08-06 and 08-08 (which also declare it) finish
 
 ### Roadmap Evolution
 
@@ -289,9 +294,9 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-19T13:28:53.733Z
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-platform-upgrade-and-pacing/08-CONTEXT.md
+Last session: 2026-10-20T15:41:08.575Z
+Stopped at: Completed 08-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

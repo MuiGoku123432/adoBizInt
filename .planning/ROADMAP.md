@@ -117,11 +117,11 @@ Plans:
   4. The PAT is only ever sent to hosts validated against the configured organization; a request aimed at any other host is refused before the credential leaves the process
   5. One live read per ADO sub-client and one dry run per write verb pass against the real organization, and the results are recorded before Phase 9 starts
 
-**Plans**: 8 plans
+**Plans**: 1/8 plans executed
 Plans:
 **Wave 1** *(execution waits for Phase 7 verification)*
 
-- [ ] 08-01-PLAN.md — PLAT-02 atomic swap: azuredevops/v7 v7.1.0, Go 1.27.N, x/sys v0.47.0, govulncheck in CI, real-v7 401 test down to exit 2, post-swap lock hashes
+- [x] 08-01-PLAN.md — PLAT-02 atomic swap: azuredevops/v7 v7.1.0, Go 1.27.N, x/sys v0.47.0, govulncheck in CI, real-v7 401 test down to exit 2, post-swap lock hashes
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -298,7 +298,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
-| 8. Platform Upgrade and Pacing | v2.0 | 0/TBD | Not started | - |
+| 8. Platform Upgrade and Pacing | v2.0 | 1/8 | In Progress|  |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
 | 11. Board Honesty | v2.0 | 0/TBD | Not started | - |
