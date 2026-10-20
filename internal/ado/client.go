@@ -65,6 +65,10 @@ type Client struct {
 // transport. WithHTTPClient also ignores connection.Timeout, so the per-call
 // budget lives on tr.HTTPClient() rather than on the connection.
 //
+// Every read the client makes, discovery and identity included, retries an
+// HTTP 429 at most twice through the decorators in retry.go; no write is ever
+// retried (D-03). The retries share one counter, which FetchRetries reports.
+//
 // Discovery and identity run on an unbounded startup context, unchanged from
 // before the v7 upgrade (g-01-1 is carried forward, not fixed here).
 func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
@@ -73,8 +77,12 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 
 	ctx := context.Background()
 
+	// D-03: every read below, the two startup reads included, retries a 429 in
+	// the service layer, and writes never do; all of them share this counter.
+	retries := new(atomic.Int64)
+
 	root := azuredevops.NewClientWithOptions(conn, conn.BaseUrl, opt)
-	discovered, err := root.GetResourceAreas(ctx)
+	discovered, err := retryRead(ctx, retries, func() (*[]azuredevops.ResourceAreaInfo, error) { return root.GetResourceAreas(ctx) })
 	if err != nil {
 		return nil, err
 	}
@@ -107,13 +115,13 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 		return nil, err
 	}
 
-	// D-03: reads on these clients retry a 429 in the service layer, writes
-	// never; every decorator shares this one counter.
-	retries := new(atomic.Int64)
-	workitemClient := &workitemtracking.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, witURL, opt)}
+	// The four narrow-interface clients are wrapped in their read-only retry
+	// decorators (retry.go). The dormant work client has no interface and no
+	// reads until Phase 9 (D-16), so it stays unwrapped.
+	workitemClient := retryingWorkItems{workItemAPI: &workitemtracking.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, witURL, opt)}, retries: retries}
 	gitClient := retryingGit{gitAPI: &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, gitURL, opt)}, retries: retries}
-	buildClient := &build.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, buildURL, opt)}
-	releaseClient := &release.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, releaseURL, opt)}
+	buildClient := retryingBuild{buildAPI: &build.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, buildURL, opt)}, retries: retries}
+	releaseClient := retryingRelease{releaseAPI: &release.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, releaseURL, opt)}, retries: retries}
 	workClient := &work.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, workURL, opt)}
 
 	// Fetch current user from PAT identity
@@ -122,7 +130,11 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 	currentUser := ""
 	currentUserID := ""
 	currentUserEmail := cfg.UserEmail // Use configured email if available
-	getConnectionData := locationClient.GetConnectionData
+	// The identity read retries too, here and in the approval-time fallback
+	// (pullrequests.go), which calls this same func when the cache is empty.
+	getConnectionData := func(ctx context.Context, args location.GetConnectionDataArgs) (*location.ConnectionData, error) {
+		return retryRead(ctx, retries, func() (*location.ConnectionData, error) { return locationClient.GetConnectionData(ctx, args) })
+	}
 	connData, err := getConnectionData(ctx, location.GetConnectionDataArgs{})
 	if err == nil && connData != nil {
 		if connData.AuthorizedUser != nil && connData.AuthorizedUser.ProviderDisplayName != nil {

@@ -186,8 +186,9 @@ func TestDashboardUsesProjectMacro(t *testing.T) {
 //
 // The site count and the QueryByWiql call count must both be exactly 2
 // (getProjectWorkItems and getProjectCounts): a third WIQL query must fail
-// until it is reviewed (D-12). TestWIQLCheckCatchesBypasses proves the walk
-// reports each bypass shape.
+// until it is reviewed (D-12). The read-retry decorator's pass-through is not
+// a query of its own and is not counted (forwardsOwnArgs).
+// TestWIQLCheckCatchesBypasses proves the walk reports each bypass shape.
 //
 // This is an AST walk rather than a grep for a reason that is specific to this
 // repository: STATE.md records three Phase 3 incidents where a "grep returns
@@ -298,7 +299,7 @@ func checkWIQL(fset *token.FileSet, files map[string]*ast.File) (int, int, []str
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				switch n := n.(type) {
 				case *ast.CallExpr:
-					if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "QueryByWiql" {
+					if sel, ok := n.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "QueryByWiql" && !forwardsOwnArgs(fn, n) {
 						sinks++
 					}
 				case *ast.CompositeLit:
@@ -313,6 +314,35 @@ func checkWIQL(fset *token.FileSet, files map[string]*ast.File) (int, int, []str
 		}
 	}
 	return len(sites), sinks, problems
+}
+
+// forwardsOwnArgs reports whether call passes method fn's own parameters,
+// unchanged and in order, to a method of fn's own name. That is the shape of a
+// decorator such as retryingWorkItems.QueryByWiql (retry.go): it builds no
+// query, and the query it forwards is built, and counted as a sink, at the
+// decorated method's call sites, so the forward is not a sink of its own. A
+// forward that passes anything else, such as a fresh QueryByWiqlArgs, still
+// counts.
+func forwardsOwnArgs(fn *ast.FuncDecl, call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || fn.Recv == nil || sel.Sel.Name != fn.Name.Name {
+		return false
+	}
+	var params []string
+	for _, field := range fn.Type.Params.List {
+		for _, name := range field.Names {
+			params = append(params, name.Name)
+		}
+	}
+	if len(call.Args) != len(params) {
+		return false
+	}
+	for i, arg := range call.Args {
+		if id, ok := arg.(*ast.Ident); !ok || id.Name != params[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // checkWiqlQuery reports why lit's Query does not come from a checked site, or
