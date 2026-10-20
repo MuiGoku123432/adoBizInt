@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -455,6 +456,43 @@ func TestNewClientAllowsEveryBoundArea(t *testing.T) {
 
 	if _, err := NewClient(cfg, transport.New(cfg.Org(), 0, base)); err != nil {
 		t.Fatalf("NewClient() error = %v, want every org-bound area allowed", err)
+	}
+}
+
+// TestValidatedOrgURLPassesHostRule ties D-12 to D-09: every org_url shape
+// Validate accepts yields, once the SDK has normalized it into the connection
+// BaseUrl, a URL the transport host rule allows for the org Config.Org parses.
+// Otherwise a valid config would pass startup validation and then have every
+// request refused.
+func TestValidatedOrgURLPassesHostRule(t *testing.T) {
+	for _, orgURL := range []string{
+		"https://dev.azure.com/example",
+		"https://dev.azure.com/example/",
+		"https://Dev.Azure.com/Example",
+		"https://example.visualstudio.com",
+		"https://example.visualstudio.com/",
+	} {
+		t.Run(orgURL, func(t *testing.T) {
+			cfg := &config.Config{
+				PAT:          "fixture-pat",
+				OrgURL:       orgURL,
+				Projects:     config.StringSlice{"p"},
+				PollInterval: 30 * time.Second,
+				FetchTimeout: 2 * time.Minute,
+			}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v, want nil", err)
+			}
+
+			baseURL := azuredevops.NewPatConnection(orgURL, "x").BaseUrl
+			u, err := url.Parse(baseURL)
+			if err != nil {
+				t.Fatalf("url.Parse(%q) error = %v", baseURL, err)
+			}
+			if !transport.New(cfg.Org(), 0, nil).Allowed(u) {
+				t.Errorf("Allowed(%q) = false for org %q, want the SDK base URL of a validated org_url allowed", baseURL, cfg.Org())
+			}
+		})
 	}
 }
 

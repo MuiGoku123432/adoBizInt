@@ -177,6 +177,13 @@ func (c *Config) Validate() error {
 	if c.OrgURL == "" {
 		return &ConfigError{Field: "org_url", Message: "Organization URL is required"}
 	}
+	// D-12: https plus one of the two cloud shapes makes the {org} the transport
+	// host rule binds the PAT to unambiguous, and keeps the PAT off cleartext.
+	// On-prem Azure DevOps Server is no longer supported. The value is checked,
+	// never rewritten.
+	if _, err := parseOrgURL(c.OrgURL); err != nil {
+		return &ConfigError{Field: "org_url", Message: err.Error()}
+	}
 	// D-10: an empty list makes every read fan out over nothing and report
 	// complete:true. This covers the CLI and the TUI alike, because run()
 	// validates before both.

@@ -212,6 +212,105 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+// TestValidateOrgURL pins D-12: org_url must be https and one of the two cloud
+// shapes, https://dev.azure.com/{org} or https://{org}.visualstudio.com, each
+// with an optional trailing slash. Anything else, on-prem Azure DevOps Server
+// included, is a named org_url error, so run() exits 3 before any request.
+// The check runs after the missing-PAT check, so a missing credential is still
+// reported first.
+func TestValidateOrgURL(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			PAT:          "token",
+			OrgURL:       "https://dev.azure.com/example",
+			PollInterval: 30 * time.Second,
+			FetchTimeout: 2 * time.Minute,
+			Projects:     StringSlice{"P"},
+		}
+	}
+
+	orgURL := func(u string) func(*Config) { return func(c *Config) { c.OrgURL = u } }
+	tests := []struct {
+		name      string
+		mutate    func(*Config)
+		wantField string
+	}{
+		{name: "dev.azure.com org", mutate: orgURL("https://dev.azure.com/example"), wantField: ""},
+		{name: "dev.azure.com org with trailing slash", mutate: orgURL("https://dev.azure.com/example/"), wantField: ""},
+		{name: "dev.azure.com mixed case", mutate: orgURL("https://Dev.Azure.com/Example"), wantField: ""},
+		{name: "visualstudio.com org", mutate: orgURL("https://example.visualstudio.com"), wantField: ""},
+		{name: "visualstudio.com org with trailing slash", mutate: orgURL("https://example.visualstudio.com/"), wantField: ""},
+
+		{name: "http scheme", mutate: orgURL("http://dev.azure.com/example"), wantField: "org_url"},
+		{name: "userinfo", mutate: orgURL("https://user@dev.azure.com/example"), wantField: "org_url"},
+		{name: "explicit port", mutate: orgURL("https://dev.azure.com:443/example"), wantField: "org_url"},
+		{name: "query", mutate: orgURL("https://dev.azure.com/example?x=1"), wantField: "org_url"},
+		{name: "fragment", mutate: orgURL("https://dev.azure.com/example#f"), wantField: "org_url"},
+		{name: "org and project path", mutate: orgURL("https://dev.azure.com/example/project"), wantField: "org_url"},
+		{name: "dev.azure.com root with slash", mutate: orgURL("https://dev.azure.com/"), wantField: "org_url"},
+		{name: "dev.azure.com root", mutate: orgURL("https://dev.azure.com"), wantField: "org_url"},
+		{name: "empty first path segment", mutate: orgURL("https://dev.azure.com//example"), wantField: "org_url"},
+		{name: "foreign host", mutate: orgURL("https://example.com/org"), wantField: "org_url"},
+		{name: "visualstudio.com with a path", mutate: orgURL("https://example.visualstudio.com/path"), wantField: "org_url"},
+		{name: "visualstudio.com two labels", mutate: orgURL("https://a.b.visualstudio.com"), wantField: "org_url"},
+		{name: "bare visualstudio.com", mutate: orgURL("https://visualstudio.com"), wantField: "org_url"},
+		{name: "on-prem server collection", mutate: orgURL("https://tfs.corp.local/tfs/DefaultCollection"), wantField: "org_url"},
+
+		{
+			// The shape check runs after pat, so a missing credential is still
+			// the first thing the operator is told about.
+			name:      "missing pat with a bad org url",
+			mutate:    func(c *Config) { c.PAT = ""; c.OrgURL = "http://dev.azure.com/example" },
+			wantField: "pat",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base()
+			tt.mutate(cfg)
+
+			err := cfg.Validate()
+			if tt.wantField == "" {
+				if err != nil {
+					t.Fatalf("Validate() error = %v, want nil", err)
+				}
+				return
+			}
+
+			cfgErr, ok := err.(*ConfigError)
+			if !ok {
+				t.Fatalf("Validate() error = %v (%T), want *ConfigError", err, err)
+			}
+			if cfgErr.Field != tt.wantField {
+				t.Errorf("Validate() ConfigError.Field = %v, want %v", cfgErr.Field, tt.wantField)
+			}
+		})
+	}
+}
+
+// TestOrg pins the {org} the transport binds the PAT to: lowercase, from either
+// cloud shape, and empty for a value that does not parse, so the transport
+// refuses every request rather than binding to a guess.
+func TestOrg(t *testing.T) {
+	tests := []struct {
+		orgURL string
+		want   string
+	}{
+		{orgURL: "https://dev.azure.com/Fabrikam/", want: "fabrikam"},
+		{orgURL: "https://Fabrikam.visualstudio.com", want: "fabrikam"},
+		{orgURL: "https://[::1", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.orgURL, func(t *testing.T) {
+			cfg := &Config{OrgURL: tt.orgURL}
+			if got := cfg.Org(); got != tt.want {
+				t.Errorf("Org() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestLoadRejectsBlankProjects drives every load path that can yield an empty
 // or blank projects list through Load and then Validate. The YAML sequence and
 // the legacy project key do not trim, so D-11's blank check is the only guard on
