@@ -13,8 +13,10 @@ import (
 // These package-local interfaces make destructive write methods testable without
 // crossing the Azure DevOps REST boundary (SEAM-01). Each interface declares only
 // methods this package calls; adding an uncalled method violates ROADMAP SC4.
-// The SDK constructors return interfaces, so their assignments in NewClient are
-// already compile-time drift checks. Do not add concrete ClientImpl assertions.
+// NewClient assigns concrete &X.ClientImpl values, built with
+// NewClientWithOptions on the injected transport (D-11), to these
+// interface-typed fields. That assignment is itself the compile-time drift
+// check, so no separate ClientImpl assertion is added.
 type workItemAPI interface {
 	UpdateWorkItem(context.Context, workitemtracking.UpdateWorkItemArgs) (*workitemtracking.WorkItem, error)
 	GetWorkItems(context.Context, workitemtracking.GetWorkItemsArgs) (*[]workitemtracking.WorkItem, error)
