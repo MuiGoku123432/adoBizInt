@@ -2,6 +2,8 @@ package ado
 
 import (
 	"context"
+	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -47,6 +49,11 @@ type Client struct {
 // client tr provides, so every request goes through the org-bound transport
 // (D-10, D-11).
 //
+// After resource-area discovery and before any sub-client exists, every
+// discovered location is checked against the transport's host rule (D-10a,
+// checkAreaHosts); a foreign one returns an org_url ConfigError, which main
+// maps to exit 3, and nothing further is sent.
+//
 // Each sub-client is built explicitly with NewClientWithOptions on its
 // discovered resource-area location. The SDK's own constructors cannot be used:
 // a typed X.NewClient(ctx, connection), location.NewClient and
@@ -70,6 +77,9 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 	var areas []azuredevops.ResourceAreaInfo
 	if discovered != nil {
 		areas = *discovered
+	}
+	if err := checkAreaHosts(areas, tr); err != nil {
+		return nil, err
 	}
 
 	witURL, err := areaURL(areas, workitemtracking.ResourceAreaId, conn.BaseUrl)
@@ -165,6 +175,43 @@ func areaURL(areas []azuredevops.ResourceAreaInfo, id uuid.UUID, baseURL string)
 		return strings.ToLower(strings.TrimRight(*area.LocationUrl, "/")), nil
 	}
 	return "", azuredevops.ResourceAreaIdNotRegisteredError{ResourceAreaId: id, Url: baseURL}
+}
+
+// checkAreaHosts is the D-10a startup check. It applies the transport's host
+// rule (D-09) to the location of EVERY area the discovery returned, not only
+// the five areas a sub-client is built on (08-CONTEXT D-10a confirmation,
+// user, 2026-10-19; RESEARCH Open Question 3's narrowing to the used areas is
+// not adopted). An unused area on an unexpected host therefore stops startup:
+// refusing an unexpected but legitimate host is the safe way to fail, and the
+// live smoke run surfaces any such case.
+//
+// An entry with no id or no location names no host and is skipped; areaURL
+// refuses a used area in that state. Each location is normalized as the SDK
+// normalizes it before the check, so the URL checked is the URL a sub-client
+// would be built on.
+func checkAreaHosts(areas []azuredevops.ResourceAreaInfo, tr *transport.Transport) error {
+	for _, area := range areas {
+		if area.Id == nil || area.LocationUrl == nil || *area.LocationUrl == "" {
+			continue
+		}
+		loc := strings.ToLower(strings.TrimRight(*area.LocationUrl, "/"))
+		u, err := url.Parse(loc)
+		if err == nil && tr.Allowed(u) {
+			continue
+		}
+		name := area.Id.String()
+		if area.Name != nil && *area.Name != "" {
+			name = *area.Name
+		}
+		if err != nil {
+			return &config.ConfigError{Field: "org_url", Message: fmt.Sprintf(
+				"resource area %q reports an unparsable location %q; the PAT will not be sent there", name, loc)}
+		}
+		return &config.ConfigError{Field: "org_url", Message: fmt.Sprintf(
+			"resource area %q is located at %q on host %q, outside the organization org_url names; the PAT will not be sent there",
+			name, loc, u.Hostname())}
+	}
+	return nil
 }
 
 // FetchTimeout reports the configured budget for one whole multi-project
