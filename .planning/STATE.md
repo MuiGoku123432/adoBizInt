@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-01-PLAN.md
-last_updated: "2026-10-20T15:41:08.585Z"
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-10-20T15:55:55.880Z"
 last_activity: 2026-10-19
 last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 17
-  completed_plans: 10
+  completed_plans: 11
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-10-19 — Phase 08 execution started
 
-Progress: [██████░░░░] 59%
+Progress: [███████░░░] 65%
 
 ## Performance Metrics
 
@@ -106,6 +106,7 @@ Progress: [██████░░░░] 59%
 | Phase 07 P08 | 3 min | 2 tasks | 2 files |
 | Phase 07 P09 | 6 min | 2 tasks | 5 files |
 | Phase 08 P01 | 8 min | 2 tasks | 35 files |
+| Phase 08 P02 | 11 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -227,6 +228,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-01: go directive pinned at 1.27.2 (govulncheck v1.9.0 clean); azuredevops/v7 v7.1.0 and x/sys v0.47.0 landed in one commit with the real-v7 401 tests
 - [Phase 08]: 08-01: internal/ado/v7_test.go is the shared real-SDK harness (rtFunc, jsonResp, v7Locations, withLocations, uniqueOrgURL); later plans append to v7Locations
 - [Phase 08]: 08-01: PLAT-02 stays Pending until 08-05, 08-06 and 08-08 (which also declare it) finish
+- [Phase 08]: 08-02: internal/transport is the only builder of the SDK http.Client; ado.NewClient(cfg, tr) builds root, wit, git, build, release, work and location with NewClientWithOptions + WithHTTPClient(tr.HTTPClient()); TestSubClientsUseInjectedClient (go/ast, >=7 constructions) forbids every bypass (D-11)
+- [Phase 08]: 08-02: D-10a checkAreaHosts checks every discovered LocationUrl, used or not, before any sub-client is built; refusal is ConfigError org_url naming area and host, exit 3. Entries with no id or location are skipped
+- [Phase 08]: 08-02: transport.New lowercases org and Allowed fails closed on an empty org; notSentError carries org for its message and has no Timeout method
+- [Phase 08]: 08-02: PLAT-03 stays Pending in REQUIREMENTS.md until the later Phase 8 plans that also declare it finish (shared-ID gate)
 
 ### Roadmap Evolution
 
@@ -294,8 +299,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T15:41:08.575Z
-Stopped at: Completed 08-01-PLAN.md
+Last session: 2026-10-20T15:55:55.847Z
+Stopped at: Completed 08-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

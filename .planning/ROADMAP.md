@@ -117,7 +117,7 @@ Plans:
   4. The PAT is only ever sent to hosts validated against the configured organization; a request aimed at any other host is refused before the credential leaves the process
   5. One live read per ADO sub-client and one dry run per write verb pass against the real organization, and the results are recorded before Phase 9 starts
 
-**Plans**: 1/8 plans executed
+**Plans**: 2/8 plans executed
 Plans:
 **Wave 1** *(execution waits for Phase 7 verification)*
 
@@ -125,7 +125,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08-02-PLAN.md — Org-bound transport, every discovered LocationUrl checked at startup (D-09/D-10a), every sub-client on the injected client (D-11)
+- [x] 08-02-PLAN.md — Org-bound transport, every discovered LocationUrl checked at startup (D-09/D-10a), every sub-client on the injected client (D-11)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -298,7 +298,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
-| 8. Platform Upgrade and Pacing | v2.0 | 1/8 | In Progress|  |
+| 8. Platform Upgrade and Pacing | v2.0 | 2/8 | In Progress|  |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
 | 11. Board Honesty | v2.0 | 0/TBD | Not started | - |
