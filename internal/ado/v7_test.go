@@ -593,6 +593,53 @@ func TestRetryAfterOn200PacesNextRequest(t *testing.T) {
 	})
 }
 
+// tf400733 is the body ADO returns with a 429 when a request is throttled.
+const tf400733 = `{"$id":"1","message":"TF400733: The request has been canceled: Request was blocked due to exceeding usage of resource 'Core' in namespace 'User'.","typeKey":"RequestBlockedException","errorCode":0,"eventId":3000}`
+
+// TestReadRetriedOnRateLimitThenSucceeds is the D-03 tracer: a git read built
+// by NewClient that gets a 429 with Retry-After: 1 is re-issued once by the
+// service-layer decorator, the re-issued request waits exactly 1s in the
+// transport's pacer before it is sent, the read then succeeds, and the client
+// counts one retry for the CLI summary (D-05).
+func TestReadRetriedOnRateLimitThenSucceeds(t *testing.T) {
+	orgURL := uniqueOrgURL(t)
+	synctest.Test(t, func(t *testing.T) {
+		var seen []v7Request
+		var sent []time.Time
+		discovery := newClientBase(t, usedAreas(orgURL), &seen)
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodGet && strings.HasSuffix(strings.ToLower(r.URL.Path), "/_apis/git/repositories") {
+				sent = append(sent, time.Now())
+				if len(sent) == 1 {
+					return jsonResp(r, http.StatusTooManyRequests, tf400733, "Retry-After", "1"), nil
+				}
+				return jsonResp(r, http.StatusOK, `{"count":0,"value":[]}`), nil
+			}
+			return discovery(r)
+		})
+		cfg := &config.Config{OrgURL: orgURL, PAT: "fixture-pat"}
+
+		c, err := NewClient(cfg, transport.New(cfg.Org(), 0, base))
+		if err != nil {
+			t.Fatalf("NewClient() error = %v", err)
+		}
+		project := "p"
+		if _, err := c.gitClient.GetRepositories(context.Background(), git.GetRepositoriesArgs{Project: &project}); err != nil {
+			t.Fatalf("GetRepositories() error = %v, want the retry to succeed", err)
+		}
+
+		if len(sent) != 2 {
+			t.Fatalf("base saw %d repositories requests, want 2 (the 429, then one retry)", len(sent))
+		}
+		if gap := sent[1].Sub(sent[0]); gap != time.Second {
+			t.Errorf("retry sent %v after the 429, want exactly 1s (Retry-After: 1, waited in the pacer)", gap)
+		}
+		if got := c.FetchRetries(); got != 1 {
+			t.Errorf("FetchRetries() = %d, want 1", got)
+		}
+	})
+}
+
 // primedGitClient returns a real v7 git client over the transport whose pacer
 // has been told to wait: its first repositories GET, made here, answers 200
 // with Retry-After: 60. *repos counts the repositories requests that reached

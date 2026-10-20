@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,6 +44,9 @@ type Client struct {
 	currentUserEmail   string
 	fetchTimeout       time.Duration
 	getConnectionData  func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
+	// readRetries is the one counter every retry decorator NewClient builds
+	// adds to (D-03); FetchRetries reads it for the CLI summary (D-05).
+	readRetries *atomic.Int64
 }
 
 // NewClient builds every SDK sub-client this package holds on the one HTTP
@@ -103,8 +107,11 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 		return nil, err
 	}
 
+	// D-03: reads on these clients retry a 429 in the service layer, writes
+	// never; every decorator shares this one counter.
+	retries := new(atomic.Int64)
 	workitemClient := &workitemtracking.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, witURL, opt)}
-	gitClient := &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, gitURL, opt)}
+	gitClient := retryingGit{gitAPI: &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, gitURL, opt)}, retries: retries}
 	buildClient := &build.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, buildURL, opt)}
 	releaseClient := &release.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, releaseURL, opt)}
 	workClient := &work.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, workURL, opt)}
@@ -150,6 +157,7 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 		currentUserEmail:   currentUserEmail,
 		fetchTimeout:       cfg.FetchTimeout,
 		getConnectionData:  getConnectionData,
+		readRetries:        retries,
 	}, nil
 }
 
@@ -219,6 +227,15 @@ func checkAreaHosts(areas []azuredevops.ResourceAreaInfo, tr *transport.Transpor
 // constructors and app.go for a value that already travels with the client.
 func (c *Client) FetchTimeout() time.Duration {
 	return c.fetchTimeout
+}
+
+// FetchRetries reports how many rate-limited reads this client has re-issued
+// so far (D-03), counted as retries attempted (see retryRead). The CLI reads
+// it once after dispatch for the D-05/D-06 stderr summary; the TUI never calls
+// it (D-07). The Fetch prefix keeps TestNoUIFileCallsADOMutation classifying
+// it as a read.
+func (c *Client) FetchRetries() int64 {
+	return c.readRetries.Load()
 }
 
 func (c *Client) Projects() []string {

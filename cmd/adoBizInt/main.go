@@ -140,7 +140,14 @@ func run() int {
 		signalCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stopSignals()
 
-		return dispatch(signalCtx, client, os.Args[1:])
+		// D-05, D-06: one throttle line on stderr once the command has run,
+		// when the transport paced it or a read was retried. It prints on a
+		// failed run too: the simplest rule, and never misleading (RESEARCH
+		// Open Question 9). The TUI path below never reaches it (D-07).
+		code := dispatch(signalCtx, client, os.Args[1:])
+		waits, waited := tr.Stats()
+		renderThrottleSummary(stderrWriter, waits, waited, client.FetchRetries())
+		return code
 	}
 
 	model := ui.NewModel(client, cfg.OrgURL, cfg.Projects, cfg.Repositories, cfg.StateTransitions, cfg.PollInterval, priorities)
