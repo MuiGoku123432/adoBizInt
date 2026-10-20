@@ -30,6 +30,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"sentinovo.ai/bizInt/internal/logging"
@@ -53,6 +54,12 @@ type Transport struct {
 	// identity, so an instruction from any response holds every request.
 	mu        sync.Mutex
 	notBefore time.Time
+
+	// waits and waitedNanos count the holds the pacer actually took and their
+	// total length, for the CLI's end-of-run summary (D-05). Atomic, because
+	// concurrent TUI fetches pace through one transport.
+	waits       atomic.Int64
+	waitedNanos atomic.Int64
 }
 
 // New returns a Transport bound to org that hands allowed requests to base.
@@ -121,14 +128,24 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	resp, err := t.base.RoundTrip(req)
 	if resp != nil {
+		logRateLimit(resp.StatusCode, resp.Header)
 		t.observe(resp.Header)
 	}
 	return resp, err
 }
 
+// Stats returns how many holds the pacer actually took and their total length,
+// for the CLI's end-of-run summary (D-05). A request sent with no pending wait
+// adds nothing. The transport itself never writes stderr.
+func (t *Transport) Stats() (waits int64, waited time.Duration) {
+	return t.waits.Load(), time.Duration(t.waitedNanos.Load())
+}
+
 // hold waits until notBefore has passed. It loops because another response
-// may move notBefore later while this request sleeps. If the request's context
-// ends first, the request is not sent and the error wraps the context error.
+// may move notBefore later while this request sleeps. Each hold that runs to
+// its end is counted and logged with its length and the host (D-05). If the
+// request's context ends first, the request is not sent and the error wraps
+// the context error.
 func (t *Transport) hold(req *http.Request, hop bool) error {
 	for {
 		wait := t.untilNotBefore()
@@ -138,6 +155,10 @@ func (t *Transport) hold(req *http.Request, hop bool) error {
 		timer := time.NewTimer(wait)
 		select {
 		case <-timer.C:
+			t.waits.Add(1)
+			t.waitedNanos.Add(int64(wait))
+			logging.Logger().Info("Held a request for ADO rate-limit pacing",
+				"wait", wait, "host", req.URL.Hostname())
 		case <-req.Context().Done():
 			timer.Stop()
 			closeBody(req)
@@ -159,11 +180,17 @@ func (t *Transport) untilNotBefore() time.Duration {
 // instructions; X-RateLimit-Remaining, -Limit and -Resource never change
 // timing. Instructions combine as a maximum, never a sum: Retry-After and
 // X-RateLimit-Delay on one response wait the longer of the two (Pitfall 10),
-// and two responses asking for the same wait hold the next request once.
+// and two responses asking for the same wait hold the next request once. An
+// unusable instruction is logged and ignored.
 func (t *Transport) observe(h http.Header) {
 	now := time.Now()
-	retry, _ := retryAfter(h.Get("Retry-After"), now)
-	delay, _ := rateLimitDelay(h.Get("X-RateLimit-Delay"))
+	retry, retryErr := retryAfter(h.Get("Retry-After"), now)
+	delay, delayErr := rateLimitDelay(h.Get("X-RateLimit-Delay"))
+	for _, err := range []error{retryErr, delayErr} {
+		if err != nil {
+			logging.Logger().Info("Ignored an unusable ADO pacing header", "reason", err)
+		}
+	}
 	wait := max(retry, delay)
 	if wait <= 0 {
 		return
@@ -219,6 +246,22 @@ func rateLimitDelay(v string) (time.Duration, error) {
 		return 0, errors.New("X-RateLimit-Delay is not a usable number of seconds")
 	}
 	return time.Duration(math.Round(secs * float64(time.Second))), nil
+}
+
+// logRateLimit logs one line of a response's rate-limit headers when it carries
+// Retry-After, X-RateLimit-Delay or X-RateLimit-Remaining. ADO sends a cost
+// header on ordinary responses, and logging that alone would grow the log on
+// every request (Pitfall 15). Only the status and header values are logged,
+// never the URL, request headers or body; slog quotes the server-controlled
+// values (T-08-23).
+func logRateLimit(status int, h http.Header) {
+	retry, delay, remaining := h.Get("Retry-After"), h.Get("X-RateLimit-Delay"), h.Get("X-RateLimit-Remaining")
+	if retry == "" && delay == "" && remaining == "" {
+		return
+	}
+	logging.Logger().Info("ADO rate-limit headers",
+		"status", status, "resource", h.Get("X-RateLimit-Resource"),
+		"retry_after", retry, "delay", delay, "remaining", remaining, "limit", h.Get("X-RateLimit-Limit"))
 }
 
 // closeBody closes the request body, which the RoundTripper contract requires
