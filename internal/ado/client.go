@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
@@ -15,6 +16,7 @@ import (
 
 	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/logging"
+	"sentinovo.ai/bizInt/internal/transport"
 )
 
 // Client is the twelfth exported struct in this package and the one that is
@@ -41,72 +43,76 @@ type Client struct {
 	getConnectionData  func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
 }
 
-// newConnection builds the SDK connection with the per-call budget already
-// installed.
+// NewClient builds every SDK sub-client this package holds on the one HTTP
+// client tr provides, so every request goes through the org-bound transport
+// (D-10, D-11).
 //
-// The ordering matters and is the whole point of this helper: azuredevops.NewClient
-// reads connection.Timeout once at construction, copies it into the http.Client,
-// and the Connection caches the constructed client. Setting Timeout after any
-// sub-client has been built compiles, vets, passes every test, and bounds nothing.
+// Each sub-client is built explicitly with NewClientWithOptions on its
+// discovered resource-area location. The SDK's own constructors cannot be used:
+// a typed X.NewClient(ctx, connection), location.NewClient and
+// connection.GetClientByUrl all build a default http.Client that bypasses the
+// transport. WithHTTPClient also ignores connection.Timeout, so the per-call
+// budget lives on tr.HTTPClient() rather than on the connection.
 //
-// A zero configured budget leaves Timeout nil rather than installing a zero
-// duration, which http.Client reads as "no deadline at all".
-func newConnection(cfg *config.Config) *azuredevops.Connection {
-	connection := azuredevops.NewPatConnection(cfg.OrgURL, cfg.PAT)
-	if cfg.RequestTimeout > 0 {
-		timeout := cfg.RequestTimeout
-		connection.Timeout = &timeout
-	}
-	return connection
-}
-
-func NewClient(cfg *config.Config) (*Client, error) {
-	connection := newConnection(cfg)
+// Discovery and identity run on an unbounded startup context, unchanged from
+// before the v7 upgrade (g-01-1 is carried forward, not fixed here).
+func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
+	conn := azuredevops.NewPatConnection(cfg.OrgURL, cfg.PAT)
+	opt := azuredevops.WithHTTPClient(tr.HTTPClient())
 
 	ctx := context.Background()
 
-	workitemClient, err := workitemtracking.NewClient(ctx, connection)
+	root := azuredevops.NewClientWithOptions(conn, conn.BaseUrl, opt)
+	discovered, err := root.GetResourceAreas(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var areas []azuredevops.ResourceAreaInfo
+	if discovered != nil {
+		areas = *discovered
+	}
+
+	witURL, err := areaURL(areas, workitemtracking.ResourceAreaId, conn.BaseUrl)
+	if err != nil {
+		return nil, err
+	}
+	gitURL, err := areaURL(areas, git.ResourceAreaId, conn.BaseUrl)
+	if err != nil {
+		return nil, err
+	}
+	buildURL, err := areaURL(areas, build.ResourceAreaId, conn.BaseUrl)
+	if err != nil {
+		return nil, err
+	}
+	releaseURL, err := areaURL(areas, release.ResourceAreaId, conn.BaseUrl)
+	if err != nil {
+		return nil, err
+	}
+	workURL, err := areaURL(areas, work.ResourceAreaId, conn.BaseUrl)
 	if err != nil {
 		return nil, err
 	}
 
-	gitClient, err := git.NewClient(ctx, connection)
-	if err != nil {
-		return nil, err
-	}
-
-	buildClient, err := build.NewClient(ctx, connection)
-	if err != nil {
-		return nil, err
-	}
-
-	workClient, err := work.NewClient(ctx, connection)
-	if err != nil {
-		return nil, err
-	}
-
-	releaseClient, err := release.NewClient(ctx, connection)
-	if err != nil {
-		return nil, err
-	}
+	workitemClient := &workitemtracking.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, witURL, opt)}
+	gitClient := &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, gitURL, opt)}
+	buildClient := &build.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, buildURL, opt)}
+	releaseClient := &release.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, releaseURL, opt)}
+	workClient := &work.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, workURL, opt)}
 
 	// Fetch current user from PAT identity
 	log := logging.Logger()
-	locationClient := location.NewClient(ctx, connection)
+	locationClient := &location.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, conn.BaseUrl, opt)}
 	currentUser := ""
 	currentUserID := ""
 	currentUserEmail := cfg.UserEmail // Use configured email if available
-	var getConnectionData func(context.Context, location.GetConnectionDataArgs) (*location.ConnectionData, error)
-	if locationClient != nil {
-		getConnectionData = locationClient.GetConnectionData
-		connData, err := getConnectionData(ctx, location.GetConnectionDataArgs{})
-		if err == nil && connData != nil {
-			if connData.AuthorizedUser != nil && connData.AuthorizedUser.ProviderDisplayName != nil {
-				currentUser = *connData.AuthorizedUser.ProviderDisplayName
-			}
-			if connData.AuthenticatedUser != nil && connData.AuthenticatedUser.Id != nil {
-				currentUserID = connData.AuthenticatedUser.Id.String()
-			}
+	getConnectionData := locationClient.GetConnectionData
+	connData, err := getConnectionData(ctx, location.GetConnectionDataArgs{})
+	if err == nil && connData != nil {
+		if connData.AuthorizedUser != nil && connData.AuthorizedUser.ProviderDisplayName != nil {
+			currentUser = *connData.AuthorizedUser.ProviderDisplayName
+		}
+		if connData.AuthenticatedUser != nil && connData.AuthenticatedUser.Id != nil {
+			currentUserID = connData.AuthenticatedUser.Id.String()
 		}
 	}
 	if currentUserID == "" {
@@ -135,6 +141,30 @@ func NewClient(cfg *config.Config) (*Client, error) {
 		fetchTimeout:       cfg.FetchTimeout,
 		getConnectionData:  getConnectionData,
 	}, nil
+}
+
+// areaURL returns the base URL a sub-client for resource area id is built on.
+// It mirrors the SDK's own lookup (v7 connection.go:84-109): an empty area list
+// is the on-prem answer and falls back to baseURL, the org_url the operator
+// configured; an area that is missing, or listed with no location, is
+// ResourceAreaIdNotRegisteredError. The location is normalized exactly as the
+// SDK normalizes it, because live LocationUrls carry the org's own casing and a
+// trailing slash, and the SDK's location cache is keyed by the exact base URL
+// (Pitfall 7).
+func areaURL(areas []azuredevops.ResourceAreaInfo, id uuid.UUID, baseURL string) (string, error) {
+	if len(areas) == 0 {
+		return baseURL, nil
+	}
+	for _, area := range areas {
+		if area.Id == nil || *area.Id != id {
+			continue
+		}
+		if area.LocationUrl == nil || *area.LocationUrl == "" {
+			break
+		}
+		return strings.ToLower(strings.TrimRight(*area.LocationUrl, "/")), nil
+	}
+	return "", azuredevops.ResourceAreaIdNotRegisteredError{ResourceAreaId: id, Url: baseURL}
 }
 
 // FetchTimeout reports the configured budget for one whole multi-project

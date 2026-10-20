@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,6 +13,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/logging"
+	"sentinovo.ai/bizInt/internal/transport"
 	"sentinovo.ai/bizInt/internal/ui"
 	"sentinovo.ai/bizInt/internal/ui/confirm"
 )
@@ -108,7 +110,10 @@ func run() int {
 	readBudget = cfg.FetchTimeout
 	configuredProjects = []string(cfg.Projects) // D-09: the --project allow-list, trusted only after validation
 
-	client, err := ado.NewClient(cfg)
+	// D-09, D-11: every SDK request goes through this one transport, which binds
+	// the PAT to the configured organization and refuses any other host.
+	tr := transport.New(cfg.Org(), cfg.RequestTimeout, http.DefaultTransport)
+	client, err := ado.NewClient(cfg, tr)
 	if err != nil {
 		log.Error("Failed to create ADO client", "error", err)
 		fmt.Fprintf(stderrWriter, "Error connecting to Azure DevOps: %v\n", err)

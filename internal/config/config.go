@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,6 +197,56 @@ func (c *Config) Validate() error {
 		return &ConfigError{Field: "fetch_timeout", Message: "must be greater than poll_interval"}
 	}
 	return nil
+}
+
+// errOrgURLShape is the one message for every org_url that is not a cloud
+// organization URL (D-12).
+var errOrgURLShape = errors.New("org_url must be https://dev.azure.com/{org} or https://{org}.visualstudio.com")
+
+// parseOrgURL returns the lowercase {org} that org_url names (D-12). It admits
+// exactly two cloud shapes: https://dev.azure.com/{org}, with one non-empty
+// path segment and an optional trailing slash, and https://{org}.visualstudio.com,
+// with an empty or "/" path and a host label that contains no dot. Anything
+// else, including userinfo, a port, a query or a fragment, is refused. The
+// parse is structural rather than a character class, so an unusual but valid
+// org name is not rejected (RESEARCH A7).
+func parseOrgURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", errOrgURLShape
+	}
+	if u.Scheme != "https" || u.User != nil || u.Port() != "" ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return "", errOrgURLShape
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "dev.azure.com" {
+		segment, ok := strings.CutPrefix(u.Path, "/")
+		segment = strings.TrimSuffix(segment, "/")
+		if !ok || segment == "" || strings.Contains(segment, "/") {
+			return "", errOrgURLShape
+		}
+		return strings.ToLower(segment), nil
+	}
+	if label, ok := strings.CutSuffix(host, ".visualstudio.com"); ok {
+		if label == "" || strings.Contains(label, ".") || (u.Path != "" && u.Path != "/") {
+			return "", errOrgURLShape
+		}
+		return label, nil
+	}
+	return "", errOrgURLShape
+}
+
+// Org returns the lowercase organization name parsed from OrgURL, or "" when
+// OrgURL does not parse. Callers run after Validate. D-09 binds the PAT to this
+// value: the transport sends the credential only to hosts and paths that belong
+// to it.
+func (c *Config) Org() string {
+	org, err := parseOrgURL(c.OrgURL)
+	if err != nil {
+		return ""
+	}
+	return org
 }
 
 type ConfigError struct {

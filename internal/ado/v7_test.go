@@ -8,11 +8,18 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
+
+	"sentinovo.ai/bizInt/internal/config"
+	"sentinovo.ai/bizInt/internal/transport"
 )
 
 // Every other test in this package drives the narrow interfaces through
@@ -164,6 +171,149 @@ func assertV7AuthFailure(t *testing.T, err error, wantPointer bool) {
 // v7HTTPOptions injects base as the transport of the SDK client under test.
 func v7HTTPOptions(base http.RoundTripper) azuredevops.ClientOptionFunc {
 	return azuredevops.WithHTTPClient(&http.Client{Transport: base})
+}
+
+// v7Area is one entry of the GET {base}/_apis/ResourceAreas answer. A nil
+// locationURL omits the field, as an area listed with no location would.
+type v7Area struct {
+	id, name    string
+	locationURL *string
+}
+
+// usedAreas returns the five areas NewClient builds a sub-client on, located
+// the way a dev.azure.com organization reports them: on {orgURL}/ in the
+// org's own mixed case with a trailing slash (Pitfall 7), and release on
+// vsrm.dev.azure.com/{org}/.
+func usedAreas(orgURL string) []v7Area {
+	org := strings.TrimPrefix(orgURL, "https://dev.azure.com/")
+	home := "https://Dev.Azure.com/" + mixedCase(org) + "/"
+	vsrm := "https://vsrm.dev.azure.com/" + org + "/"
+	return []v7Area{
+		{workitemtracking.ResourceAreaId.String(), "wit", &home},
+		{git.ResourceAreaId.String(), "git", &home},
+		{build.ResourceAreaId.String(), "build", &home},
+		{release.ResourceAreaId.String(), "Release", &vsrm},
+		{work.ResourceAreaId.String(), "work", &home},
+	}
+}
+
+// mixedCase upper-cases every other ASCII letter of s.
+func mixedCase(s string) string {
+	b := []byte(s)
+	for i := 0; i < len(b); i += 2 {
+		if b[i] >= 'a' && b[i] <= 'z' {
+			b[i] -= 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+// resourceAreasFixture renders areas as the {"count":N,"value":[...]} body the
+// SDK expects from GET {base}/_apis/ResourceAreas.
+func resourceAreasFixture(areas []v7Area) string {
+	type entry struct {
+		ID          string  `json:"id"`
+		Name        string  `json:"name"`
+		LocationURL *string `json:"locationUrl,omitempty"`
+	}
+	value := make([]entry, 0, len(areas))
+	for _, a := range areas {
+		value = append(value, entry{a.id, a.name, a.locationURL})
+	}
+	body, err := json.Marshal(struct {
+		Count int     `json:"count"`
+		Value []entry `json:"value"`
+	}{len(value), value})
+	if err != nil {
+		panic(err)
+	}
+	return string(body)
+}
+
+// v7Request is what a NewClient test's fake base records about one request.
+type v7Request struct {
+	method, host, path string
+	auth               bool
+	deadline           time.Time
+	hasDeadline        bool
+}
+
+// fixtureUserID is the authenticated user the connectionData fixture returns.
+const fixtureUserID = "6f4c8e1a-2b3d-4e5f-8a9b-0c1d2e3f4a5b"
+
+// newClientBase is the fake base RoundTripper for NewClient tests. It records
+// every request it receives, OPTIONS included, in *seen, then answers OPTIONS
+// with the location list, the ResourceAreas GET with areas, ConnectionData
+// with an authenticated user and the git repositories list as empty. Any
+// other request fails the test.
+func newClientBase(t *testing.T, areas []v7Area, seen *[]v7Request) rtFunc {
+	t.Helper()
+	data := withLocations(func(r *http.Request) (*http.Response, error) {
+		switch p := strings.ToLower(r.URL.Path); {
+		case strings.HasSuffix(p, "/_apis/resourceareas"):
+			return jsonResp(r, http.StatusOK, resourceAreasFixture(areas)), nil
+		case strings.HasSuffix(p, "/_apis/connectiondata"):
+			return jsonResp(r, http.StatusOK, `{"authenticatedUser":{"id":"`+fixtureUserID+`"}}`), nil
+		case strings.HasSuffix(p, "/_apis/git/repositories"):
+			return jsonResp(r, http.StatusOK, `{"count":0,"value":[]}`), nil
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL)
+		return jsonResp(r, http.StatusNotFound, ""), nil
+	})
+	return func(r *http.Request) (*http.Response, error) {
+		deadline, ok := r.Context().Deadline()
+		*seen = append(*seen, v7Request{
+			method:      r.Method,
+			host:        r.URL.Host,
+			path:        r.URL.Path,
+			auth:        r.Header.Get("Authorization") != "",
+			deadline:    deadline,
+			hasDeadline: ok,
+		})
+		return data(r)
+	}
+}
+
+// TestNewClientBuildsOnInjectedClient is the PLAT-03 tracer: org_url, then
+// Config.Org, then the transport, then NewClient on the injected client, then
+// a real v7 git sub-client, then the wire. The base RoundTripper is reachable
+// only through the transport, so a repositories request recorded there with
+// the PAT header proves the sub-client was built on the injected client (D-11).
+func TestNewClientBuildsOnInjectedClient(t *testing.T) {
+	orgURL := uniqueOrgURL(t)
+	var seen []v7Request
+	base := newClientBase(t, usedAreas(orgURL), &seen)
+	cfg := &config.Config{OrgURL: orgURL, PAT: "fixture-pat"}
+
+	c, err := NewClient(cfg, transport.New(cfg.Org(), 0, base))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	if c.currentUserID != fixtureUserID {
+		t.Errorf("currentUserID = %q, want %q", c.currentUserID, fixtureUserID)
+	}
+
+	project := "p"
+	if _, err := c.gitClient.GetRepositories(context.Background(), git.GetRepositoriesArgs{Project: &project}); err != nil {
+		t.Fatalf("GetRepositories() error = %v", err)
+	}
+
+	want := strings.TrimPrefix(orgURL, "https://dev.azure.com") + "/p/_apis/git/repositories"
+	var repos []v7Request
+	for _, r := range seen {
+		if r.method == http.MethodGet && r.path == want {
+			repos = append(repos, r)
+		}
+	}
+	if len(repos) != 1 {
+		t.Fatalf("base saw %d GET %s requests, want 1 (all requests: %+v)", len(repos), want, seen)
+	}
+	if repos[0].host != "dev.azure.com" {
+		t.Errorf("repositories request host = %q, want dev.azure.com", repos[0].host)
+	}
+	if !repos[0].auth {
+		t.Errorf("repositories request carried no Authorization header")
+	}
 }
 
 // TestV7ReadAuthFailureClassifiesAuth proves a 401 from a real v7 git client on
