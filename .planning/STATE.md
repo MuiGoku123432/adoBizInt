@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-05-PLAN.md
-last_updated: "2026-10-20T16:32:28.288Z"
+stopped_at: Completed 08-06-PLAN.md
+last_updated: "2026-10-20T16:47:41.655Z"
 last_activity: 2026-10-19
 last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 17
-  completed_plans: 14
+  completed_plans: 15
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-10-19 — Phase 08 execution started
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -110,6 +110,7 @@ Progress: [████████░░] 82%
 | Phase 08 P03 | 7 min | 2 tasks | 4 files |
 | Phase 08 P04 | 10 min | 2 tasks | 2 files |
 | Phase 08 P05 | 11 min | 3 tasks | 3 files |
+| Phase 08 P06 | 13 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -244,6 +245,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-05: one mutex-guarded process-wide notBefore set from Retry-After (seconds or http.ParseTime date) and X-RateLimit-Delay (decimal seconds) on any status, combined as a maximum, never a sum; X-RateLimit-Remaining/-Limit/-Resource only logged
 - [Phase 08]: 08-05: held request whose context ends is notSentError{reason: held}, ErrNotSent on first hop and unwraps to ctx.Err(); Stats() counts holds actually taken; X-TFS-Session left alone, pinned by TestSessionIDUnchanged
 - [Phase 08]: 08-05: overflowing or non-finite pacing values are ignored and logged (an overflowing Retry-After previously wrapped into a 55660h hold); 08-06 must fail fast before and during hold, since http.Client replaces a held error with timeoutError once its own timer fires
+- [Phase 08]: 08-06: D-01 fail-fast decided before every sleep in the pacer hold loop (wait >= time left -> notSentError rate_limited, ErrRateLimited + ErrNotSent, D-08 text in whole seconds); no hold outlives the deadline, so http.Client.Timeout never replaces ErrNotSent
+- [Phase 08]: 08-06: an ended context wins over the fail-fast (held error wraps ctx.Err), so a signal stays other and an expired deadline stays timeout; classifyFailure checks transport.ErrRateLimited first
+- [Phase 08]: 08-06: guard.classify checks transport.ErrNotSent before parentErr (D-02): refused-host, fail-fast and held-then-cancelled writes are failed, unaudited, exit 1; redirect hops stay unknown; TestRateLimitedWriteExitsOne in new cmd/adoBizInt/ratelimit_test.go
 
 ### Roadmap Evolution
 
@@ -311,8 +315,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T16:32:28.279Z
-Stopped at: Completed 08-05-PLAN.md
+Last session: 2026-10-20T16:47:41.648Z
+Stopped at: Completed 08-06-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
