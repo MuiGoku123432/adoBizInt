@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-06-PLAN.md
-last_updated: "2026-10-20T16:47:41.655Z"
+stopped_at: Completed 08-07-PLAN.md
+last_updated: "2026-10-20T17:00:53.523Z"
 last_activity: 2026-10-19
 last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 17
-  completed_plans: 15
+  completed_plans: 16
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-10-19 — Phase 08 execution started
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 94%
 
 ## Performance Metrics
 
@@ -111,6 +111,7 @@ Progress: [█████████░] 88%
 | Phase 08 P04 | 10 min | 2 tasks | 2 files |
 | Phase 08 P05 | 11 min | 3 tasks | 3 files |
 | Phase 08 P06 | 13 min | 3 tasks | 8 files |
+| Phase 08 P07 | 11 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -248,6 +249,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-06: D-01 fail-fast decided before every sleep in the pacer hold loop (wait >= time left -> notSentError rate_limited, ErrRateLimited + ErrNotSent, D-08 text in whole seconds); no hold outlives the deadline, so http.Client.Timeout never replaces ErrNotSent
 - [Phase 08]: 08-06: an ended context wins over the fail-fast (held error wraps ctx.Err), so a signal stays other and an expired deadline stays timeout; classifyFailure checks transport.ErrRateLimited first
 - [Phase 08]: 08-06: guard.classify checks transport.ErrNotSent before parentErr (D-02): refused-host, fail-fast and held-then-cancelled writes are failed, unaudited, exit 1; redirect hops stay unknown; TestRateLimitedWriteExitsOne in new cmd/adoBizInt/ratelimit_test.go
+- [Phase 08]: 08-07: reads retry a raw 429 at most twice (maxReadRetries = 2) through decorators that embed workItemAPI/gitAPI/buildAPI/releaseAPI and override only the 16 reads; writes fall through; TestRetryNeverWrapsWrites (go/ast) forbids any write override and requires every read overridden
+- [Phase 08]: 08-07: startup discovery and identity GetConnectionData (also the PR-approval fallback) retry under the same rule; one shared atomic counter, read by the CLI via Client.FetchRetries (retries attempted)
+- [Phase 08]: 08-07: CLI prints one stderr line 'throttled by ADO: N waits, Ds total, R retries' after dispatch, in whole seconds (never 1m30s), on failed runs too; never on the TUI path; checkWIQL skips a decorator's pure QueryByWiql pass-through
 
 ### Roadmap Evolution
 
@@ -315,8 +319,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T16:47:41.648Z
-Stopped at: Completed 08-06-PLAN.md
+Last session: 2026-10-20T17:00:53.513Z
+Stopped at: Completed 08-07-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
