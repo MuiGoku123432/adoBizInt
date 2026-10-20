@@ -316,6 +316,148 @@ func TestNewClientBuildsOnInjectedClient(t *testing.T) {
 	}
 }
 
+// unusedAreaID names a resource area no sub-client is built on. It matches none
+// of the five area ids NewClient looks up.
+const unusedAreaID = "0f0e0d0c-0b0a-4909-8807-060504030201"
+
+// withLocation returns areas with the area id relocated to loc.
+func withLocation(areas []v7Area, id, loc string) []v7Area {
+	out := append([]v7Area(nil), areas...)
+	for i := range out {
+		if out[i].id == id {
+			out[i].locationURL = &loc
+		}
+	}
+	return out
+}
+
+// withUnusedArea returns areas plus one area no sub-client is built on, at loc.
+func withUnusedArea(areas []v7Area, loc string) []v7Area {
+	return append(append([]v7Area(nil), areas...), v7Area{unusedAreaID, "Unused", &loc})
+}
+
+// TestNewClientRefusesForeignLocationURL pins D-10a: after discovery, every
+// returned LocationUrl, including areas no sub-client is built on, is checked
+// with the transport host rule before any sub-client exists. A refusal is a
+// named org_url config error giving the area and the host (main maps it to
+// exit 3), and nothing past discovery is sent: no ConnectionData request and no
+// request to any discovered host.
+func TestNewClientRefusesForeignLocationURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		areas func(orgURL, org string) []v7Area
+		want  []string // substrings the ConfigError message must contain
+	}{
+		{
+			name: "foreign host on unused area",
+			areas: func(orgURL, org string) []v7Area {
+				return withUnusedArea(usedAreas(orgURL), "https://evil.example/"+org+"/")
+			},
+			want: []string{"Unused", "evil.example"},
+		},
+		{
+			name: "cross-org path on unused area",
+			areas: func(orgURL, org string) []v7Area {
+				return withUnusedArea(usedAreas(orgURL), "https://vssps.dev.azure.com/otherorg/")
+			},
+			want: []string{"Unused", "vssps.dev.azure.com", "otherorg"},
+		},
+		{
+			name: "http scheme on unused area",
+			areas: func(orgURL, org string) []v7Area {
+				return withUnusedArea(usedAreas(orgURL), "http://dev.azure.com/"+org+"/")
+			},
+			want: []string{"Unused", "http://dev.azure.com/"},
+		},
+		{
+			name: "unparsable LocationUrl on unused area",
+			areas: func(orgURL, org string) []v7Area {
+				return withUnusedArea(usedAreas(orgURL), "https://[::1")
+			},
+			want: []string{"Unused", "https://[::1"},
+		},
+		{
+			name: "foreign release host",
+			areas: func(orgURL, org string) []v7Area {
+				return withLocation(usedAreas(orgURL), release.ResourceAreaId.String(), "https://vsrm.evil.example/"+org+"/")
+			},
+			want: []string{"Release", "vsrm.evil.example"},
+		},
+		{
+			name: "cross-org git",
+			areas: func(orgURL, org string) []v7Area {
+				return withLocation(usedAreas(orgURL), git.ResourceAreaId.String(), "https://dev.azure.com/otherorg/")
+			},
+			want: []string{"git", "dev.azure.com", "otherorg"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orgURL := uniqueOrgURL(t)
+			org := strings.TrimPrefix(orgURL, "https://dev.azure.com/")
+			var seen []v7Request
+			base := newClientBase(t, tt.areas(orgURL, org), &seen)
+			cfg := &config.Config{OrgURL: orgURL, PAT: "fixture-pat"}
+
+			c, err := NewClient(cfg, transport.New(cfg.Org(), 0, base))
+
+			if c != nil {
+				t.Errorf("NewClient() returned a client, want nil")
+			}
+			var cfgErr *config.ConfigError
+			if !errors.As(err, &cfgErr) {
+				t.Fatalf("NewClient() error = %v (%T), want *config.ConfigError", err, err)
+			}
+			if cfgErr.Field != "org_url" {
+				t.Errorf("ConfigError.Field = %q, want org_url", cfgErr.Field)
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(cfgErr.Message, w) {
+					t.Errorf("ConfigError.Message = %q, want it to contain %q", cfgErr.Message, w)
+				}
+			}
+
+			var data []string
+			for _, r := range seen {
+				if r.host != "dev.azure.com" || !strings.HasPrefix(r.path, "/"+org+"/") {
+					t.Errorf("request %s %s%s left the configured base URL", r.method, r.host, r.path)
+				}
+				if r.method != http.MethodOptions {
+					data = append(data, r.method+" "+strings.ToLower(r.path))
+				}
+			}
+			want := "GET /" + org + "/_apis/resourceareas"
+			if len(data) != 1 || data[0] != want {
+				t.Errorf("requests past OPTIONS = %q, want only [%q]", data, want)
+			}
+		})
+	}
+}
+
+// TestNewClientAllowsEveryBoundArea keeps D-10a from refusing a legitimate
+// organization: every org-bound host shape passes, in mixed case, and an area
+// listed with no location names no host and is skipped.
+func TestNewClientAllowsEveryBoundArea(t *testing.T) {
+	orgURL := uniqueOrgURL(t)
+	org := strings.TrimPrefix(orgURL, "https://dev.azure.com/")
+	vssps := "https://VSSPS.dev.azure.com/" + mixedCase(org) + "/"
+	legacy := "https://" + mixedCase(org) + ".VisualStudio.com/"
+	legacyVsrm := "https://" + org + ".vsrm.visualstudio.com/"
+	areas := append(usedAreas(orgURL),
+		v7Area{"1a2b3c4d-0000-4000-8000-000000000001", "vssps", &vssps},
+		v7Area{"1a2b3c4d-0000-4000-8000-000000000002", "legacy", &legacy},
+		v7Area{"1a2b3c4d-0000-4000-8000-000000000003", "legacyRelease", &legacyVsrm},
+		v7Area{"1a2b3c4d-0000-4000-8000-000000000004", "noLocation", nil},
+	)
+	var seen []v7Request
+	base := newClientBase(t, areas, &seen)
+	cfg := &config.Config{OrgURL: orgURL, PAT: "fixture-pat"}
+
+	if _, err := NewClient(cfg, transport.New(cfg.Org(), 0, base)); err != nil {
+		t.Fatalf("NewClient() error = %v, want every org-bound area allowed", err)
+	}
+}
+
 // TestV7ReadAuthFailureClassifiesAuth proves a 401 from a real v7 git client on
 // a GET read classifies as auth in both WrappedError shapes (PLAT-02, SC2).
 func TestV7ReadAuthFailureClassifiesAuth(t *testing.T) {
