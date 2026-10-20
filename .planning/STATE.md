@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-04-PLAN.md
-last_updated: "2026-10-20T16:18:25.757Z"
+stopped_at: Completed 08-05-PLAN.md
+last_updated: "2026-10-20T16:32:28.288Z"
 last_activity: 2026-10-19
 last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 17
-  completed_plans: 13
+  completed_plans: 14
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-10-19 — Phase 08 execution started
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -109,6 +109,7 @@ Progress: [████████░░] 76%
 | Phase 08 P02 | 11 min | 3 tasks | 8 files |
 | Phase 08 P03 | 7 min | 2 tasks | 4 files |
 | Phase 08 P04 | 10 min | 2 tasks | 2 files |
+| Phase 08 P05 | 11 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -240,6 +241,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-04: smoke identity row judges only log bytes this run appended; FAIL (not PASS) when the client was built but no log exists. Every non-row output line is shaped so the 08-08 record gate cannot parse it as a row
 - [Phase 08]: 08-04: 08-SMOKE.md never places azuredevops/v7 and v7.1.0 adjacent in prose, so the 08-08 provenance grep needs the real pasted line; the waiver form appears only inside a sentence
 - [Phase 08]: 08-04: PLAT-05 stays Pending in REQUIREMENTS.md until 08-08 (which also declares it) finishes; the live smoke run against the org belongs to 08-08 only
+- [Phase 08]: 08-05: one mutex-guarded process-wide notBefore set from Retry-After (seconds or http.ParseTime date) and X-RateLimit-Delay (decimal seconds) on any status, combined as a maximum, never a sum; X-RateLimit-Remaining/-Limit/-Resource only logged
+- [Phase 08]: 08-05: held request whose context ends is notSentError{reason: held}, ErrNotSent on first hop and unwraps to ctx.Err(); Stats() counts holds actually taken; X-TFS-Session left alone, pinned by TestSessionIDUnchanged
+- [Phase 08]: 08-05: overflowing or non-finite pacing values are ignored and logged (an overflowing Retry-After previously wrapped into a 55660h hold); 08-06 must fail fast before and during hold, since http.Client replaces a held error with timeoutError once its own timer fires
 
 ### Roadmap Evolution
 
@@ -307,8 +311,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T16:18:11.876Z
-Stopped at: Completed 08-04-PLAN.md
+Last session: 2026-10-20T16:32:28.279Z
+Stopped at: Completed 08-05-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
