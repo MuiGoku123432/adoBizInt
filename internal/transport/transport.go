@@ -8,12 +8,16 @@
 // Authorization header leaves the process. ado.NewClient applies the same rule,
 // Allowed, to every discovered resource-area location at startup.
 //
+// It also paces: a response that tells the client to slow down holds every
+// later request until the instructed time (D-04). It paces but never retries,
+// and never reads or replays a request body (Pitfall 8): reads retry in the
+// service layer, writes never.
+//
 // The package imports the standard library and internal/logging only. It must
 // never import internal/ado, internal/guard or internal/config: ado imports
-// transport, so any of those would cycle. It paces but never retries (pacing
-// lands in 08-05; reads retry in the service layer, writes never). It never
-// writes stdout or stderr (OUT-03), and it never logs the URL path or query,
-// request headers or the body (Pitfall 15).
+// transport, so any of those would cycle. It never writes stdout or stderr
+// (OUT-03), and it never logs the URL path or query, request headers or the
+// body (Pitfall 15).
 package transport
 
 import (
@@ -22,7 +26,9 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"sentinovo.ai/bizInt/internal/logging"
@@ -40,6 +46,12 @@ type Transport struct {
 	org            string
 	requestTimeout time.Duration
 	base           http.RoundTripper
+
+	// mu guards notBefore, the earliest time the next request may be sent.
+	// There is one per process, not one per resource: ADO budgets per
+	// identity, so an instruction from any response holds every request.
+	mu        sync.Mutex
+	notBefore time.Time
 }
 
 // New returns a Transport bound to org that hands allowed requests to base.
@@ -91,33 +103,113 @@ func (t *Transport) Allowed(u *url.URL) bool {
 }
 
 // RoundTrip refuses a request whose URL the host rule does not allow, before
-// the base transport sees it, and otherwise passes the request on unchanged.
+// the base transport sees it, then holds an allowed request until the pacer's
+// notBefore has passed, and otherwise passes the request on unchanged. Every
+// response's headers are observed before it is returned, whatever its status.
 // A redirect hop is any request carrying the response that caused it.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	hop := req.Response != nil
 	if !t.Allowed(req.URL) {
-		// The RoundTripper contract requires closing the body on every error path.
-		if req.Body != nil {
-			req.Body.Close()
-		}
+		closeBody(req)
 		logging.Logger().Warn("Refused to send credentials to a host outside the organization",
 			"host", req.URL.Hostname(), "redirect_hop", hop)
-		return nil, &notSentError{host: req.URL.Hostname(), org: t.org, hop: hop}
+		return nil, &notSentError{reason: reasonHost, host: req.URL.Hostname(), org: t.org, hop: hop}
 	}
-	return t.base.RoundTrip(req)
+	if err := t.hold(req, hop); err != nil {
+		return nil, err
+	}
+	resp, err := t.base.RoundTrip(req)
+	if resp != nil {
+		t.observe(resp.Header)
+	}
+	return resp, err
 }
 
-// notSentError is the refusal RoundTrip returns. It deliberately has no Timeout
-// method: url.Error forwards Timeout to the wrapped error, and classifyFailure
-// would then read a refusal as a timeout (Pitfall 5).
+// hold waits until notBefore has passed. It loops because another response
+// may move notBefore later while this request sleeps. If the request's context
+// ends first, the request is not sent and the error wraps the context error.
+func (t *Transport) hold(req *http.Request, hop bool) error {
+	for {
+		wait := t.untilNotBefore()
+		if wait <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+		case <-req.Context().Done():
+			timer.Stop()
+			closeBody(req)
+			return &notSentError{reason: reasonHeld, host: req.URL.Hostname(), org: t.org, hop: hop, cause: req.Context().Err()}
+		}
+	}
+}
+
+// untilNotBefore returns how long the next request must still wait.
+func (t *Transport) untilNotBefore() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return time.Until(t.notBefore)
+}
+
+// observe reads the server's pacing instruction from a response's headers and
+// moves notBefore to the instructed time if that is later than the current
+// one. Instructions are a maximum, never added: two responses asking for the
+// same wait hold the next request once (D-04).
+func (t *Transport) observe(h http.Header) {
+	secs, err := strconv.Atoi(h.Get("Retry-After"))
+	if err != nil || secs < 0 {
+		return
+	}
+	until := time.Now().Add(time.Duration(secs) * time.Second)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if until.After(t.notBefore) {
+		t.notBefore = until
+	}
+}
+
+// closeBody closes the request body, which the RoundTripper contract requires
+// on every error path.
+func closeBody(req *http.Request) {
+	if req.Body != nil {
+		req.Body.Close()
+	}
+}
+
+// notSentReason says why a request never left the process.
+type notSentReason string
+
+const (
+	// reasonHost: the host rule refused the URL (D-10b).
+	reasonHost notSentReason = "host"
+	// reasonHeld: the request's context ended while the pacer held it.
+	reasonHeld notSentReason = "held"
+)
+
+// notSentError is the error RoundTrip returns for a request it did not send.
+// It deliberately has no Timeout method: url.Error forwards Timeout to the
+// wrapped error, and classifyFailure would then read a refusal as a timeout
+// (Pitfall 5). A held request instead unwraps to its context error, so a read
+// keeps its cancel or timeout classification.
 type notSentError struct {
-	host string
-	org  string
-	hop  bool
+	reason notSentReason
+	host   string
+	org    string
+	hop    bool
+	cause  error
 }
 
 func (e *notSentError) Error() string {
+	if e.reason == reasonHeld {
+		return fmt.Sprintf("request to host %q not sent: its context ended while held by ADO rate-limit pacing: %v", e.host, e.cause)
+	}
 	return fmt.Sprintf("refused to send credentials to host %q: not bound to organization %q", e.host, e.org)
+}
+
+// Unwrap returns the context error of a held request, and nil otherwise.
+func (e *notSentError) Unwrap() error {
+	return e.cause
 }
 
 // Is matches ErrNotSent on the first hop only. A refused redirect hop followed

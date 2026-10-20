@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
@@ -547,4 +548,47 @@ func TestV7WriteAuthFailureClassifiesAuth(t *testing.T) {
 			assertV7AuthFailure(t, err, tc.wantPointer)
 		})
 	}
+}
+
+// TestRetryAfterOn200PacesNextRequest is the PLAT-03 pacing tracer: a
+// Retry-After on a successful response, seen by the transport under a real v7
+// client built by NewClient, holds the next request by exactly the instructed
+// time (D-04). Throttling arrives as 200-with-delay as well as 429, and the
+// SDK hides response headers, so only the transport can pace.
+//
+// The bubble's fake clock makes the gap exact and costs no wall time. Never use
+// httptest.NewServer inside a bubble: it does real network I/O.
+func TestRetryAfterOn200PacesNextRequest(t *testing.T) {
+	orgURL := uniqueOrgURL(t)
+	synctest.Test(t, func(t *testing.T) {
+		var seen []v7Request
+		var sent []time.Time
+		discovery := newClientBase(t, usedAreas(orgURL), &seen)
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodGet && strings.HasSuffix(strings.ToLower(r.URL.Path), "/_apis/git/repositories") {
+				sent = append(sent, time.Now())
+				return jsonResp(r, http.StatusOK, `{"count":0,"value":[]}`, "Retry-After", "7"), nil
+			}
+			return discovery(r)
+		})
+		cfg := &config.Config{OrgURL: orgURL, PAT: "fixture-pat"}
+
+		c, err := NewClient(cfg, transport.New(cfg.Org(), 0, base))
+		if err != nil {
+			t.Fatalf("NewClient() error = %v", err)
+		}
+		project := "p"
+		for i := 0; i < 2; i++ {
+			if _, err := c.gitClient.GetRepositories(context.Background(), git.GetRepositoriesArgs{Project: &project}); err != nil {
+				t.Fatalf("GetRepositories() call %d error = %v", i+1, err)
+			}
+		}
+
+		if len(sent) != 2 {
+			t.Fatalf("base saw %d repositories requests, want 2", len(sent))
+		}
+		if gap := sent[1].Sub(sent[0]); gap != 7*time.Second {
+			t.Errorf("second request sent %v after the first, want exactly 7s (Retry-After: 7 on a 200)", gap)
+		}
+	})
 }
