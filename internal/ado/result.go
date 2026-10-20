@@ -7,6 +7,8 @@ import (
 	"net"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
+
+	"sentinovo.ai/bizInt/internal/transport"
 )
 
 // This file declares the one result shape every aggregate read in this package
@@ -172,6 +174,16 @@ func classifyFailure(err error) FailureKind {
 		return ""
 	}
 
+	// D-01, D-08: the transport refused to wait into the request's deadline
+	// because ADO asked for a longer wait than the budget had left. That is a
+	// throttle, not a timeout: reporting it as timeout hides the real cause and
+	// pushes agents to retry harder (PITFALLS Pitfall 9). The fail-fast wraps no
+	// context error and has no Timeout method, so this branch is the only one
+	// that can match it.
+	if errors.Is(err, transport.ErrRateLimited) {
+		return FailureRateLimit
+	}
+
 	// Cancellation is checked before the timeout branch and deliberately falls
 	// through to FailureOther. Phase 3's CLI-04 interrupt handling depends on a
 	// user-initiated cancel not being reported as a server timeout.
@@ -180,9 +192,10 @@ func classifyFailure(err error) FailureKind {
 	}
 
 	// Belt and braces: the deadline may come from context.WithTimeout (the
-	// fan-out budget) or from http.Client.Timeout (the per-call budget via
-	// connection.Timeout). Modern toolchains surface both as
-	// context.DeadlineExceeded, but the net.Error check does not depend on that.
+	// fan-out budget) or from http.Client.Timeout on the client
+	// internal/transport builds (the per-call budget). Modern toolchains
+	// surface both as context.DeadlineExceeded, but the net.Error check does
+	// not depend on that.
 	var netErr net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
 		return FailureTimeout

@@ -593,6 +593,63 @@ func TestRetryAfterOn200PacesNextRequest(t *testing.T) {
 	})
 }
 
+// failFastErr returns the D-01 fail-fast error as a real v7 git client sees it
+// through the transport: the first repositories GET answers 200 with
+// Retry-After: 60, then a second GetRepositories runs under a 1s deadline. The
+// 60s instruction does not fit, so the transport refuses the second request at
+// once and no real time passes. It fails the test unless exactly one
+// repositories request reached the base, so every caller also proves the
+// refused request was never sent. Each call uses its own org (Pitfall 6).
+func failFastErr(t *testing.T) error {
+	t.Helper()
+	orgURL := uniqueOrgURL(t) + "failfast"
+	repos := 0
+	base := withLocations(func(r *http.Request) (*http.Response, error) {
+		if r.Method == http.MethodGet && strings.HasSuffix(strings.ToLower(r.URL.Path), "/_apis/git/repositories") {
+			repos++
+			return jsonResp(r, http.StatusOK, `{"count":0,"value":[]}`, "Retry-After", "60"), nil
+		}
+		t.Errorf("unexpected request %s %s", r.Method, r.URL)
+		return jsonResp(r, http.StatusNotFound, ""), nil
+	})
+	cfg := &config.Config{OrgURL: orgURL}
+	conn := azuredevops.NewPatConnection(orgURL, "fixture-pat")
+	opt := azuredevops.WithHTTPClient(transport.New(cfg.Org(), 0, base).HTTPClient())
+	c := &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, conn.BaseUrl, opt)}
+
+	project := "p"
+	if _, err := c.GetRepositories(context.Background(), git.GetRepositoriesArgs{Project: &project}); err != nil {
+		t.Fatalf("first GetRepositories() error = %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_, err := c.GetRepositories(ctx, git.GetRepositoriesArgs{Project: &project})
+	if err == nil {
+		t.Fatal("second GetRepositories() error = nil, want the D-01 fail-fast")
+	}
+	if repos != 1 {
+		t.Errorf("base saw %d repositories requests, want 1: the fail-fast must not send", repos)
+	}
+	return err
+}
+
+// TestFailFastReadClassifiesRateLimit is the D-01 tracer: a throttle
+// instruction that does not fit a read's deadline is refused before send and
+// classifies rate_limit, not timeout, with the D-08 explanation in its text,
+// through a real v7 client.
+func TestFailFastReadClassifiesRateLimit(t *testing.T) {
+	err := failFastErr(t)
+
+	if got := classifyFailure(err); got != FailureRateLimit {
+		t.Errorf("classifyFailure(%v) = %q, want %q", err, got, FailureRateLimit)
+	}
+	for _, want := range []string{"ADO asked for", "left in budget"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("fail-fast error %q does not contain %q (D-08)", err, want)
+		}
+	}
+}
+
 // TestSessionIDUnchanged pins RESEARCH Pitfall 1. v7 copies a response's
 // session header into the package global azuredevops.SessionId with a raw map
 // index on the non-canonical key X-TFS-Session, and Go's HTTP/1 and HTTP/2

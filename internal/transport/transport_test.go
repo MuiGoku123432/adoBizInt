@@ -679,11 +679,16 @@ func TestHeldCancelIsNotSent(t *testing.T) {
 			wantHeld: 0,
 		},
 		{
-			name: "deadline ends while held",
+			// A deadline can no longer end during a hold: a wait that does not
+			// fit the deadline is refused before it starts (D-01, the
+			// TestFailFast tests). A cancel can, such as a signal.
+			name: "cancelled while held",
 			ctx: func() (context.Context, context.CancelFunc) {
-				return context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, cancel := context.WithCancel(context.Background())
+				time.AfterFunc(10*time.Second, cancel)
+				return ctx, cancel
 			},
-			wantErr:  context.DeadlineExceeded,
+			wantErr:  context.Canceled,
 			wantHeld: 10 * time.Second,
 		},
 	}

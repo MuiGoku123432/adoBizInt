@@ -9,9 +9,10 @@
 // Allowed, to every discovered resource-area location at startup.
 //
 // It also paces: a response that tells the client to slow down holds every
-// later request until the instructed time (D-04). It paces but never retries,
-// and never reads or replays a request body (Pitfall 8): reads retry in the
-// service layer, writes never.
+// later request until the instructed time (D-04). A hold that would not end
+// before the request's deadline is refused at once as rate limited (D-01). It
+// paces but never retries, and never reads or replays a request body (Pitfall
+// 8): reads retry in the service layer, writes never.
 //
 // The package imports the standard library and internal/logging only. It must
 // never import internal/ado, internal/guard or internal/config: ado imports
@@ -41,6 +42,13 @@ import (
 // first-hop refusal satisfies it: on a redirect hop the first request already
 // reached ADO (Pitfall 4).
 var ErrNotSent = errors.New("request not sent")
+
+// ErrRateLimited marks the D-01 fail-fast only: ADO asked for a wait that does
+// not fit before the request's deadline, so the request was refused instead of
+// held. It lets classifyFailure label the refusal rate_limit structurally,
+// without reading error text. A request held and then cancelled, or refused by
+// the host rule, does not match it.
+var ErrRateLimited = errors.New("rate limited")
 
 // Transport is the http.RoundTripper every SDK sub-client sends through. The
 // zero value is not usable; build one with New.
@@ -112,9 +120,11 @@ func (t *Transport) Allowed(u *url.URL) bool {
 
 // RoundTrip refuses a request whose URL the host rule does not allow, before
 // the base transport sees it, then holds an allowed request until the pacer's
-// notBefore has passed, and otherwise passes the request on unchanged. Every
-// response's headers are observed before it is returned, whatever its status.
-// A redirect hop is any request carrying the response that caused it.
+// notBefore has passed, or refuses it as rate limited when that hold would not
+// end before its deadline (D-01), and otherwise passes the request on
+// unchanged. Every response's headers are observed before it is returned,
+// whatever its status. A redirect hop is any request carrying the response
+// that caused it.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	hop := req.Response != nil
 	if !t.Allowed(req.URL) {
@@ -143,14 +153,38 @@ func (t *Transport) Stats() (waits int64, waited time.Duration) {
 
 // hold waits until notBefore has passed. It loops because another response
 // may move notBefore later while this request sleeps. Each hold that runs to
-// its end is counted and logged with its length and the host (D-05). If the
-// request's context ends first, the request is not sent and the error wraps
-// the context error.
+// its end is counted and logged with its length and the host (D-05).
+//
+// Before every sleep, including the re-check after one, it decides whether the
+// wait fits: a context that has already ended is not sent and wraps its
+// context error, and a wait equal to or longer than the time left before the
+// request's deadline is refused at once as rate limited (D-01). Deciding before
+// each sleep means no hold outlives the deadline. That matters beyond honesty:
+// once http.Client's own Timeout fires, Client.do replaces whatever this
+// returned with its timeout error, which would drop ErrNotSent and turn a
+// never-sent write into unknown. The deadline seen here already includes the
+// Client.Timeout, which http.Client installs on the request context before
+// calling a custom RoundTripper. If the request's context ends during a hold,
+// the request is not sent and the error wraps the context error.
 func (t *Transport) hold(req *http.Request, hop bool) error {
+	ctx := req.Context()
+	host := req.URL.Hostname()
 	for {
 		wait := t.untilNotBefore()
 		if wait <= 0 {
 			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			closeBody(req)
+			return &notSentError{reason: reasonHeld, host: host, org: t.org, hop: hop, cause: err}
+		}
+		if deadline, ok := ctx.Deadline(); ok {
+			if left := time.Until(deadline); wait >= left {
+				closeBody(req)
+				logging.Logger().Warn("Refused to hold a request past its deadline for ADO rate-limit pacing",
+					"asked", wait, "left", left, "host", host)
+				return &notSentError{reason: reasonRateLimited, host: host, org: t.org, hop: hop, wait: wait, left: left}
+			}
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -158,11 +192,11 @@ func (t *Transport) hold(req *http.Request, hop bool) error {
 			t.waits.Add(1)
 			t.waitedNanos.Add(int64(wait))
 			logging.Logger().Info("Held a request for ADO rate-limit pacing",
-				"wait", wait, "host", req.URL.Hostname())
-		case <-req.Context().Done():
+				"wait", wait, "host", host)
+		case <-ctx.Done():
 			timer.Stop()
 			closeBody(req)
-			return &notSentError{reason: reasonHeld, host: req.URL.Hostname(), org: t.org, hop: hop, cause: req.Context().Err()}
+			return &notSentError{reason: reasonHeld, host: host, org: t.org, hop: hop, cause: ctx.Err()}
 		}
 	}
 }
@@ -280,26 +314,43 @@ const (
 	reasonHost notSentReason = "host"
 	// reasonHeld: the request's context ended while the pacer held it.
 	reasonHeld notSentReason = "held"
+	// reasonRateLimited: the pacer's wait did not fit before the request's
+	// deadline, so it refused the request instead of holding it (D-01).
+	reasonRateLimited notSentReason = "rate_limited"
 )
 
 // notSentError is the error RoundTrip returns for a request it did not send.
 // It deliberately has no Timeout method: url.Error forwards Timeout to the
 // wrapped error, and classifyFailure would then read a refusal as a timeout
 // (Pitfall 5). A held request instead unwraps to its context error, so a read
-// keeps its cancel or timeout classification.
+// keeps its cancel or timeout classification. The D-01 fail-fast wraps
+// nothing, in particular not context.DeadlineExceeded: it matches
+// ErrRateLimited instead, so it classifies rate_limit.
 type notSentError struct {
 	reason notSentReason
 	host   string
 	org    string
 	hop    bool
 	cause  error
+	// wait and left are what ADO asked for and what the deadline allowed,
+	// for the D-01 fail-fast only.
+	wait, left time.Duration
 }
 
 func (e *notSentError) Error() string {
-	if e.reason == reasonHeld {
+	switch e.reason {
+	case reasonRateLimited:
+		// D-08: the cause, in the Failure.Message an agent reads.
+		return fmt.Sprintf("rate limited: ADO asked for %ds, %ds left in budget", wholeSeconds(e.wait), wholeSeconds(e.left))
+	case reasonHeld:
 		return fmt.Sprintf("request to host %q not sent: its context ended while held by ADO rate-limit pacing: %v", e.host, e.cause)
 	}
 	return fmt.Sprintf("refused to send credentials to host %q: not bound to organization %q", e.host, e.org)
+}
+
+// wholeSeconds rounds d to the nearest second, as a count of seconds.
+func wholeSeconds(d time.Duration) int64 {
+	return int64(d.Round(time.Second) / time.Second)
 }
 
 // Unwrap returns the context error of a held request, and nil otherwise.
@@ -309,6 +360,7 @@ func (e *notSentError) Unwrap() error {
 
 // Is matches ErrNotSent on the first hop only. A refused redirect hop followed
 // a request that already reached ADO, so it is not "never sent" (Pitfall 4).
+// It matches ErrRateLimited for the D-01 fail-fast on any hop.
 func (e *notSentError) Is(target error) bool {
-	return target == ErrNotSent && !e.hop
+	return (target == ErrNotSent && !e.hop) || (target == ErrRateLimited && e.reason == reasonRateLimited)
 }
