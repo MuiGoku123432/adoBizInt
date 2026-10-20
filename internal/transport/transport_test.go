@@ -2,6 +2,7 @@ package transport
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"go/ast"
@@ -599,4 +600,301 @@ func TestPaceIgnoresInvalid(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestPaceConcurrent pins the shared pacer under concurrency (T-08-25,
+// T-08-35): after Retry-After 4, eight requests sent at once all wait for it,
+// each reaches the base exactly once, and -race sees no data race. Each of the
+// eight answers carries Retry-After 1, so notBefore is written while other
+// requests are still reading it.
+func TestPaceConcurrent(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var mu sync.Mutex
+		var notBefore time.Time
+		calls := map[string]int{}
+		var early []string
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			n := r.URL.Query().Get("n")
+			if n == "" {
+				notBefore = time.Now().Add(4 * time.Second)
+				return emptyResp(r, http.StatusOK, "Retry-After", "4"), nil
+			}
+			calls[n]++
+			if time.Now().Before(notBefore) {
+				early = append(early, n)
+			}
+			return emptyResp(r, http.StatusOK, "Retry-After", "1"), nil
+		})
+		client := New("acme", 0, base).HTTPClient()
+		if err := send(client, pacedURL); err != nil {
+			t.Fatalf("priming request error = %v", err)
+		}
+
+		const senders = 8
+		errs := make(chan error, senders)
+		for i := 0; i < senders; i++ {
+			go func() { errs <- send(client, pacedURL+"?n="+strconv.Itoa(i)) }()
+		}
+		for i := 0; i < senders; i++ {
+			if err := <-errs; err != nil {
+				t.Errorf("concurrent request error = %v", err)
+			}
+		}
+
+		if len(early) != 0 {
+			t.Errorf("requests %v reached the base before the Retry-After 4 had passed", early)
+		}
+		if len(calls) != senders {
+			t.Errorf("base saw %d distinct requests, want %d", len(calls), senders)
+		}
+		for n, c := range calls {
+			if c != 1 {
+				t.Errorf("request n=%s reached the base %d times, want exactly once", n, c)
+			}
+		}
+	})
+}
+
+// TestHeldCancelIsNotSent pins D-02's held case: a request whose context ends
+// while the pacer holds it never reaches the base, closes its body, and
+// returns an error that is ErrNotSent and also the context error, so a write
+// reads failed while a read keeps its cancel or timeout classification.
+func TestHeldCancelIsNotSent(t *testing.T) {
+	tests := []struct {
+		name     string
+		ctx      func() (context.Context, context.CancelFunc)
+		wantErr  error
+		wantHeld time.Duration
+	}{
+		{
+			name: "already cancelled",
+			ctx: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx, cancel
+			},
+			wantErr:  context.Canceled,
+			wantHeld: 0,
+		},
+		{
+			name: "deadline ends while held",
+			ctx: func() (context.Context, context.CancelFunc) {
+				return context.WithTimeout(context.Background(), 10*time.Second)
+			},
+			wantErr:  context.DeadlineExceeded,
+			wantHeld: 10 * time.Second,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				calls := 0
+				base := rtFunc(func(r *http.Request) (*http.Response, error) {
+					calls++
+					return emptyResp(r, http.StatusOK, "Retry-After", "60"), nil
+				})
+				client := New("acme", 0, base).HTTPClient()
+				if err := send(client, pacedURL); err != nil {
+					t.Fatalf("priming request error = %v", err)
+				}
+
+				ctx, cancel := tt.ctx()
+				defer cancel()
+				body := &closeRecorder{Reader: strings.NewReader(`{"op":"add"}`)}
+				req, err := http.NewRequestWithContext(ctx, http.MethodPost, pacedURL, body)
+				if err != nil {
+					t.Fatalf("NewRequest() error = %v", err)
+				}
+				start := time.Now()
+				resp, err := client.Do(req)
+
+				if resp != nil {
+					t.Errorf("Do() returned a response, want nil")
+				}
+				if calls != 1 {
+					t.Errorf("base called %d times, want 1 (the priming request only)", calls)
+				}
+				if !errors.Is(err, ErrNotSent) {
+					t.Errorf("errors.Is(%v, ErrNotSent) = false, want true", err)
+				}
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("errors.Is(%v, %v) = false, want the context error wrapped", err, tt.wantErr)
+				}
+				if held := time.Since(start); held != tt.wantHeld {
+					t.Errorf("request held %v before release, want %v", held, tt.wantHeld)
+				}
+				if !body.closed {
+					t.Errorf("request body was not closed (RoundTripper contract)")
+				}
+			})
+		})
+	}
+}
+
+// TestStats pins the D-05 counters: a wait the pacer actually takes is counted
+// with its duration, and a request sent with no pending wait adds nothing.
+func TestStats(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		n := 0
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			n++
+			if n == 1 {
+				return emptyResp(r, http.StatusOK, "Retry-After", "7"), nil
+			}
+			return emptyResp(r, http.StatusOK), nil
+		})
+		tr := New("acme", 0, base)
+		client := tr.HTTPClient()
+
+		if waits, waited := tr.Stats(); waits != 0 || waited != 0 {
+			t.Fatalf("Stats() before any request = %d, %v, want 0, 0", waits, waited)
+		}
+		for i := 0; i < 2; i++ {
+			if err := send(client, pacedURL); err != nil {
+				t.Fatalf("request %d error = %v", i+1, err)
+			}
+		}
+		if waits, waited := tr.Stats(); waits != 1 || waited != 7*time.Second {
+			t.Errorf("Stats() after one paced wait = %d, %v, want 1, 7s", waits, waited)
+		}
+		if err := send(client, pacedURL); err != nil {
+			t.Fatalf("request 3 error = %v", err)
+		}
+		if waits, waited := tr.Stats(); waits != 1 || waited != 7*time.Second {
+			t.Errorf("Stats() after an unpaced request = %d, %v, want 1, 7s unchanged", waits, waited)
+		}
+	})
+}
+
+// captureLog points slog.Default, which logging.Logger() falls back to, at a
+// buffer for the rest of the test. Do not call logging.Init in this package's
+// tests: it would point logging.Logger() at a file and the capture would go
+// silently empty (cmd/adoBizInt/patleak_test.go).
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	// slog.SetDefault also redirects the stdlib log package, so restoring it
+	// matters for every later test in the binary.
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// logLines returns the non-empty lines in buf.
+func logLines(buf *bytes.Buffer) []string {
+	var lines []string
+	for _, l := range strings.Split(buf.String(), "\n") {
+		if l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines
+}
+
+// TestPaceLogsRateLimitHeadersOnly pins the bounded header logging (Pitfall
+// 15, T-08-22, T-08-24): a per-response cost header alone logs nothing, a
+// response carrying an instruction logs one line with its rate-limit values,
+// and no line carries the URL path or query or the Authorization header.
+func TestPaceLogsRateLimitHeadersOnly(t *testing.T) {
+	const patFixture = "pacing-log-pat-fixture-do-not-disclose-41c2"
+	buf := captureLog(t)
+	var answer []string
+	base := rtFunc(func(r *http.Request) (*http.Response, error) {
+		return emptyResp(r, http.StatusOK, answer...), nil
+	})
+	client := New("acme", 0, base).HTTPClient()
+	do := func(target string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, target, nil)
+		if err != nil {
+			t.Fatalf("NewRequest(%q) error = %v", target, err)
+		}
+		req.Header.Set("Authorization", basicAuth(patFixture))
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatalf("Do(%q) error = %v", target, err)
+		}
+		resp.Body.Close()
+	}
+
+	answer = []string{"x-ratelimit-cost", "1.5"}
+	do(pacedURL + "?secretquery=first")
+	if lines := logLines(buf); len(lines) != 0 {
+		t.Errorf("a response with only x-ratelimit-cost logged %q, want nothing", lines)
+	}
+
+	answer = []string{"Retry-After", "2", "X-RateLimit-Resource", "Core"}
+	do(pacedURL + "?secretquery=second")
+	lines := logLines(buf)
+	if len(lines) != 1 {
+		t.Fatalf("a response with Retry-After logged %d lines, want 1: %q", len(lines), lines)
+	}
+	for _, want := range []string{"status=200", "resource=Core", "retry_after=2"} {
+		if !strings.Contains(lines[0], want) {
+			t.Errorf("rate-limit line %q does not contain %s", lines[0], want)
+		}
+	}
+	for _, needle := range []string{
+		"secretquery", "_apis",
+		patFixture, basicAuth(patFixture), base64.StdEncoding.EncodeToString([]byte(":" + patFixture)),
+	} {
+		if strings.Contains(buf.String(), needle) {
+			t.Errorf("transport log contains %q; it must never log the URL path or query or the Authorization header", needle)
+		}
+	}
+}
+
+// TestPaceLogsWaitTaken pins D-05's log half: every wait the pacer actually
+// takes is one line in adoBizInt.log with its duration and the host, and a
+// request sent with no pending wait logs no wait line.
+func TestPaceLogsWaitTaken(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		buf := captureLog(t)
+		n := 0
+		base := rtFunc(func(r *http.Request) (*http.Response, error) {
+			n++
+			if n == 1 {
+				return emptyResp(r, http.StatusOK, "Retry-After", "2"), nil
+			}
+			return emptyResp(r, http.StatusOK), nil
+		})
+		client := New("acme", 0, base).HTTPClient()
+		waitLines := func() []string {
+			var out []string
+			for _, l := range logLines(buf) {
+				if strings.Contains(l, " wait=") {
+					out = append(out, l)
+				}
+			}
+			return out
+		}
+
+		if err := send(client, "https://dev.azure.com/acme/x"); err != nil {
+			t.Fatalf("request 1 error = %v", err)
+		}
+		if got := waitLines(); len(got) != 0 {
+			t.Fatalf("a request with no pending wait logged wait lines %q", got)
+		}
+		if err := send(client, "https://dev.azure.com/acme/x"); err != nil {
+			t.Fatalf("request 2 error = %v", err)
+		}
+		got := waitLines()
+		if len(got) != 1 {
+			t.Fatalf("the paced request logged %d wait lines, want 1: %q", len(got), got)
+		}
+		for _, want := range []string{"wait=2s", "host=dev.azure.com"} {
+			if !strings.Contains(got[0], want) {
+				t.Errorf("wait line %q does not contain %s", got[0], want)
+			}
+		}
+		if err := send(client, "https://dev.azure.com/acme/x"); err != nil {
+			t.Fatalf("request 3 error = %v", err)
+		}
+		if got := waitLines(); len(got) != 1 {
+			t.Errorf("a request with no pending wait added wait lines: %q", got)
+		}
+	})
 }

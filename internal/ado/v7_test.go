@@ -592,3 +592,47 @@ func TestRetryAfterOn200PacesNextRequest(t *testing.T) {
 		}
 	})
 }
+
+// TestSessionIDUnchanged pins RESEARCH Pitfall 1. v7 copies a response's
+// session header into the package global azuredevops.SessionId with a raw map
+// index on the non-canonical key X-TFS-Session, and Go's HTTP/1 and HTTP/2
+// readers canonicalize every response header key to X-Tfs-Session, so the
+// write can never run and the transport does not strip the header. If a future
+// SDK release canonicalizes its lookup, the global starts changing (and racing
+// under concurrent fetches); this test fails so that is noticed.
+func TestSessionIDUnchanged(t *testing.T) {
+	orgURL := uniqueOrgURL(t)
+	before := azuredevops.SessionId
+	const session = "5e55105e-0000-4000-8000-000000000001"
+
+	var seen []v7Request
+	discovery := newClientBase(t, usedAreas(orgURL), &seen)
+	tagged := 0
+	base := rtFunc(func(r *http.Request) (*http.Response, error) {
+		resp, err := discovery(r)
+		if resp != nil {
+			// Header.Add canonicalizes the key, exactly as Go's readers do
+			// for a real ADO response carrying x-tfs-session.
+			resp.Header.Add("X-TFS-Session", session)
+			tagged++
+		}
+		return resp, err
+	})
+	cfg := &config.Config{OrgURL: orgURL, PAT: "fixture-pat"}
+
+	c, err := NewClient(cfg, transport.New(cfg.Org(), 0, base))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	project := "p"
+	if _, err := c.gitClient.GetRepositories(context.Background(), git.GetRepositoriesArgs{Project: &project}); err != nil {
+		t.Fatalf("GetRepositories() error = %v", err)
+	}
+
+	if tagged == 0 {
+		t.Fatal("no response carried the session header, so the check below is vacuous")
+	}
+	if azuredevops.SessionId != before {
+		t.Errorf("azuredevops.SessionId = %q after a response carrying X-Tfs-Session, want it unchanged (%q)", azuredevops.SessionId, before)
+	}
+}
