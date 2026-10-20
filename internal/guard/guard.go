@@ -10,6 +10,7 @@ package guard
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/fetchctx"
 	"sentinovo.ai/bizInt/internal/logging"
+	"sentinovo.ai/bizInt/internal/transport"
 )
 
 // Write outcome strings. These are the `outcome` field of the CLI write
@@ -236,20 +238,31 @@ func Run(ctx context.Context, op Op, opts Options) (report Report) {
 
 // classify maps a mutation's error to its outcome.
 //
-// It keys on ado.FailureKind plus the parent's ctx.Err(), never on error text:
-// result.go records that the server message is localisable and
-// server-controlled, so matching it would be both fragile and a spoofing
-// surface. Auth short-circuits before any status comparison, because auth is
-// the one kind that is definitely not transient.
+// It keys on transport.ErrNotSent, ado.FailureKind and the parent's ctx.Err(),
+// never on error text: result.go records that the server message is
+// localisable and server-controlled, so matching it would be both fragile and
+// a spoofing surface. Auth short-circuits before any status comparison,
+// because auth is the one kind that is definitely not transient.
 //
-// parentErr is consulted FIRST and is the only way to see a signal:
-// classifyFailure maps context.Canceled to FailureOther on purpose so a
-// user-initiated abort is never reported as a server timeout. A mid-write
-// interrupt is outcome unknown rather than "nothing ran" (D-22): a write already
-// in flight may well have landed, and telling a caller nothing happened when
-// something might have is the most consequential form of this project's core
-// failure mode.
+// The precedence is: not sent first, then parentErr, then the error's kind.
+// A request that provably never left the process cannot have landed, so it is
+// failed whatever happened to the parent (D-02). Otherwise parentErr is
+// consulted next and is the only way to see a signal: classifyFailure maps
+// context.Canceled to FailureOther on purpose so a user-initiated abort is
+// never reported as a server timeout. A mid-write interrupt is outcome unknown
+// rather than "nothing ran" (D-22): a write already in flight may well have
+// landed, and telling a caller nothing happened when something might have is
+// the most consequential form of this project's core failure mode.
 func classify(err, parentErr error) string {
+	// D-02: a request that provably never left the process (refused by the
+	// host rule, refused by the pacer under D-01, or held by the pacer when
+	// the deadline or a signal arrived) cannot have landed, so it is failed,
+	// and so not audited, even when the parent was cancelled. transport
+	// matches ErrNotSent on a first hop only, so a refused redirect hop, which
+	// followed a request that reached ADO, stays unknown (Pitfall 4).
+	if errors.Is(err, transport.ErrNotSent) {
+		return OutcomeFailed
+	}
 	if parentErr != nil {
 		return OutcomeUnknown
 	}
