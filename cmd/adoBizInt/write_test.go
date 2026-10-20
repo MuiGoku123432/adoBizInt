@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 
 	"sentinovo.ai/bizInt/internal/ado"
 )

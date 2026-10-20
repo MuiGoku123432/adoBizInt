@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops/webapi"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 )
 
 // Regression: a project whose WIQL query failed used to be skipped silently, so

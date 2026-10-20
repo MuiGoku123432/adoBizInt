@@ -6,7 +6,7 @@ import (
 	"errors"
 	"net"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 )
 
 // This file declares the one result shape every aggregate read in this package

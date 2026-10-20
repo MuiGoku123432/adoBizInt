@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 )
 
 // TestDownloadAttachmentFetchesByID drives the TUI's real path at the ado layer:

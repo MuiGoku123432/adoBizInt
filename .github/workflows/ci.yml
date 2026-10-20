@@ -1,5 +1,5 @@
-# Gates are exactly ROADMAP Phase 5 SC5: build, vet, race tests, gofmt.
-# D-15 scope (no linters), D-16 go-version matches go.mod, D-17 no credentials.
+# Gates: build, vet, race tests, gofmt, govulncheck (Phase 5 SC5 plus PLAT-02).
+# D-15 scope (no linters), D-16 holds via go-version-file, D-17 no credentials.
 name: ci
 
 on:
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.25.4'
+          go-version-file: go.mod
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
@@ -29,3 +29,5 @@ jobs:
             echo "$unformatted"
             exit 1
           fi
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...

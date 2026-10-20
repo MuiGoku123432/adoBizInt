@@ -13,7 +13,7 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/workitemtracking"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 )
 
 // attachmentPath resolves a server-supplied attachment name to a file path that

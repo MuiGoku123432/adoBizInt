@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops/git"
-	"github.com/microsoft/azure-devops-go-api/azuredevops/location"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/location"
 
 	"sentinovo.ai/bizInt/internal/logging"
 )

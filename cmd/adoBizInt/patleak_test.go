@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 )
 
 // TestPATNeverLogged is the HARD-06 regression test (D-19). It drives a read, an

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops/release"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 )
 
 func TestApproveReleaseIssuesExactApproval(t *testing.T) {

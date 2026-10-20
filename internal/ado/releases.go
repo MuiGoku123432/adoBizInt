@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/microsoft/azure-devops-go-api/azuredevops/release"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 
 	"sentinovo.ai/bizInt/internal/logging"
 )
