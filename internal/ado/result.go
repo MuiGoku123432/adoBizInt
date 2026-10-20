@@ -203,8 +203,8 @@ func classifyFailure(err error) FailureKind {
 // wrappedErrorOf extracts the SDK's WrappedError from err.
 //
 // azuredevops.Client.UnwrapError returns a *WrappedError on two paths
-// (client.go:366, :403) and a bare WrappedError value on two others
-// (client.go:389, :411). WrappedError.Error() has a value receiver, so both
+// (v7 client.go:375, :412) and a bare WrappedError value on two others
+// (v7 client.go:398, :419). WrappedError.Error() has a value receiver, so both
 // forms satisfy error and errors.As will not convert between them — both
 // targets must be tried.
 func wrappedErrorOf(err error) (azuredevops.WrappedError, bool) {

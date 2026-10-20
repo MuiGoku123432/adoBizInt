@@ -17,7 +17,7 @@ An agent driving this tool must never mistake a broken call for an empty result.
 **Shipped:** v1.0 Agent CLI (2026-10-12). See `.planning/MILESTONES.md`.
 
 - Eight read verbs and six guarded write verbs on the CLI; `adoBizInt` with no subcommand still launches the TUI unchanged
-- Every read returns a `Result[T]` envelope with `complete`, `failures` and `scope`; exit codes 0-5 distinguish success, partial, auth failure, usage/config error, write failure and unknown outcome
+- Every read returns a `Result[T]` envelope with `complete`, `failures` and `scope`; exit codes 0-5 distinguish success (0), partial or write failure (1), auth failure (2), usage/config/startup error (3), no-op (4) and unknown outcome (5)
 - Writes default to dry run, require `--confirm`, and append a JSONL audit record before the request is sent
 - Closed as `override_closeout`: Phases 2, 4 and 5 verifications are stale against later code, and live-ADO confirmation of the write path is deferred
 
@@ -101,7 +101,7 @@ Known issues carried forward (`.planning/BACKLOG.md`):
 
 ## Constraints
 
-- **Tech stack**: Go 1.25.4, Charmbracelet Bubbletea. No new dependencies without stated justification
+- **Tech stack**: Go 1.27.2, azuredevops/v7 SDK, Charmbracelet Bubbletea. No new dependencies without stated justification
 - **Compatibility**: `adoBizInt` with no arguments must launch the existing TUI with no behavior change
 - **Security**: The PAT must never be sent to a caller-supplied host, and must never reach stdout or the log file
 - **Output contract**: stdout carries only parseable output. All diagnostics go to stderr or the log file

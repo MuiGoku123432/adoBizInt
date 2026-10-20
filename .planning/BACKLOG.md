@@ -88,10 +88,11 @@ Follow-ups found during Phase 5 and the 2026-10-12 live smoke test:
 - ~~`branches list` always exits 1 on empty repositories~~ — **closed 2026-10-12** by 02-07 (D-06a, `a40606a`) and D-06b (`f73cfa4`); live run exits 0, `complete: true`.
 - `audit.jsonl` and `priorities.yaml` are created 0644, and the audit sink can create the config dir 0755 if `logging.Init` fails (T-05-26, IN-07).
 - `--project P,P` duplicates pass the allow-list and both copies reach the read.
-- `go.mod` still marks `google/uuid` as `// indirect` (IN-01); CI `persist-credentials` default (IN-02).
+- ~~`go.mod` still marks `google/uuid` as `// indirect` (IN-01)~~ — **closed 2026-10-20** by 08-01 (`81058bd`): `go mod tidy` with the v7 swap moved `google/uuid` and `atotto/clipboard` to direct; CI `persist-credentials` default (IN-02) still open.
 - `~/.config/adoBizInt/adoBizInt.log` is never rotated (426 MB on 2026-10-12).
 - TUI `Error:` lines render raw server/SDK error text (`internal/ui/workitems/detail.go:118`).
 - Deferred live checks for the next milestone's first smoke test: one TUI attachment download, one `set-state --confirm` with the project in the PATCH route, and the Phase 1 eager-identity failure/recovery path.
+- A fully rejected PAT exits 3 at startup, not 2: resource-area discovery is the first authenticated call, so the 401 surfaces as a client-construction error before any read or write runs (08-RESEARCH Pitfall 3, Open Question 1). Unchanged by the v7 swap and kept by user decision (08-CONTEXT SC2 clarification, 2026-10-19); exit 2 is proven on the read and write paths by `TestV7AuthFailureExitsAuth`. Offline startup (`g-01-1`) is likewise unchanged by v7 and carried forward.
 
 - **From the v1.0 milestone audit (2026-10-12), core-value warnings:** W2 help tokens inside flag values (`--search help`) exit 0 with empty stdout on reads; W3 an empty `projects` list passes validation and reads report `complete: true`; W4 `workitems list` silently excludes Done/Closed/Removed and older iterations. Also W1 panic after a sent write exits 3 with no audit record. Full list in `.planning/v1.0-MILESTONE-AUDIT.md`.
 - Pipeline reads (`pipelines runs`, `pipelines definitions`) return an empty, `complete: true` result when no pipelines are configured — same class as audit W3 (Phase 6 D-16 deferred it here).

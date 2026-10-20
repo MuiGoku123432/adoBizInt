@@ -31,13 +31,13 @@ func TestClassifyFailure(t *testing.T) {
 			want: "",
 		},
 		{
-			// azuredevops client.go:389 and :411 return a bare value.
+			// azuredevops v7 client.go:398 and :419 return a bare value.
 			name: "WrappedError value carrying 401 is auth",
 			err:  wrappedErrorValue(401, "unauthorized"),
 			want: FailureAuth,
 		},
 		{
-			// azuredevops client.go:366 and :403 return a pointer.
+			// azuredevops v7 client.go:375 and :412 return a pointer.
 			name: "WrappedError pointer carrying 401 is auth",
 			err:  wrappedErrorPointer(401, "unauthorized"),
 			want: FailureAuth,

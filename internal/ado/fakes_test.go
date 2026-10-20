@@ -25,13 +25,13 @@ var (
 // rather than in every expansion read's test file.
 
 // wrappedErrorValue builds the bare-value error shape the SDK returns for a
-// text/plain body (client.go:389) and for a normal JSON error body (client.go:411).
+// text/plain body (v7 client.go:398) and for a normal JSON error body (v7 client.go:419).
 func wrappedErrorValue(statusCode int, message string) error {
 	return azuredevops.WrappedError{Message: &message, StatusCode: &statusCode}
 }
 
 // wrappedErrorPointer builds the pointer error shape the SDK returns for an empty
-// body (client.go:366) and for an improper-error JSON envelope (client.go:403).
+// body (v7 client.go:375) and for an improper-error JSON envelope (v7 client.go:412).
 func wrappedErrorPointer(statusCode int, message string) error {
 	return &azuredevops.WrappedError{Message: &message, StatusCode: &statusCode}
 }

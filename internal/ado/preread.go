@@ -111,7 +111,7 @@ func (c *Client) GetPullRequestDetail(ctx context.Context, project, repositoryID
 // GetReleaseApprovalDetail reads one release approval by id for the write path.
 //
 // The SDK exposes no by-id approval endpoint, only the project-scoped list
-// (release/client.go:274), so no entry is added to releaseAPI for this: the
+// (release/client.go:275), so no entry is added to releaseAPI for this: the
 // existing GetApprovals is called and the result filtered by id. The status
 // filter is widened past the endpoint's `pending` default because an approval
 // already approved or rejected is exactly the case D-03 refuses as a no-op, and
@@ -125,14 +125,14 @@ func (c *Client) GetPullRequestDetail(ctx context.Context, project, repositoryID
 //  1. Invalid status filter. release.ApprovalStatus is a plain `type
 //     ApprovalStatus string` alias, and release.ApprovalStatusValues enumerates
 //     only SINGLE tokens (undefined/pending/approved/rejected/reassigned/
-//     canceled/skipped). release/client.go:285-287 forwards it verbatim as
+//     canceled/skipped). release/client.go:286-288 forwards it verbatim as
 //     `queryParams.Add("statusFilter", string(*args.StatusFilter))`, so the
 //     previous `release.ApprovalStatus("pending,approved,rejected")` cast put a
 //     comma list where the endpoint documents one enum token. There is no
 //     comma-list handling anywhere on that path — unlike ReleaseIdsFilter, which
-//     the SDK explicitly joins with ',' at client.go:288-295 precisely because
-//     that parameter DOES accept a list. The fix is a fan-out: one call per
-//     status, results merged.
+//     the SDK explicitly joins with ',' at release/client.go:289-296
+//     precisely because that parameter DOES accept a list. The fix is a
+//     fan-out: one call per status, results merged.
 //
 //  2. No paging. release.GetApprovalsArgs documents `Top` as "Number of
 //     approvals to get. Default is 50", and exposes ContinuationToken; the
