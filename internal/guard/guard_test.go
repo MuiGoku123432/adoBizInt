@@ -5,16 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 
 	"sentinovo.ai/bizInt/internal/guard/guardtest"
+	"sentinovo.ai/bizInt/internal/transport"
 )
 
 var _ Client = (*guardtest.Client)(nil)
@@ -198,6 +201,8 @@ func TestRunClassifiesOutcomes(t *testing.T) {
 		{name: "nil", parent: context.Background(), mutateErr: nil, want: OutcomeExecuted, wantLines: 1},
 		{name: "403", parent: context.Background(), mutateErr: wrappedError(403, "forbidden"), want: OutcomeFailed, wantLines: 0},
 		{name: "409", parent: context.Background(), mutateErr: wrappedError(409, "conflict"), want: OutcomeFailed, wantLines: 0},
+		// SC3, D-03: a 429 on a write is failed and never retried here.
+		{name: "429", parent: context.Background(), mutateErr: wrappedError(429, "too many requests"), want: OutcomeFailed, wantLines: 0},
 		{name: "503", parent: context.Background(), mutateErr: wrappedError(503, "unavailable"), want: OutcomeUnknown, wantLines: 1},
 		{name: "deadline", parent: context.Background(), mutateErr: context.DeadlineExceeded, want: OutcomeUnknown, wantLines: 1},
 		{name: "no status", parent: context.Background(), mutateErr: errors.New("connection reset"), want: OutcomeUnknown, wantLines: 1},
@@ -215,6 +220,166 @@ func TestRunClassifiesOutcomes(t *testing.T) {
 			}
 			if !errors.Is(got.MutateErr, tt.mutateErr) {
 				t.Errorf("MutateErr = %v, want %v", got.MutateErr, tt.mutateErr)
+			}
+			if n := len(auditLines(t, path)); n != tt.wantLines {
+				t.Errorf("audit holds %d lines, want %d", n, tt.wantLines)
+			}
+		})
+	}
+}
+
+// rtFunc adapts a function to http.RoundTripper, so a test can stand in for
+// ADO behind a real transport.
+//
+// note: internal/transport, internal/ado and cmd/adoBizInt test files hold
+// twins of this type. Go cannot share _test.go helpers across packages.
+type rtFunc func(*http.Request) (*http.Response, error)
+
+func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// notSentOrg is the organization the not-sent fixtures bind the transport to,
+// and notSentURL a URL the host rule allows for it.
+const (
+	notSentOrg = "acme"
+	notSentURL = "https://dev.azure.com/acme/x"
+)
+
+// emptyResponse is a response with an empty body and the given headers.
+func emptyResponse(r *http.Request, status int, header ...string) *http.Response {
+	h := http.Header{}
+	for i := 0; i+1 < len(header); i += 2 {
+		h.Add(header[i], header[i+1])
+	}
+	return &http.Response{StatusCode: status, Header: h, Body: io.NopCloser(strings.NewReader("")), Request: r}
+}
+
+// getError sends one GET to notSentURL through c under ctx and returns its
+// error, failing the test if it succeeded.
+func getError(t *testing.T, ctx context.Context, c *http.Client) error {
+	t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, notSentURL, nil)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	resp, err := c.Do(req)
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("Do() error = nil, want a refused request")
+	}
+	return err
+}
+
+// primedClient returns a client over a transport whose pacer was told to hold
+// every later request: the first GET, sent here, answers 200 with
+// Retry-After: 60. Any later request reaching the base fails the test.
+func primedClient(t *testing.T) *http.Client {
+	t.Helper()
+	calls := 0
+	base := rtFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if calls > 1 {
+			t.Errorf("base received a second request %s %s; the pacer should have refused it", r.Method, r.URL)
+		}
+		return emptyResponse(r, http.StatusOK, "Retry-After", "60"), nil
+	})
+	c := transport.New(notSentOrg, 0, base).HTTPClient()
+	resp, err := c.Get(notSentURL)
+	if err != nil {
+		t.Fatalf("priming GET error = %v", err)
+	}
+	resp.Body.Close()
+	return c
+}
+
+// TestRunNotSent pins D-02: a write that provably never left the process is
+// failed, with no audit record, even when the parent was already cancelled,
+// because the not-sent check precedes parentErr. That covers a host refusal,
+// the D-01 fail-fast and a request held by the pacer and then cancelled. A
+// redirect hop refusal followed a request that reached ADO, so it stays
+// unknown and audited (Pitfall 4).
+func TestRunNotSent(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	refusedHost := func(t *testing.T) error {
+		resp, err := transport.New(notSentOrg, 0, nil).HTTPClient().Get("https://evil.example/x")
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return err
+	}
+	tests := []struct {
+		name        string
+		parent      context.Context
+		mutateErr   func(t *testing.T) error
+		wantNotSent bool
+		want        string
+		wantLines   int
+	}{
+		{
+			name:        "refused host, background parent",
+			parent:      context.Background(),
+			mutateErr:   refusedHost,
+			wantNotSent: true, want: OutcomeFailed, wantLines: 0,
+		},
+		{
+			name:        "refused host, cancelled parent",
+			parent:      cancelled,
+			mutateErr:   refusedHost,
+			wantNotSent: true, want: OutcomeFailed, wantLines: 0,
+		},
+		{
+			name:   "fail-fast, cancelled parent",
+			parent: cancelled,
+			mutateErr: func(t *testing.T) error {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				return getError(t, ctx, primedClient(t))
+			},
+			wantNotSent: true, want: OutcomeFailed, wantLines: 0,
+		},
+		{
+			name:   "held cancel, cancelled parent",
+			parent: cancelled,
+			mutateErr: func(t *testing.T) error {
+				return getError(t, cancelled, primedClient(t))
+			},
+			wantNotSent: true, want: OutcomeFailed, wantLines: 0,
+		},
+		{
+			name:   "redirect hop refusal",
+			parent: context.Background(),
+			mutateErr: func(t *testing.T) error {
+				base := rtFunc(func(r *http.Request) (*http.Response, error) {
+					return emptyResponse(r, http.StatusTemporaryRedirect, "Location", "https://evil.example/y"), nil
+				})
+				return getError(t, context.Background(), transport.New(notSentOrg, 0, base).HTTPClient())
+			},
+			wantNotSent: false, want: OutcomeUnknown, wantLines: 1,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mutateErr := tt.mutateErr(t)
+			if got := errors.Is(mutateErr, transport.ErrNotSent); got != tt.wantNotSent {
+				t.Fatalf("fixture errors.Is(%v, ErrNotSent) = %v, want %v", mutateErr, got, tt.wantNotSent)
+			}
+			path, open := tempSink(t)
+			calls := 0
+			op := testOp(planOne, func(context.Context) error { calls++; return mutateErr })
+
+			got := Run(tt.parent, op, Options{Confirm: confirmed, Open: open, Actor: ActorAgent})
+
+			if got.Outcome != tt.want {
+				t.Errorf("Outcome = %q, want %q", got.Outcome, tt.want)
+			}
+			if !errors.Is(got.MutateErr, mutateErr) {
+				t.Errorf("MutateErr = %v, want %v", got.MutateErr, mutateErr)
+			}
+			if calls != 1 {
+				t.Errorf("Mutate ran %d times, want exactly 1", calls)
 			}
 			if n := len(auditLines(t, path)); n != tt.wantLines {
 				t.Errorf("audit holds %d lines, want %d", n, tt.wantLines)
