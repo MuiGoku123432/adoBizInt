@@ -5,7 +5,7 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-07-PLAN.md
+stopped_at: 08-08 Task 2 human checkpoint (blocked on Phase 7 verification)
 last_updated: "2026-10-20T17:00:53.523Z"
 last_activity: 2026-10-19
 last_activity_desc: Phase 08 execution started
@@ -31,8 +31,8 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-10-19 — Phase 08 execution started
+Status: Awaiting human checkpoint (08-08 Task 2 live smoke); Task 1 pre-flight passed at bf5ad85
+Last activity: 2026-10-20 — 08-01..08-07 complete; 08-08 paused at blocking checkpoint
 
 Progress: [█████████░] 94%
 
@@ -320,9 +320,12 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-20T17:00:53.513Z
-Stopped at: Completed 08-07-PLAN.md
+Stopped at: 08-08 Task 2 human checkpoint (blocked on Phase 7 verification)
 Resume file: None
 
 ## Operator Next Steps
 
-- Discuss Phase 7 with /gsd-discuss-phase 7 (audit actor key and file-mode decisions), then /gsd-plan-phase 7
+- Run /gsd-verify-work 7 (9 pending UAT checks) until 07-VERIFICATION.md reads status: passed
+- git push origin dev and confirm the CI govulncheck step is green (PLAT-02 SC1)
+- Run scripts/smoke.sh plus the 08-08 manual checklist (a-e) against the real org
+- Re-run /gsd-execute-phase 8 and paste the results so a continuation agent finishes 08-08 Task 3
