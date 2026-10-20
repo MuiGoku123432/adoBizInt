@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-02-PLAN.md
-last_updated: "2026-10-20T15:55:55.880Z"
+stopped_at: Completed 08-03-PLAN.md
+last_updated: "2026-10-20T16:05:26.186Z"
 last_activity: 2026-10-19
 last_activity_desc: Phase 08 execution started
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 17
-  completed_plans: 11
+  completed_plans: 12
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-10-19 — Phase 08 execution started
 
-Progress: [███████░░░] 65%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -107,6 +107,7 @@ Progress: [███████░░░] 65%
 | Phase 07 P09 | 6 min | 2 tasks | 5 files |
 | Phase 08 P01 | 8 min | 2 tasks | 35 files |
 | Phase 08 P02 | 11 min | 3 tasks | 8 files |
+| Phase 08 P03 | 7 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -232,6 +233,8 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-02: D-10a checkAreaHosts checks every discovered LocationUrl, used or not, before any sub-client is built; refusal is ConfigError org_url naming area and host, exit 3. Entries with no id or location are skipped
 - [Phase 08]: 08-02: transport.New lowercases org and Allowed fails closed on an empty org; notSentError carries org for its message and has no Timeout method
 - [Phase 08]: 08-02: PLAT-03 stays Pending in REQUIREMENTS.md until the later Phase 8 plans that also declare it finish (shared-ID gate)
+- [Phase 08]: 08-03: D-12 wired in config.Validate after the missing-PAT check; a non-cloud org_url exits 3 naming org_url before any request (binary-verified)
+- [Phase 08]: 08-03: internal/transport/transport_test.go pins the host rule (24 rows), first-hop refusal (ErrNotSent, body closed, base never called), redirect-hop refusal not ErrNotSent incl. same-host cross-org, PAT-free logs with a live marker, no-print AST check; transport.go unchanged
 
 ### Roadmap Evolution
 
@@ -299,8 +302,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T15:55:55.847Z
-Stopped at: Completed 08-02-PLAN.md
+Last session: 2026-10-20T16:05:26.177Z
+Stopped at: Completed 08-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

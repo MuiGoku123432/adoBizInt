@@ -117,7 +117,7 @@ Plans:
   4. The PAT is only ever sent to hosts validated against the configured organization; a request aimed at any other host is refused before the credential leaves the process
   5. One live read per ADO sub-client and one dry run per write verb pass against the real organization, and the results are recorded before Phase 9 starts
 
-**Plans**: 2/8 plans executed
+**Plans**: 3/8 plans executed
 Plans:
 **Wave 1** *(execution waits for Phase 7 verification)*
 
@@ -129,7 +129,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 08-03-PLAN.md — Host-rule hardening table and redirect/log tests (D-10b), cloud org_url shape enforced at startup (D-12)
+- [x] 08-03-PLAN.md — Host-rule hardening table and redirect/log tests (D-10b), cloud org_url shape enforced at startup (D-12)
 - [ ] 08-04-PLAN.md — Live smoke harness scripts/smoke.sh and the 08-SMOKE.md record, TUI checklist and dry-run waiver slot (own worktree)
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -298,7 +298,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
-| 8. Platform Upgrade and Pacing | v2.0 | 2/8 | In Progress|  |
+| 8. Platform Upgrade and Pacing | v2.0 | 3/8 | In Progress|  |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
 | 11. Board Honesty | v2.0 | 0/TBD | Not started | - |
