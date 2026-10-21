@@ -1,11 +1,11 @@
 ---
-status: complete
+status: testing
 phase: 08-platform-upgrade-and-pacing
-source: [08-04-PLAN.md, 08-08-PLAN.md]
+source: [08-04-PLAN.md, 08-08-PLAN.md, 08-12-PLAN.md]
 started: 2026-10-20T17:03:00Z
-updated: 2026-10-21T16:47:30Z
-sc5_live_smoke: waived by user, not met
-sc1_ci_on_push: waived by user, not met
+updated: 2026-10-21T20:41:18Z
+sc5_live_smoke: re-run pending (08-12)
+sc1_ci_on_push: pending user push (08-12)
 ---
 
 # Phase 8: Live Smoke Record (PLAT-05)
@@ -16,41 +16,13 @@ How it runs: the user exports the SMOKE_* targets documented in the header comme
 
 Never paste the PAT, the credential header line, or the config file into this record.
 
-## Outcome (2026-10-21)
+## Outcome (re-run)
 
-**The live smoke was not run as planned. SC5 (live smoke) and SC1's CI half were WAIVED by the user, not met.**
-
-- What ran: two TUI sessions on 2026-10-21 against https://dev.azure.com/Windstream (projects Kinetic and Process), both on a v7.1.0 / go1.27.2 binary built from this tree. Every TUI read completed with no failure (see Live evidence below).
-- What did not run: `scripts/smoke.sh` (no CLI read rows, no identity row, none of the six dry runs), manual checklist items 1, 2, 3 and 5, and the CI run on a pushed dev branch. No write of any kind went over the v7 wire.
-- Status is `complete` because, under the 08-08 Task 3 rule, it is `complete` exactly when Blocks Phase 9 is empty: no v7, pacer or host-rule regression was observed in what ran, and the user's blanket waiver (quoted verbatim under Dry-run waivers) covers every row that did not run. `complete` here means "Phase 9 is not blocked by this record", not "SC5 passed".
-- The Phase 7 precondition of 08-08 Task 2 (07-VERIFICATION.md `status: passed`) was not met (still `human_needed`, 9 pending UAT rows). The user's message 3 below overrides it.
-
-Still unproven after this record:
-
-- The CLI read path live: exit codes, the `--json` envelope and `complete: true` for the eight read verbs, and the `throttled by ADO:` stderr line.
-- Every write verb's dry-run pre-read and plan on v7 (set-state, PR approve, PR complete, release approve, release reject, pipeline queue).
-- Any executed write on v7: the set-state PATCH with the project in the route (BL-02 deferred check), the TUI two-PATCH Task close (07-REVIEW IN-01), and an audit record written by the v7 build.
-- TUI attachment download under the host rule (08-RESEARCH A3).
-- The TUI confirm modals dismissed with n and esc against the live org.
-- The govulncheck step passing in CI on a pushed dev branch (local govulncheck v1.9.0 was clean in 08-08 Task 1).
-- Live pacing: ADO did not throttle either session, so the pacer, the read retries and the throttle summary were not exercised live (they are unit-tested).
-- Eager-identity recovery (unchanged; see Not covered).
+pending: filled from the 08-12 re-run
 
 ## Binary provenance
 
-`scripts/smoke.sh` was not run, so there are no `provenance:` lines from it. These are `go version -m` lines the executor took on 2026-10-21 from the two binaries that actually ran (temp directory of the go run build elided). Both link azuredevops/v7 at v7.1.0 with go1.27.2, which rules out the old binary on PATH (08-RESEARCH Pitfall 12): `~/go/bin/adoBizInt` is go1.26.5 with azuredevops v1.0.0-b5 and was not used.
-
-```
-./adoBizInt: go1.27.2
-	dep	github.com/microsoft/azure-devops-go-api/azuredevops/v7	v7.1.0	h1:mmJCWLe63QvybxhW1iBmQWEaCKdc4SKgALfTNZ+OphU=
-	build	vcs.revision=988d95d9842d61493b60865cb14aed45876537fe
-	build	vcs.modified=true
-<go-build temp dir>/b001/exe/adoBizInt: go1.27.2
-	dep	github.com/microsoft/azure-devops-go-api/azuredevops/v7	v7.1.0	h1:mmJCWLe63QvybxhW1iBmQWEaCKdc4SKgALfTNZ+OphU=
-```
-
-- `./adoBizInt` (repo root, git-ignored, built 2026-10-21 11:25 local) ran session 1. Its vcs.revision is HEAD at the time (988d95d); 988d95d and bf5ad85 change only planning docs, so the Go code is the 08-07 tree. vcs.modified=true reflects untracked planning files only (milestone.lock, state.json, research cache); no Go source was modified.
-- The go run build (`go run ./cmd/adoBizInt`, no vcs stamp) ran session 2 and was still running when this record was written.
+pending: the two provenance lines scripts/smoke.sh prints on the re-run
 
 ## Live evidence actually gathered (TUI sessions, 2026-10-21)
 
@@ -68,7 +40,7 @@ Across both sessions: 0 ERROR lines, 0 host-rule refusals, 0 VS403 or api-versio
 Paste the full script output inside the fence, verbatim, every line starting at column 0 as the script prints it, including any `throttled by ADO:` detail. Reads pass on exit 0 with complete true. Dry runs pass on exit 0 with outcome dry_run; NODIFF means exit 4 (the pre-read ran and found nothing to change); SKIP means the row's SMOKE_* target was unset and nothing ran.
 
 ```
-(not run: scripts/smoke.sh was not executed; waived by the user on 2026-10-21, see Dry-run waivers)
+(pending: 08-12 re-run)
 ```
 
 ## Sub-client coverage (D-16)
@@ -88,47 +60,37 @@ One live read per ADO sub-client that has a call site. Fill Result from the matc
 
 D-13 requires a dry run of every one of the six write verbs, so each `dry-run <noun> <verb>` row in the script output must read PASS or NODIFF. A SKIP row is accepted only with a waiver, one per SKIP row, written by the user and never drafted, suggested or completed by the executor. A waiver uses the exact form 08-08 Task 2 defines, `- waiver: dry-run <noun> <verb>: <reason>`, written as its own list line, where the text between the prefix and the next colon is the SKIP row's CHECK name exactly as the script prints it. The 08-08 record gate reads every list line in this section that begins with that prefix as a user waiver and matches it to a SKIP row by name, which is why this template holds no example line. A SKIP row that no waiver names is listed under Blocks Phase 9, and the record status becomes blocked.
 
-No per-row waivers recorded. The script did not run, so there are no SKIP rows; none of the six dry runs executed.
-
-Instead the user gave one blanket waiver. Their three messages of 2026-10-21, verbatim and in order:
-
-> I ran the tui it seems to be wokring?  https://dev.azure.com/Windstream
-
-> I ran the new one so verify it looks good
-
-> lets just move on
-
-Message 3 is recorded as the user's decision to (a) override the 08-08 Task 2 Phase 7 precondition and (b) waive every smoke row and checklist item that was not run, plus the CI confirmation. The executor applied it to: all eight script read rows, the identity row, all six dry runs (`dry-run workitems set-state`, `dry-run prs approve`, `dry-run prs complete`, `dry-run releases approve`, `dry-run releases reject`, `dry-run pipelines queue`), checklist items 1, 2, 3 and 5, and the CI row. No per-row reason was given and none is supplied here.
+No waivers recorded.
 
 ## Manual checklist
 
-Run every item with a binary built from this tree, never the one on PATH (08-RESEARCH Pitfall 12). The script deletes its own binary on exit, so build one from the repo root with `GOTOOLCHAIN=go1.27.2 go build -o /tmp/adoBizInt-v7 ./cmd/adoBizInt` and confirm that `go version -m /tmp/adoBizInt-v7` shows the same two lines as Binary provenance.
+Run every item with a binary built from this tree, never the one on PATH (08-RESEARCH Pitfall 12). The script deletes its own binary on exit, so build one from the repo root with `GOTOOLCHAIN=go1.27.3 go build -o /tmp/adoBizInt-v7 ./cmd/adoBizInt` and confirm that `go version -m /tmp/adoBizInt-v7` shows the same two lines as Binary provenance.
 
 ### 1. CLI: workitems set-state on the scratch item (SMOKE_WORKITEM_ID) to SMOKE_STATE, first as a dry run, then with the confirm flag
 expected: The dry run exits 0 with outcome dry_run. The confirmed run exits 0 with outcome executed, the state change appears in the item's ADO history, and ~/.config/adoBizInt/audit.jsonl gains one record. The write goes through the PATCH route that carries the project, which closes the BL-02 deferred check
-result: not run, waived by user 2026-10-21 ("lets just move on"). No scratch item was designated and no CLI write ran: ~/.config/adoBizInt/audit.jsonl was last modified 2026-09-12 (last record 2026-09-12T15:50:05Z). The BL-02 deferred check stays open
+result: [pending]
 
 ### 2. TUI: close the scratch Task with effort (Remaining 0, Completed above 0), move on, and confirm with y
 expected: One confirm modal lists the state change and the effort changes. Both PATCHes succeed, state first and then effort (07-REVIEW IN-01): no process rule rejects the state write, and the effort write is not refused as changed since preview. ~/.config/adoBizInt/audit.jsonl gains two records with actor tui. If the item is already closed, reopen it first so the two-PATCH path runs
-result: not run, waived by user 2026-10-21 ("lets just move on"). No audit record was appended, so no TUI write ran; the IN-01 two-PATCH path is unproven live
+result: [pending]
 
 ### 3. TUI: download an attachment from a work item that has one
 expected: The file is saved and no host-rule refusal appears; attachment content is assumed to be served from the org's own host (08-RESEARCH A3). If it is refused, record the refused host from the error
-result: not run, waived by user 2026-10-21 ("lets just move on"). RESEARCH A3 is unproven live; the log shows no refusal, but no download was attempted
+result: [pending]
 
 ### 4. TUI: visit every view
 expected: Every view loads its data with no failure banner
-result: pass. The user reports "I ran the tui it seems to be wokring?" and asked for the second run to be verified. Session 2's log shows every view's read completing with failure_count=0 (dashboard, work items, pull requests, branches, pipeline runs, pipeline definitions, releases, pending approvals) and 0 ERROR lines; session 1 shows the same for dashboard, work items and branches. The log cannot show which tabs were opened on screen (session 2's reads all land in its first 22 seconds, consistent with startup loads). The 4 branch-stats WARN lines are pre-existing (Findings)
+result: pass. The user reports "I ran the tui it seems to be wokring?" and asked for the second run to be verified. Session 2's log shows every view's read completing with failure_count=0 (dashboard, work items, pull requests, branches, pipeline runs, pipeline definitions, releases, pending approvals) and 0 ERROR lines; session 1 shows the same for dashboard, work items and branches. The log cannot show which tabs were opened on screen (session 2's reads all land in its first 22 seconds, consistent with startup loads). The 4 branch-stats WARN lines are pre-existing (Findings). Kept from the 2026-10-21 sessions on the go1.27.2 build by user decision (2026-10-21) and not re-run; it predates the 08-10 host-rule hardening, so the post-hardening proof for every sub-client's reads is the re-run's script read rows
 
 ### 5. TUI: open each confirm modal (PR approve, PR complete, release approve, release reject, pipeline queue) and dismiss it once with n and once with esc
 expected: Nothing changes in ADO and no audit record is appended
-result: not run, waived by user 2026-10-21 ("lets just move on"). No audit record was appended, consistent with no write, but the modals were not exercised live (they are unit-tested in Phase 7)
+result: [pending]
 
 ## CI
 
 | Check | Run URL | Conclusion |
 |-------|---------|------------|
-| govulncheck step, CI run for the pushed dev branch | none: dev was not pushed (local dev is 120 commits ahead of origin/dev at 3b7ec0d, 2026-10-12) | not run, waived by user 2026-10-21 ("lets just move on"); local govulncheck v1.9.0 printed No vulnerabilities found in 08-08 Task 1 |
+| govulncheck step, CI run for the pushed dev branch | pending | pending |
 
 ## Findings
 
@@ -151,3 +113,55 @@ No regression caused by the v7 upgrade, the pacer or the host rule was observed 
 
 - Eager-identity recovery (the Phase 1 path that retries the identity lookup when the startup GetConnectionData call failed): exercising it needs a controlled GetConnectionData failure that a manual run cannot produce, because taking the network away fails resource-area discovery first (g-01-1). It stays carried in BACKLOG.md BL-02 (08-RESEARCH Open Question 8).
 - Everything listed under Outcome as still unproven, waived by the user on 2026-10-21 and carried in BACKLOG.md BL-02.
+
+## Prior attempt: 2026-10-21, waived (superseded by the 08-12 re-run)
+
+From the former Outcome (2026-10-21) section:
+
+**The live smoke was not run as planned. SC5 (live smoke) and SC1's CI half were WAIVED by the user, not met.**
+
+- What ran: two TUI sessions on 2026-10-21 against https://dev.azure.com/Windstream (projects Kinetic and Process), both on a v7.1.0 / go1.27.2 binary built from this tree. Every TUI read completed with no failure (see Live evidence below).
+- What did not run: `scripts/smoke.sh` (no CLI read rows, no identity row, none of the six dry runs), manual checklist items 1, 2, 3 and 5, and the CI run on a pushed dev branch. No write of any kind went over the v7 wire.
+- Status is `complete` because, under the 08-08 Task 3 rule, it is `complete` exactly when Blocks Phase 9 is empty: no v7, pacer or host-rule regression was observed in what ran, and the user's blanket waiver (quoted verbatim under Dry-run waivers) covers every row that did not run. `complete` here means "Phase 9 is not blocked by this record", not "SC5 passed".
+- The Phase 7 precondition of 08-08 Task 2 (07-VERIFICATION.md `status: passed`) was not met (still `human_needed`, 9 pending UAT rows). The user's message 3 below overrides it.
+
+Still unproven after this record:
+
+- The CLI read path live: exit codes, the `--json` envelope and `complete: true` for the eight read verbs, and the `throttled by ADO:` stderr line.
+- Every write verb's dry-run pre-read and plan on v7 (set-state, PR approve, PR complete, release approve, release reject, pipeline queue).
+- Any executed write on v7: the set-state PATCH with the project in the route (BL-02 deferred check), the TUI two-PATCH Task close (07-REVIEW IN-01), and an audit record written by the v7 build.
+- TUI attachment download under the host rule (08-RESEARCH A3).
+- The TUI confirm modals dismissed with n and esc against the live org.
+- The govulncheck step passing in CI on a pushed dev branch (local govulncheck v1.9.0 was clean in 08-08 Task 1).
+- Live pacing: ADO did not throttle either session, so the pacer, the read retries and the throttle summary were not exercised live (they are unit-tested).
+- Eager-identity recovery (unchanged; see Not covered).
+
+From the former Binary provenance section:
+
+`scripts/smoke.sh` was not run, so there are no `provenance:` lines from it. These are `go version -m` lines the executor took on 2026-10-21 from the two binaries that actually ran (temp directory of the go run build elided). Both link azuredevops/v7 at v7.1.0 with go1.27.2, which rules out the old binary on PATH (08-RESEARCH Pitfall 12): `~/go/bin/adoBizInt` is go1.26.5 with azuredevops v1.0.0-b5 and was not used.
+
+```
+./adoBizInt: go1.27.2
+	dep	github.com/microsoft/azure-devops-go-api/azuredevops/v7	v7.1.0	h1:mmJCWLe63QvybxhW1iBmQWEaCKdc4SKgALfTNZ+OphU=
+	build	vcs.revision=988d95d9842d61493b60865cb14aed45876537fe
+	build	vcs.modified=true
+<go-build temp dir>/b001/exe/adoBizInt: go1.27.2
+	dep	github.com/microsoft/azure-devops-go-api/azuredevops/v7	v7.1.0	h1:mmJCWLe63QvybxhW1iBmQWEaCKdc4SKgALfTNZ+OphU=
+```
+
+- `./adoBizInt` (repo root, git-ignored, built 2026-10-21 11:25 local) ran session 1. Its vcs.revision is HEAD at the time (988d95d); 988d95d and bf5ad85 change only planning docs, so the Go code is the 08-07 tree. vcs.modified=true reflects untracked planning files only (milestone.lock, state.json, research cache); no Go source was modified.
+- The go run build (`go run ./cmd/adoBizInt`, no vcs stamp) ran session 2 and was still running when this record was written.
+
+From the former Dry-run waivers (D-13) section, below its rules paragraph:
+
+No per-row waivers recorded. The script did not run, so there are no SKIP rows; none of the six dry runs executed.
+
+Instead the user gave one blanket waiver. Their three messages of 2026-10-21, verbatim and in order:
+
+> I ran the tui it seems to be wokring?  https://dev.azure.com/Windstream
+
+> I ran the new one so verify it looks good
+
+> lets just move on
+
+Message 3 is recorded as the user's decision to (a) override the 08-08 Task 2 Phase 7 precondition and (b) waive every smoke row and checklist item that was not run, plus the CI confirmation. The executor applied it to: all eight script read rows, the identity row, all six dry runs (`dry-run workitems set-state`, `dry-run prs approve`, `dry-run prs complete`, `dry-run releases approve`, `dry-run releases reject`, `dry-run pipelines queue`), checklist items 1, 2, 3 and 5, and the CI row. No per-row reason was given and none is supplied here.
