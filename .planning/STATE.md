@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-10-PLAN.md
-last_updated: "2026-10-21T20:20:48.640Z"
+stopped_at: Completed 08-11-PLAN.md
+last_updated: "2026-10-21T20:35:58.090Z"
 last_activity: 2026-10-21
 last_activity_desc: "08-10 complete: host rule refuses non-ASCII hosts and decides the dev.azure.com org on the escaped path (CR-01, WR-01); org_url refuses non-ASCII and encoded orgs (IN-01)"
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 11 of 12
+Plan: 12 of 12
 Status: Ready to execute
 Last activity: 2026-10-21 — 08-10 complete: SC4 host rule hardened (homograph hosts refused, escaped-path org binding, org_url canonical); non-ASCII names after the org stay allowed
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -115,6 +115,7 @@ Progress: [█████████░] 90%
 | Phase 08 P08 | 12 min | 3 tasks | 3 files |
 | Phase 08 P09 | 10 min | 3 tasks | 4 files |
 | Phase 08 P10 | 11 min | 3 tasks | 4 files |
+| Phase 08 P11 | 13 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -266,6 +267,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-10: dev.azure.com org binding is decided on u.EscapedPath() against /+lower(url.PathEscape(org)); %2f, %5c, %2e, dot and empty segments and opaque URLs are refused, never normalised (WR-01)
 - [Phase 08]: 08-10: parseOrgURL refuses a fragment marker, any non-ASCII byte in the raw value or host, . and .. orgs, and an org segment that is percent-encoded or that url.PathEscape would change, as the named org_url error (D-12, IN-01)
 - [Phase 08]: 08-10: double-encoded dot after the org (/acme/%252e%252e/other/_apis) accepted as a risk in deferred-items.md; only exploitable if ADO double-decodes, via a same-host redirect
+- [Phase 08]: 08-11: D-01 refined -- a hold is taken only if it ends with at least minSendBudget of the deadline left and is no longer than maxHold; refusals stay the D-01 fail-fast
+- [Phase 08]: 08-11: minSendBudget = 2s (user, 2026-10-21: use 2s budget) under the 08-CONTEXT cap discretion; waits up to 28s honoured at the 30s default request_timeout
+- [Phase 08]: 08-11: WR-03 via maxHold = 5m, not by rejecting request_timeout: 0; supersedes 08-RESEARCH Open Question 5 under the same discretion grant
 
 ### Roadmap Evolution
 
@@ -333,8 +337,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T20:20:48.614Z
-Stopped at: Completed 08-10-PLAN.md
+Last session: 2026-10-21T20:35:58.078Z
+Stopped at: Completed 08-11-PLAN.md
 Resume file: None
 
 ## Operator Next Steps

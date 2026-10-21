@@ -30,7 +30,7 @@ an empty sprint, and one failing team.
 ### Platform
 
 - [ ] **PLAT-02**: The Azure DevOps SDK moves from `v1.0.0-b5` to `azuredevops/v7` v7.1.0 in one change, with the Go toolchain raised to 1.27 and `golang.org/x/sys` to a version with no known vulnerabilities. CI runs `govulncheck` and fails on any reachable vulnerability. A test proves a v7 401 still classifies as an auth failure
-- [ ] **PLAT-03**: A pacing HTTP transport honours `Retry-After` and rate-limit headers on any response, including HTTP 200. Reads retry on a rate-limit failure a bounded number of times within their deadline; writes are never retried automatically. The PAT is only sent to hosts validated against the configured organization
+- [x] **PLAT-03**: A pacing HTTP transport honours `Retry-After` and rate-limit headers on any response, including HTTP 200. Reads retry on a rate-limit failure a bounded number of times within their deadline; writes are never retried automatically. The PAT is only sent to hosts validated against the configured organization
 - [ ] **PLAT-04**: Request-shape caps (maximum teams, maximum sprints of history, backlog depth) are validated before the first call and disclosed in `scope`
 - [ ] **PLAT-05**: After the upgrade, one live read per ADO sub-client and one dry run per write verb pass against the real organization before later phases build on v7
 
@@ -192,7 +192,7 @@ Deferred. Tracked but not in this roadmap.
 | GUARD-05 | Phase 7 | Pending |
 | GUARD-06 | Phase 7 | Pending |
 | PLAT-02 | Phase 8 | Pending |
-| PLAT-03 | Phase 8 | Gaps Found |
+| PLAT-03 | Phase 8 | Complete |
 | PLAT-04 | Phase 9 | Pending |
 | PLAT-05 | Phase 8 | Pending |
 | TEAM-01 | Phase 9 | Pending |
