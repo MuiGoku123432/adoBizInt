@@ -5,7 +5,7 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-11-PLAN.md
+stopped_at: 08-12 Task 2 human checkpoint (user push + live smoke re-run)
 last_updated: "2026-10-21T20:35:58.090Z"
 last_activity: 2026-10-21
 last_activity_desc: "08-10 complete: host rule refuses non-ASCII hosts and decides the dev.azure.com org on the escaped path (CR-01, WR-01); org_url refuses non-ASCII and encoded orgs (IN-01)"
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
 Plan: 12 of 12
-Status: Ready to execute
+Status: Awaiting human checkpoint (08-12 Task 2): push dev, CI run, smoke.sh, checklist a/b/c/e on go1.27.3; Task 1 pre-flight passed at 71ae935
 Last activity: 2026-10-21 — 08-10 complete: SC4 host rule hardened (homograph hosts refused, escaped-path org binding, org_url canonical); non-ASCII names after the org stay allowed
 
 Progress: [██████████] 95%
@@ -338,7 +338,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 ## Session Continuity
 
 Last session: 2026-10-21T20:35:58.078Z
-Stopped at: Completed 08-11-PLAN.md
+Stopped at: 08-12 Task 2 human checkpoint (user push + live smoke re-run)
 Resume file: None
 
 ## Operator Next Steps
