@@ -62,11 +62,12 @@ func basicAuth(pat string) string {
 }
 
 // TestAllowed pins the D-09 org binding row by row: https only, no userinfo or
-// port, dev.azure.com and *.dev.azure.com only under /{org} after path.Clean,
-// {org}.visualstudio.com and {org}.*.visualstudio.com on any path, host and path
-// case-insensitive, and every look-alike, traversal and cross-org form refused.
-// A non-ASCII host, including an IDN homograph that folds onto an allowed host,
-// is refused (CR-01); a non-ASCII project name after the org stays allowed.
+// port, dev.azure.com and *.dev.azure.com only under /{org} on the escaped
+// path, with non-canonical paths refused, {org}.visualstudio.com and
+// {org}.*.visualstudio.com on any path, host and path case-insensitive, and
+// every look-alike, traversal and cross-org form refused. A non-ASCII host,
+// including an IDN homograph that folds onto an allowed host, is refused
+// (CR-01); non-ASCII names after the org stay allowed.
 // A failing row is a defect in Allowed, never a row to weaken.
 func TestAllowed(t *testing.T) {
 	tests := []struct {
@@ -117,6 +118,26 @@ func TestAllowed(t *testing.T) {
 		// "Allow non-ASCII names"): the SDK sends them percent-encoded.
 		{name: "non-ASCII project after the org", org: "acme", url: "https://dev.azure.com/acme/Caf%C3%A9/_apis/wit/workitems/42", want: true},
 		{name: "non-ASCII project on the legacy org host", org: "acme", url: "https://acme.visualstudio.com/Caf%C3%A9/_apis", want: true},
+
+		// 08-10 WR-01: the org binding is decided on the escaped path the
+		// request line carries. Encoded separators, encoded dots, encoded
+		// letters, dot segments and empty segments are refused, never resolved.
+		{name: "encoded traversal from another org", org: "acme", url: "https://dev.azure.com/other%2F..%2Facme/_apis", want: false},
+		{name: "dot-segment traversal from another org", org: "acme", url: "https://dev.azure.com/other/../acme/_apis", want: false},
+		{name: "encoded dot segment after the org", org: "acme", url: "https://dev.azure.com/acme/%2e%2e/other/_apis", want: false},
+		{name: "dot dot with encoded slash after the org", org: "acme", url: "https://dev.azure.com/acme/..%2Fother/_apis", want: false},
+		{name: "encoded backslash segment", org: "acme", url: "https://vsrm.dev.azure.com/acme/%5C/x", want: false},
+		{name: "empty segment after the org", org: "acme", url: "https://dev.azure.com/acme//_apis", want: false},
+		{name: "dot segment after the org", org: "acme", url: "https://dev.azure.com/acme/./_apis", want: false},
+		{name: "encoded letter in the org segment", org: "acme", url: "https://dev.azure.com/%61cme/_apis", want: false},
+		// CR-01 path variant: a Kelvin-sign org segment folds to kcme after
+		// decoding, but goes on the wire as /%E2%84%AAcme, which is not /kcme.
+		{name: "Kelvin sign org segment", org: "kcme", url: "https://dev.azure.com/\u212Acme/x", want: false},
+		{name: "percent-encoded Kelvin sign org segment", org: "kcme", url: "https://dev.azure.com/%E2%84%AAcme/x", want: false},
+
+		{name: "encoded space in a project segment", org: "acme", url: "https://dev.azure.com/acme/My%20Project/_apis/wit/workitems/42", want: true},
+		{name: "api path with trailing slash", org: "acme", url: "https://dev.azure.com/acme/_apis/", want: true},
+		{name: "upper-case org on vsrm", org: "acme", url: "https://vsrm.dev.azure.com/ACME/_apis/release/releases", want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -129,6 +150,15 @@ func TestAllowed(t *testing.T) {
 			}
 		})
 	}
+
+	// An opaque URL cannot come from parsing an https string, so it is built
+	// directly: the request line would carry Opaque, not Path.
+	t.Run("opaque URL", func(t *testing.T) {
+		u := &url.URL{Scheme: "https", Host: "dev.azure.com", Path: "/acme/_apis", Opaque: "/other/_apis"}
+		if New("acme", 0, nil).Allowed(u) {
+			t.Errorf("Allowed(%#v) = true, want false: the request line would carry %q", u, u.RequestURI())
+		}
+	})
 }
 
 // closeRecorder is a request body that records Close.
