@@ -216,6 +216,8 @@ func TestValidate(t *testing.T) {
 // shapes, https://dev.azure.com/{org} or https://{org}.visualstudio.com, each
 // with an optional trailing slash. Anything else, on-prem Azure DevOps Server
 // included, is a named org_url error, so run() exits 3 before any request.
+// That includes a non-ASCII value, a fragment marker, a dot-segment org and an
+// org written percent-encoded or needing escaping (08-10, CR-01, IN-01).
 // The check runs after the missing-PAT check, so a missing credential is still
 // reported first.
 func TestValidateOrgURL(t *testing.T) {
@@ -255,6 +257,24 @@ func TestValidateOrgURL(t *testing.T) {
 		{name: "visualstudio.com two labels", mutate: orgURL("https://a.b.visualstudio.com"), wantField: "org_url"},
 		{name: "bare visualstudio.com", mutate: orgURL("https://visualstudio.com"), wantField: "org_url"},
 		{name: "on-prem server collection", mutate: orgURL("https://tfs.corp.local/tfs/DefaultCollection"), wantField: "org_url"},
+
+		// 08-10 CR-01: Go's case folding maps U+212A to k and U+0130 to i, so
+		// a non-ASCII value would bind the PAT to a different ASCII org.
+		{name: "Kelvin sign org", mutate: orgURL("https://dev.azure.com/\u212Acme"), wantField: "org_url"},
+		{name: "percent-encoded Kelvin sign org", mutate: orgURL("https://dev.azure.com/%E2%84%AAcme"), wantField: "org_url"},
+		{name: "dotted capital I host", mutate: orgURL("https://acme.v\u0130sualstudio.com"), wantField: "org_url"},
+		{name: "percent-encoded dotted capital I host", mutate: orgURL("https://acme.v%C4%B0sualstudio.com"), wantField: "org_url"},
+		// 08-10 IN-01: an empty fragment parses to Fragment "", and the SDK
+		// would put every route into the fragment.
+		{name: "empty fragment", mutate: orgURL("https://dev.azure.com/example#"), wantField: "org_url"},
+		{name: "dot org", mutate: orgURL("https://dev.azure.com/."), wantField: "org_url"},
+		{name: "dot dot org", mutate: orgURL("https://dev.azure.com/.."), wantField: "org_url"},
+		{name: "encoded dot dot org", mutate: orgURL("https://dev.azure.com/%2E%2E"), wantField: "org_url"},
+		// The SDK sends org_url's escaped form, which the host rule compares
+		// with the org's own escaped form, so the org must need no escaping.
+		{name: "encoded letter org", mutate: orgURL("https://dev.azure.com/%61cme"), wantField: "org_url"},
+		{name: "encoded backslash org", mutate: orgURL("https://dev.azure.com/%5C"), wantField: "org_url"},
+		{name: "encoded dot inside an org", mutate: orgURL("https://dev.azure.com/a%2Eb"), wantField: "org_url"},
 
 		{
 			// The shape check runs after pat, so a missing credential is still
@@ -300,6 +320,9 @@ func TestOrg(t *testing.T) {
 		{orgURL: "https://dev.azure.com/Fabrikam/", want: "fabrikam"},
 		{orgURL: "https://Fabrikam.visualstudio.com", want: "fabrikam"},
 		{orgURL: "https://[::1", want: ""},
+		// 08-10: an org whose wire form differs from its name binds nothing.
+		{orgURL: "https://dev.azure.com/%E2%84%AAcme", want: ""},
+		{orgURL: "https://dev.azure.com/%61cme", want: ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.orgURL, func(t *testing.T) {
