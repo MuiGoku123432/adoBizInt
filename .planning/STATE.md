@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-08-PLAN.md (live smoke waived by user; SC5 and SC1 CI not met)
-last_updated: "2026-10-21T16:53:55.256Z"
+stopped_at: Gap closure plans 08-09..08-12 created; ready for /gsd-execute-phase 8 --gaps-only
+last_updated: "2026-10-21T19:12:28.740Z"
 last_activity: 2026-10-21
 last_activity_desc: "08-08 recorded: TUI-only live reads on v7.1.0 passed, smoke.sh, dry runs, live writes and CI on push waived"
 progress:
   total_phases: 10
   completed_phases: 2
-  total_plans: 17
+  total_plans: 21
   completed_plans: 17
-  percent: 20
+  percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
 
@@ -29,10 +29,10 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 
 ## Current Position
 
-Phase: 08 (platform-upgrade-and-pacing) — EXECUTED, awaiting phase verification
-Plan: 8 of 8
-Status: Ready for verification. All 8 plans have summaries; 08-08 closed with the live smoke WAIVED by the user (SC5 and SC1 CI not met; PLAT-05 and PLAT-02 Pending)
-Last activity: 2026-10-21 — 08-08 recorded: TUI-only live reads on v7.1.0 passed, smoke.sh, dry runs, live writes and CI on push waived
+Phase: 08 (platform-upgrade-and-pacing) — GAP CLOSURE PLANNED
+Plan: 9 of 12 (gap closure 08-09..08-12 planned; 08-01..08-08 executed)
+Status: Ready to execute gap closure (/gsd-execute-phase 8 --gaps-only). Verification 2026-10-21 was gaps_found 2/5 SC
+Last activity: 2026-10-21 — gap closure plans 08-09..08-12 created and checked (0 blockers)
 
 Progress: [██████████] 100%
 
@@ -330,7 +330,8 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Phase 8 verified 2026-10-21: gaps_found (2/5 SC). Run /gsd-plan-phase 8 --gaps, then /gsd-execute-phase 8 --gaps-only. Gaps: SC1 govulncheck fails on go1.27.2 (GO-2026-6809, fixed in go1.27.3); SC4 CR-01 non-ASCII host bypass + WR-01 escaped-path mismatch in transport.Allowed; SC5 live smoke waived by user (decide: run it or record an override). Fold WR-02/03/05 into the gap plan. PLAT-02/03/05 all Pending
+- Phase 8 verified 2026-10-21: gaps_found (2/5 SC). Gap plans 08-09..08-12 are ready: run /gsd-execute-phase 8 --gaps-only. 08-12 stops at a blocking checkpoint: you push dev (executor never pushes), paste the CI run, and run smoke.sh plus checklist a, b, c, e on the go1.27.3 build. PLAT-02/03/05 all Pending
+- Gap-planning decisions (user, 2026-10-21): SC5 re-run the live smoke; SC1 CI user pushes; pacer send budget 2s (waits up to 28s honoured at the 30s default); non-ASCII names after the org stay allowed (host still refused)
 - Phase 7 is still unverified: run /gsd-verify-work 7 (9 pending UAT checks) until 07-VERIFICATION.md reads status: passed. The 08-08 precondition was overridden by the user, not satisfied
 - To retire the waivers (recommended before Phase 9 adds its first write verb; no write has gone over the v7 wire yet): git push origin dev and confirm the CI govulncheck step; run scripts/smoke.sh with the SMOKE_* targets plus 08-SMOKE.md checklist 1, 2, 3 and 5; rerun the 08-08 Task 3 record gate, then mark PLAT-05 and PLAT-02 complete
 - Phase 9 should not start until the Phase 8 gaps close (verifier status gaps_found)

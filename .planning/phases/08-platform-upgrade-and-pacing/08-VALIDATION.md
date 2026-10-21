@@ -19,7 +19,7 @@ created: 2026-10-19
 
 | Property | Value |
 |----------|-------|
-| **Framework** | go test (stdlib `testing` + `testing/synctest` on go1.27.2; `go/ast` for structural tests) |
+| **Framework** | go test (stdlib `testing` + `testing/synctest` on the go.mod directive patch: go1.27.2 through 08-08, go1.27.3 or the lowest higher clean 1.27 patch from 08-09; `go/ast` for structural tests) |
 | **Config file** | none (CI: `.github/workflows/ci.yml`) |
 | **Quick run command** | `go test ./internal/transport/... ./internal/ado/... ./internal/guard/... ./internal/config/... ./cmd/adoBizInt/...` |
 | **Full suite command** | `go build ./... && go vet ./... && go test -race ./... && test -z "$(gofmt -l .)" && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` |
@@ -60,8 +60,21 @@ created: 2026-10-19
 | 08-08 T1 | 08 | 7 | PLAT-02, PLAT-05 | — | Full gate and Phase 7 lock hashes green on the tree handed to the user | full suite | `go build ./... && go vet ./... && go test -race ./... && test -z "$(gofmt -l .)" && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./... && bash -n scripts/smoke.sh` plus the 7/7 and 1/1 lock checks | ✅ | ⬜ pending |
 | 08-08 T2 | 08 | 7 | PLAT-05 (SC5), PLAT-02 (SC1 CI) | T-08-31, T-08-36 | Live reads, six dry runs PASS/NODIFF or user-waived, scratch-item writes, TUI checklist, CI govulncheck green | manual (checkpoint:human-verify) | user runs `scripts/smoke.sh`; see Manual-Only Verifications | n/a | ⬜ pending |
 | 08-08 T3 | 08 | 7 | PLAT-05 | T-08-30, T-08-36 | Record has no pending rows, provenance shows v7.1.0, no credential text; exactly 9 read and identity rows and 6 distinct dry-run rows; every FAIL row (and an identity SKIP) named in exactly one findings table; every SKIP dry-run row matched to a user waiver by exact row name or listed under Blocks Phase 9; status blocked exactly when Blocks Phase 9 has a finding, complete otherwise (pre-existing FAILs are the D-15 SC5 exception) | doc check (grep plus awk record gate) | `grep -c 'result: \[pending\]' .planning/phases/08-platform-upgrade-and-pacing/08-SMOKE.md` prints 0, then the awk record gate (row counts parsed only inside the `## Script output` section, FAIL classification, SKIP-to-waiver match by name, status consistency) in the task verify | ❌ (filled by 08-08) | ⬜ pending |
+| 08-09 T1 | 09 | 1 | PLAT-02 (SC1) | T-08-40, T-08-41, T-08-SC | go directive at the lowest govulncheck-clean 1.27 patch (1.27.3 or higher, GO-2026-6809), no toolchain line, go.mod and go.sum otherwise unchanged; full gate and locks green on that toolchain | smoke (shell) + full suite | `want=$(awk '/^go /{print $2; exit}' go.mod) && printf '%s\n' "$want" \| grep -Eq '^1\.27\.([3-9]\|[1-9][0-9])$' && go version \| grep -q "go$want " && ! grep -q '^toolchain' go.mod && go mod tidy -diff && go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` plus the full suite and the 7/7 and 1/1 lock checks in the task verify | ✅ | ⬜ pending |
+| 08-09 T2 | 09 | 1 | PLAT-02 (SC2) | T-08-43 | SC2 exit-code proof repeatable in one process; the exact OPTIONS-then-data-route assertion and both exitAuth assertions kept on all four rows | unit (real SDK, fake RoundTripper) | `go test -count=3 -run TestV7AuthFailureExitsAuth -v ./cmd/adoBizInt && go test -count=2 ./...` | ✅ | ⬜ pending |
+| 08-09 T3 | 09 | 1 | PLAT-03 (D-03) | T-08-42 | Every narrow-interface method classified as exactly one of read or write; an unclassified method fails with text that never suggests a retrying override | structural (go/ast) | `go test -count=1 -run 'TestRetryNeverWrapsWrites\|TestRetryWritePassesThroughOnce\|TestRetryRead$' -v ./internal/ado` plus the readMethods count in the task verify | ✅ | ⬜ pending |
+| 08-10 T1 | 10 | 1 | PLAT-03 (SC4, D-09, D-10b) | T-08-44 | Non-ASCII host refused before folding (U+0130, U+212A hosts) on the rule, the first hop and a redirect hop; non-ASCII project names after the org stay allowed (Caf%C3%A9 rows; user decision 2026-10-21) | unit (table, fake RoundTripper) | `go test -count=1 -run 'TestAllowed\|TestRefuse' -v ./internal/transport` | ✅ | ⬜ pending |
+| 08-10 T2 | 10 | 1 | PLAT-03 (SC4, D-09) | T-08-45, T-08-47 | dev.azure.com org bound on u.EscapedPath(); encoded separators, dots and letters, dot and empty segments, Kelvin org path and opaque URLs refused; My%20Project and Caf%C3%A9 allowed; real v7 SDK tests unchanged | unit (table) + real SDK | `go test -count=1 -run TestAllowed -v ./internal/transport && go test -count=1 ./internal/ado ./internal/guard ./cmd/adoBizInt` | ✅ | ⬜ pending |
+| 08-10 T3 | 10 | 1 | PLAT-03 (SC4, D-12) | T-08-46 | org_url with a non-ASCII raw value or host, a fragment marker, a dot-segment org, or a percent-encoded or PathEscape-unstable org segment is the named org_url error; binary exits 3 without echoing the PAT | unit + binary run (isolated HOME) | `go test -count=1 -run 'TestValidateOrgURL\|TestOrg' -v ./internal/config` plus the isolated binary run in the task verify | ✅ | ⬜ pending |
+| 08-11 T1 | 11 | 2 | PLAT-03 (SC3, D-01, D-02) | T-08-49, T-08-50 | A hold is taken only when it leaves minSendBudget (2s, user decision 2026-10-21) before the deadline; Retry-After 5 boundary at 7s; the base sees at least 2s left; refusals stay ErrRateLimited | unit (synctest, -race) | `go test -count=1 -run 'TestFailFast\|TestHeldCancelIsNotSent\|TestStats\|TestPace' -v ./internal/transport && go test -count=1 ./internal/ado ./internal/guard ./cmd/adoBizInt` | ✅ | ⬜ pending |
+| 08-11 T2 | 11 | 2 | PLAT-03 (SC3, D-04, D-08) | T-08-48, T-08-51 | One hold capped at maxHold (5m) with or without a deadline, never sent early; D-08 message asked rounded up and budget rounded down; request_timeout: 0 still valid; deferred review items recorded | unit (synctest) + doc check | `go test -count=1 -run 'TestHoldCap\|TestFailFastMessageRounding\|TestFailFast\|TestPace\|TestHeldCancelIsNotSent\|TestStats' -v ./internal/transport && go test -count=1 ./internal/config && grep -q 'IN-04' .planning/phases/08-platform-upgrade-and-pacing/deferred-items.md` | ✅ | ⬜ pending |
+| 08-12 T1 | 12 | 3 | PLAT-02, PLAT-05 | T-08-52 | Full gate on the bumped toolchain; harness provenance names the go.mod patch; 08-SMOKE.md reset with the 2026-10-21 record moved whole into the Prior attempt section; frontmatter strict YAML | full suite + shell (isolated run) + doc check | the full suite, the isolated no-credential `scripts/smoke.sh` run and the 08-SMOKE.md reset checks in the task verify | ✅ | ⬜ pending |
+| 08-12 T2 | 12 | 3 | PLAT-05 (SC5), PLAT-02 (SC1 CI) | T-08-53, T-08-55, T-08-56 | User pushes dev; live reads, six dry runs PASS/NODIFF or user-waived, scratch-item writes, TUI checklist a, b, c and e, CI govulncheck green | manual (checkpoint:human-verify) | `bash -n scripts/smoke.sh && test -x scripts/smoke.sh`; user runs `scripts/smoke.sh`; see Manual-Only Verifications | n/a | ⬜ pending |
+| 08-12 T3 | 12 | 3 | PLAT-05, PLAT-02 | T-08-52, T-08-55 | 08-08 record gate on the re-run; provenance on the go.mod patch; quoted sc5_live_smoke; CI run URL and conclusion; no credential text | doc check (grep plus awk record gate) | `grep -c 'result: \[pending\]' .planning/phases/08-platform-upgrade-and-pacing/08-SMOKE.md` prints 0, then the record gate, provenance, frontmatter and CI checks in the task verify | ❌ (filled by 08-12) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+**Superseded check (2026-10-21):** the PLAT-02 SC1 row of the 08-RESEARCH Validation Architecture test map matches the go directive exactly at 1.27.2. GO-2026-6809 made 1.27.2 fail govulncheck, so that row is superseded by the 08-09 T1 check above (a 1.27 patch at or above 1.27.3, read from go.mod). 08-RESEARCH.md is the research record as of 2026-10-19 and is not edited.
 
 ---
 
@@ -81,6 +94,7 @@ Each test file is created by the task that first needs it (tests ship with the c
 - [ ] `internal/ado/retry_test.go` (08-07 T2): retry behaviour plus the no-write-override AST assertion
 - [ ] `cmd/adoBizInt/throttle_test.go` (08-07 T1): summary line and CLI-path-only AST check
 - [ ] `scripts/smoke.sh` and `08-SMOKE.md` checklist with the Dry-run waivers section (08-04)
+- Gap closure (08-09 to 08-12) creates no new test file: every new test function and row extends a file listed above.
 
 ---
 
@@ -88,15 +102,15 @@ Each test file is created by the task that first needs it (tests ship with the c
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| One live read per ADO sub-client and one dry run per write verb (PASS or NODIFF, or a user-written waiver per SKIP) against the real org, recorded | PLAT-05 (SC5) | Fakes cannot observe 7.1 wire behaviour; needs the user's credential and org (no credentials in CI, v1.0 D-17) | `bash -n scripts/smoke.sh`; user runs `scripts/smoke.sh` with a freshly built binary and pastes the result table into `08-SMOKE.md` (08-08) |
-| CLI `set-state --confirm` on a scratch item; TUI Task close with effort; TUI attachment download | PLAT-05 (D-13) | Interactive TUI paths and live writes against the real org | Follow the TUI checklist in `08-SMOKE.md` and record outcomes (08-08) |
-| govulncheck gate runs and passes in CI | PLAT-02 (SC1) | Requires a pushed CI run | Push `dev`; confirm the CI govulncheck step is green (08-08) |
+| One live read per ADO sub-client and one dry run per write verb (PASS or NODIFF, or a user-written waiver per SKIP) against the real org, recorded | PLAT-05 (SC5) | Fakes cannot observe 7.1 wire behaviour; needs the user's credential and org (no credentials in CI, v1.0 D-17) | `bash -n scripts/smoke.sh`; user runs `scripts/smoke.sh` with a freshly built binary and pastes the result table into `08-SMOKE.md` (08-08; re-run on the fixed build by 08-12) |
+| CLI `set-state --confirm` on a scratch item; TUI Task close with effort; TUI attachment download | PLAT-05 (D-13) | Interactive TUI paths and live writes against the real org | Follow the TUI checklist in `08-SMOKE.md` and record outcomes (08-08; items 1, 2, 3 and 5 re-run by 08-12) |
+| govulncheck gate runs and passes in CI | PLAT-02 (SC1) | Requires a pushed CI run | The user pushes `dev` (the executor never pushes); confirm the CI govulncheck step is green (08-08; recorded by 08-12) |
 
 ---
 
 ## Validation Sign-Off
 
-- [x] All tasks have `<automated>` verify or Wave 0 dependencies (08-08 T2 is the manual checkpoint, bracketed by automated T1 and T3)
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies (08-08 T2 and 08-12 T2 are the manual checkpoints, each bracketed by automated T1 and T3)
 - [x] Sampling continuity: no 3 consecutive tasks without automated verify
 - [x] Wave 0 covers all MISSING references
 - [x] No watch-mode flags

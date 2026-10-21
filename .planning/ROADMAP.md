@@ -117,7 +117,7 @@ Plans:
   4. The PAT is only ever sent to hosts validated against the configured organization; a request aimed at any other host is refused before the credential leaves the process
   5. One live read per ADO sub-client and one dry run per write verb pass against the real organization, and the results are recorded before Phase 9 starts
 
-**Plans**: 8/8 plans executed
+**Plans**: 12 plans (8 executed, 4 gap closure)
 Plans:
 **Wave 1** *(execution waits for Phase 7 verification)*
 
@@ -147,6 +147,13 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 
 - [x] 08-08-PLAN.md — Human live smoke run against the real org, CI green check, findings and dry-run waivers recorded (D-13, D-15, D-16)
+
+**Gap closure** *(from 08-VERIFICATION.md, 2026-10-21)*
+
+- [ ] 08-09-PLAN.md — Gap closure, Wave 1 (SC1): go directive to the govulncheck-clean 1.27.3 (GO-2026-6809); SC2 proof repeatable under -count (WR-05); two-sided read/write classification in the retry test (WR-04)
+- [ ] 08-10-PLAN.md — Gap closure, Wave 1 (SC4): host rule refuses non-ASCII hosts (CR-01); non-ASCII names after the org stay allowed (user 2026-10-21) and decides the org path on the escaped wire path (WR-01); org_url refuses non-ASCII, fragment markers and dot-segment orgs (IN-01)
+- [ ] 08-11-PLAN.md — Gap closure, Wave 2: pacer leaves a 2s send budget after a hold (user 2026-10-21) (WR-02, D-01 refined), caps a single hold at 5m (WR-03), rounds the D-08 message (IN-02); deferrals recorded
+- [ ] 08-12-PLAN.md — Gap closure, Wave 3 (SC5, SC1 CI): user pushes dev and re-runs smoke.sh plus checklist a, b, c, e on the fixed build; results, CI run and findings recorded in 08-SMOKE.md
 
 **Research**: Yes. Live behaviour after the 5.1-preview to 7.1 API version jump (PR complete, vsrm approvals, comments); request-body replay via `GetBody` on POST; `LocationUrl` host rules
 **Notes**: Kept after Phase 7 so the live smoke run also exercises the new TUI guard path. PLAT-02 lands as one change before the PLAT-03 pacer, because `http.Client` injection needs v7. Update the "Go 1.25.4" constraint in PROJECT.md. v7 does not fix offline startup (`g-01-1`); carry it forward. The PLAT-05 smoke run overlaps the deferred v1.0 live checks: record what it finds without reopening v1.0.
