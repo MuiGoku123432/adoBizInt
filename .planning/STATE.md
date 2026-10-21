@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Gap closure plans 08-09..08-12 created; ready for /gsd-execute-phase 8 --gaps-only
-last_updated: "2026-10-21T19:12:28.740Z"
+stopped_at: Completed 08-09-PLAN.md
+last_updated: "2026-10-21T20:06:03.655Z"
 last_activity: 2026-10-21
-last_activity_desc: "08-08 recorded: TUI-only live reads on v7.1.0 passed, smoke.sh, dry runs, live writes and CI on push waived"
+last_activity_desc: "08-09 complete: go directive 1.27.3, govulncheck v1.9.0 clean locally (CI half pending 08-12); WR-05 and WR-04 test fixes"
 progress:
   total_phases: 10
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 21
-  completed_plans: 17
+  completed_plans: 18
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 
 ## Current Position
 
-Phase: 08 (platform-upgrade-and-pacing) — GAP CLOSURE PLANNED
-Plan: 9 of 12 (gap closure 08-09..08-12 planned; 08-01..08-08 executed)
-Status: Ready to execute gap closure (/gsd-execute-phase 8 --gaps-only). Verification 2026-10-21 was gaps_found 2/5 SC
-Last activity: 2026-10-21 — gap closure plans 08-09..08-12 created and checked (0 blockers)
+Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
+Plan: 10 of 12
+Status: Ready to execute
+Last activity: 2026-10-21 — 08-09 complete: go 1.27.3, govulncheck clean locally; SC2 proof repeatable; retry test two-sided
 
-Progress: [██████████] 100%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -113,6 +113,7 @@ Progress: [██████████] 100%
 | Phase 08 P06 | 13 min | 3 tasks | 8 files |
 | Phase 08 P07 | 11 min | 2 tasks | 8 files |
 | Phase 08 P08 | 12 min | 3 tasks | 3 files |
+| Phase 08 P09 | 10 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -257,6 +258,9 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-08: SC5 live smoke and SC1 CI-on-push were WAIVED by the user, not met; only TUI reads ran on the v7.1.0 build (all failure_count=0, no refusals). 08-SMOKE.md status complete only because Blocks Phase 9 is empty under the blanket waiver
 - [Phase 08]: 08-08: PLAT-05 and PLAT-02 left Pending: the plan closes a missing dry run only with a per-row user waiver and has no waiver path for the CI check
 - [Phase 08]: 08-08: TF401019 branch-stats WARN for UQUAL and uqual-service-df is pre-existing D-06b behaviour (under b5 since 2026-08-17), non-blocking, carried in BL-02
+- [Phase 08]: 08-09: go directive pinned at 1.27.3 (lowest govulncheck-clean 1.27 patch, GO-2026-6809 closed); go mod edit -go, no toolchain line, go.sum unchanged; CI and smoke.sh follow go.mod with no edit
+- [Phase 08]: 08-09: TestV7AuthFailureExitsAuth org is unique per invocation (name plus v7AuthSeq atomic counter), keeping the exact OPTIONS-then-data-route assertion; passes 12/12 under -count=3 (WR-05)
+- [Phase 08]: 08-09: TestRetryNeverWrapsWrites requires every interface method in exactly one of readMethods (16) or writeMethods (5); unclassified fails with text naming both lists and never an override (WR-04)
 
 ### Roadmap Evolution
 
@@ -324,8 +328,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T16:53:55.238Z
-Stopped at: Completed 08-08-PLAN.md (live smoke waived by user; SC5 and SC1 CI not met)
+Last session: 2026-10-21T20:06:03.639Z
+Stopped at: Completed 08-09-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
