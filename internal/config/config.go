@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -217,7 +218,20 @@ var errOrgURLShape = errors.New("org_url must be https://dev.azure.com/{org} or 
 // else, including userinfo, a port, a query or a fragment, is refused. The
 // parse is structural rather than a character class, so an unusual but valid
 // org name is not rejected (RESEARCH A7).
+//
+// A fragment marker is refused even when the fragment is empty. So is any
+// non-ASCII byte in the raw value or the host, because Go's case folding would
+// map it onto a different ASCII org (CR-01), and so are the dot-segment orgs
+// "." and "..". An org segment written percent-encoded, or one that
+// url.PathEscape would change, is refused too: the SDK sends org_url's escaped
+// form and the transport host rule compares that with the org's escaped form,
+// so the org must be the same in both (08-REVIEW IN-01).
 func parseOrgURL(raw string) (string, error) {
+	// url.Parse leaves Fragment empty for a trailing "#", and the SDK would
+	// then put every route into the fragment.
+	if strings.Contains(raw, "#") || !isASCII(raw) {
+		return "", errOrgURLShape
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", errOrgURLShape
@@ -226,11 +240,22 @@ func parseOrgURL(raw string) (string, error) {
 		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
 		return "", errOrgURLShape
 	}
+	// A percent-encoded non-ASCII host decodes into the parsed host.
+	if !isASCII(u.Hostname()) {
+		return "", errOrgURLShape
+	}
 	host := strings.ToLower(u.Hostname())
 	if host == "dev.azure.com" {
 		segment, ok := strings.CutPrefix(u.Path, "/")
 		segment = strings.TrimSuffix(segment, "/")
-		if !ok || segment == "" || strings.Contains(segment, "/") {
+		if !ok || segment == "" || strings.Contains(segment, "/") || segment == "." || segment == ".." {
+			return "", errOrgURLShape
+		}
+		// Both comparisons are needed: the escape of a backslash is %5C
+		// itself, and a name such as a;b is unescaped yet PathEscape changes it.
+		escaped, _ := strings.CutPrefix(u.EscapedPath(), "/")
+		escaped = strings.TrimSuffix(escaped, "/")
+		if escaped != segment || escaped != url.PathEscape(segment) {
 			return "", errOrgURLShape
 		}
 		return strings.ToLower(segment), nil
@@ -242,6 +267,18 @@ func parseOrgURL(raw string) (string, error) {
 		return label, nil
 	}
 	return "", errOrgURLShape
+}
+
+// isASCII reports whether every byte of s is ASCII. It mirrors the transport's
+// asciiLower check without importing internal/transport, which sits above
+// config in the dependency order.
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 // Org returns the lowercase organization name parsed from OrgURL, or "" when
