@@ -45,7 +45,7 @@ acceptance criteria are append-only; Delivered = Resolved + Closed; the process
 template is resolved per project; working days come from team settings only.
 
 - [ ] **Phase 7: Guarded TUI Writes** - TUI writes go through the same guard and audit path as the CLI (BL-01)
-- [ ] **Phase 8: Platform Upgrade and Pacing** - SDK v7, Go 1.27 and govulncheck in CI, a rate-limit pacing transport, and a live smoke run
+- [x] **Phase 8: Platform Upgrade and Pacing** - SDK v7, Go 1.27 and govulncheck in CI, a rate-limit pacing transport, and a live smoke run (completed 2026-10-21)
 - [ ] **Phase 9: Team Foundation** - Validated teams per project, membership, current sprint per team, process fields, and request-shape caps
 - [ ] **Phase 10: Sprint Data Access** - Team-scoped sprint snapshot with completed work, nullable effort, and as-of baseline, exposed as `sprint items`
 - [ ] **Phase 11: Board Honesty** - Hardcoded nag rules with configurable thresholds, emitted as actionable JSON findings
@@ -305,7 +305,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
-| 8. Platform Upgrade and Pacing | v2.0 | 12/12 | In Progress|  |
+| 8. Platform Upgrade and Pacing | v2.0 | 12/12 | Complete    | 2026-10-21 |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
 | 11. Board Honesty | v2.0 | 0/TBD | Not started | - |
