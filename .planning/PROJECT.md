@@ -101,7 +101,7 @@ Known issues carried forward (`.planning/BACKLOG.md`):
 
 ## Constraints
 
-- **Tech stack**: Go 1.27.2, azuredevops/v7 SDK, Charmbracelet Bubbletea. No new dependencies without stated justification
+- **Tech stack**: Go 1.27.3, azuredevops/v7 SDK, Charmbracelet Bubbletea. No new dependencies without stated justification
 - **Compatibility**: `adoBizInt` with no arguments must launch the existing TUI with no behavior change
 - **Security**: The PAT must never be sent to a caller-supplied host, and must never reach stdout or the log file
 - **Output contract**: stdout carries only parseable output. All diagnostics go to stderr or the log file
