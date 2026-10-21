@@ -91,24 +91,33 @@ func (t *Transport) HTTPClient() *http.Client {
 // rule: RoundTrip applies it to every request and redirect hop (D-10b), and
 // ado.NewClient applies it to every discovered location at startup (D-10a).
 //
-// Only https with no userinfo and no explicit port is considered. A host that
-// holds any non-ASCII byte is refused before anything is folded (CR-01). A
-// dev.azure.com host, or any *.dev.azure.com host such as vsrm or vssps, is
-// allowed only when the cleaned path is /{org} or starts with /{org}/; that
+// Only https with no userinfo, no explicit port and no opaque part is
+// considered. A host that holds any non-ASCII byte is refused before anything
+// is folded (CR-01). A dev.azure.com host, or any *.dev.azure.com host such as
+// vsrm or vssps, is allowed only when the escaped path the request line carries
+// is /{org} or starts with /{org}/, with the org in its own escaped form; that
 // holds even when org_url itself is on dev.azure.com, so another organization
-// on the same host is refused. {org}.visualstudio.com and
-// {org}.*.visualstudio.com are allowed for any path. Host and path compare
-// case-insensitively (Pitfall 7). Everything else is refused. A non-ASCII path
-// is not refused on its own: project, repository and team names after the org
-// may be non-ASCII, and the SDK sends them percent-encoded.
+// on the same host is refused. That path is checked as sent and refused rather
+// than normalised (WR-01): an encoded separator (%2F, %5C) hides a segment
+// boundary, an encoded dot (%2E) hides a dot segment, and a path that
+// path.Clean would change other than by one trailing slash holds a dot or empty
+// segment. {org}.visualstudio.com and {org}.*.visualstudio.com are allowed for
+// any path. Host and path compare case-insensitively (Pitfall 7). Everything
+// else is refused.
 //
-// An empty org refuses everything: path.Clean yields "/" for an empty path, and
-// "/"+org would also be "/", which would admit the root of dev.azure.com.
+// A non-ASCII name after the org is allowed: project, repository and team
+// names may be non-ASCII, and their escaped form, such as Caf%C3%A9, is
+// canonical ASCII. A non-ASCII org segment is not: \u212Acme goes on the wire
+// as /%E2%84%AAcme, which never equals /kcme.
+//
+// An empty org refuses everything, through the first check: without it the
+// root path "/" would equal "/" plus the empty org and admit the root of
+// dev.azure.com.
 func (t *Transport) Allowed(u *url.URL) bool {
 	if t.org == "" {
 		return false
 	}
-	if u.Scheme != "https" || u.User != nil || u.Port() != "" {
+	if u.Scheme != "https" || u.User != nil || u.Port() != "" || u.Opaque != "" {
 		return false
 	}
 	host, ok := asciiLower(u.Hostname())
@@ -116,8 +125,19 @@ func (t *Transport) Allowed(u *url.URL) bool {
 		return false
 	}
 	if host == "dev.azure.com" || strings.HasSuffix(host, ".dev.azure.com") {
-		p := strings.ToLower(path.Clean("/" + u.Path))
-		return p == "/"+t.org || strings.HasPrefix(p, "/"+t.org+"/")
+		raw := u.EscapedPath()
+		if !strings.HasPrefix(raw, "/") {
+			raw = "/" + raw
+		}
+		p, ok := asciiLower(raw)
+		if !ok || strings.Contains(p, "%2f") || strings.Contains(p, "%5c") || strings.Contains(p, "%2e") {
+			return false
+		}
+		if c := path.Clean(raw); c != raw && c+"/" != raw {
+			return false
+		}
+		org := "/" + strings.ToLower(url.PathEscape(t.org))
+		return p == org || strings.HasPrefix(p, org+"/")
 	}
 	if host == t.org+".visualstudio.com" {
 		return true
