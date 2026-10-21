@@ -21,13 +21,36 @@ import (
 )
 
 // writeMethods are the five narrow-interface methods that change state in
-// Azure DevOps. No retry decorator may declare one (D-03, T-08-26).
+// Azure DevOps. No retry decorator may declare one (D-03, T-08-26). Every
+// interface method is in exactly one of writeMethods and readMethods.
 var writeMethods = map[string]bool{
 	"UpdateWorkItem":            true,
 	"CreatePullRequestReviewer": true,
 	"UpdatePullRequest":         true,
 	"QueueBuild":                true,
 	"UpdateReleaseApproval":     true,
+}
+
+// readMethods are the narrow-interface methods that only read and must each
+// have a retrying override. A method goes in exactly one of the two lists, and
+// a new method is classified before anyone decides whether it may retry.
+var readMethods = map[string]bool{
+	"GetWorkItems":             true,
+	"GetWorkItem":              true,
+	"QueryByWiql":              true,
+	"GetClassificationNode":    true,
+	"GetAttachmentContent":     true,
+	"GetBranches":              true,
+	"GetPullRequest":           true,
+	"GetPullRequestsByProject": true,
+	"GetRefs":                  true,
+	"GetRepositories":          true,
+	"GetBuilds":                true,
+	"GetDefinition":            true,
+	"GetDefinitions":           true,
+	"GetApprovals":             true,
+	"GetReleaseDefinitions":    true,
+	"GetReleases":              true,
 }
 
 // TestRetryRead pins the D-03 rules over a fail-fast fake behind retryingGit,
@@ -187,10 +210,13 @@ func TestRetryWritePassesThroughOnce(t *testing.T) {
 
 // TestRetryNeverWrapsWrites keeps the decorators exhaustive for reads and
 // empty of writes, over the AST so a comment can neither satisfy nor defeat it
-// (STATE.md F-03-3). For every retrying* type, the methods declared on it
-// anywhere in the package must equal the methods of the interface it embeds
-// (from interfaces.go) minus the five writes. A read added to an interface
-// without an override fails, and so does any write override (T-08-26).
+// (STATE.md F-03-3). Every method of every interface in interfaces.go must be
+// classified in exactly one of readMethods and writeMethods; a method in
+// neither list fails as unclassified, so a write added to an interface can
+// never be mistaken for a read that needs a retry (WR-04, T-08-26). For every
+// retrying* type, the methods declared on it anywhere in the package must be
+// exactly the reads of the interface it embeds: a missing read override fails,
+// and so does any write override (D-03).
 func TestRetryNeverWrapsWrites(t *testing.T) {
 	_, files := parsePackageFiles(t)
 	if files["retry.go"] == nil || files["interfaces.go"] == nil {
@@ -217,13 +243,42 @@ func TestRetryNeverWrapsWrites(t *testing.T) {
 		ifaces[spec.Name.Name] = methods
 		return true
 	})
-	for w := range writeMethods {
-		found := false
-		for _, methods := range ifaces {
-			found = found || methods[w]
+
+	// Two-sided classification: every interface method is exactly one of read
+	// or write. The unclassified message must never point at an override.
+	var ifaceNames []string
+	for name := range ifaces {
+		ifaceNames = append(ifaceNames, name)
+	}
+	sort.Strings(ifaceNames)
+	for _, iface := range ifaceNames {
+		var methods []string
+		for m := range ifaces[iface] {
+			methods = append(methods, m)
 		}
-		if !found {
-			t.Errorf("write %s is in no interface in interfaces.go; the write list is stale and the check is partly vacuous", w)
+		sort.Strings(methods)
+		for _, m := range methods {
+			switch {
+			case readMethods[m] && writeMethods[m]:
+				t.Errorf("%s.%s is in both readMethods and writeMethods; it must be exactly one (D-03)", iface, m)
+			case !readMethods[m] && !writeMethods[m]:
+				t.Errorf("%s.%s is unclassified: add it to readMethods or writeMethods in retry_test.go before deciding whether it may retry; a write must never be retried (D-03)", iface, m)
+			}
+		}
+	}
+
+	for _, list := range []struct {
+		kind    string
+		methods map[string]bool
+	}{{"write", writeMethods}, {"read", readMethods}} {
+		for m := range list.methods {
+			found := false
+			for _, methods := range ifaces {
+				found = found || methods[m]
+			}
+			if !found {
+				t.Errorf("%s %s is in no interface in interfaces.go; the %s list is stale and the check is partly vacuous", list.kind, m, list.kind)
+			}
 		}
 	}
 
@@ -287,7 +342,7 @@ func TestRetryNeverWrapsWrites(t *testing.T) {
 		}
 		var missing []string
 		for m := range ifaces[iface] {
-			if !writeMethods[m] && !got[m] {
+			if readMethods[m] && !writeMethods[m] && !got[m] {
 				missing = append(missing, m)
 			}
 		}
