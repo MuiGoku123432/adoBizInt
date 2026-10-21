@@ -330,7 +330,7 @@ Resume file: None
 
 ## Operator Next Steps
 
-- Verify Phase 8 (/gsd-verify-work 8). Treat SC5 (live smoke) and SC1's CI half as WAIVED, not met; PLAT-05 and PLAT-02 stay Pending until they are proven
+- Phase 8 verified 2026-10-21: gaps_found (2/5 SC). Run /gsd-plan-phase 8 --gaps, then /gsd-execute-phase 8 --gaps-only. Gaps: SC1 govulncheck fails on go1.27.2 (GO-2026-6809, fixed in go1.27.3); SC4 CR-01 non-ASCII host bypass + WR-01 escaped-path mismatch in transport.Allowed; SC5 live smoke waived by user (decide: run it or record an override). Fold WR-02/03/05 into the gap plan. PLAT-02/03/05 all Pending
 - Phase 7 is still unverified: run /gsd-verify-work 7 (9 pending UAT checks) until 07-VERIFICATION.md reads status: passed. The 08-08 precondition was overridden by the user, not satisfied
 - To retire the waivers (recommended before Phase 9 adds its first write verb; no write has gone over the v7 wire yet): git push origin dev and confirm the CI govulncheck step; run scripts/smoke.sh with the SMOKE_* targets plus 08-SMOKE.md checklist 1, 2, 3 and 5; rerun the 08-08 Task 3 record gate, then mark PLAT-05 and PLAT-02 complete
-- Phase 9 planning is not blocked by 08-SMOKE.md (status complete, Blocks Phase 9 empty)
+- Phase 9 should not start until the Phase 8 gaps close (verifier status gaps_found)
