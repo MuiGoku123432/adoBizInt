@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: 08-08 Task 2 human checkpoint (blocked on Phase 7 verification)
-last_updated: "2026-10-20T17:00:53.523Z"
-last_activity: 2026-10-19
-last_activity_desc: Phase 08 execution started
+stopped_at: Completed 08-08-PLAN.md (live smoke waived by user; SC5 and SC1 CI not met)
+last_updated: "2026-10-21T16:53:55.256Z"
+last_activity: 2026-10-21
+last_activity_desc: "08-08 recorded: TUI-only live reads on v7.1.0 passed, smoke.sh, dry runs, live writes and CI on push waived"
 progress:
   total_phases: 10
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 17
-  completed_plans: 16
-  percent: 10
+  completed_plans: 17
+  percent: 20
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
 
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 
 ## Current Position
 
-Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
+Phase: 08 (platform-upgrade-and-pacing) — EXECUTED, awaiting phase verification
 Plan: 8 of 8
-Status: Awaiting human checkpoint (08-08 Task 2 live smoke); Task 1 pre-flight passed at bf5ad85
-Last activity: 2026-10-20 — 08-01..08-07 complete; 08-08 paused at blocking checkpoint
+Status: Ready for verification. All 8 plans have summaries; 08-08 closed with the live smoke WAIVED by the user (SC5 and SC1 CI not met; PLAT-05 and PLAT-02 Pending)
+Last activity: 2026-10-21 — 08-08 recorded: TUI-only live reads on v7.1.0 passed, smoke.sh, dry runs, live writes and CI on push waived
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -112,6 +112,7 @@ Progress: [█████████░] 94%
 | Phase 08 P05 | 11 min | 3 tasks | 3 files |
 | Phase 08 P06 | 13 min | 3 tasks | 8 files |
 | Phase 08 P07 | 11 min | 2 tasks | 8 files |
+| Phase 08 P08 | 12 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -252,6 +253,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-07: reads retry a raw 429 at most twice (maxReadRetries = 2) through decorators that embed workItemAPI/gitAPI/buildAPI/releaseAPI and override only the 16 reads; writes fall through; TestRetryNeverWrapsWrites (go/ast) forbids any write override and requires every read overridden
 - [Phase 08]: 08-07: startup discovery and identity GetConnectionData (also the PR-approval fallback) retry under the same rule; one shared atomic counter, read by the CLI via Client.FetchRetries (retries attempted)
 - [Phase 08]: 08-07: CLI prints one stderr line 'throttled by ADO: N waits, Ds total, R retries' after dispatch, in whole seconds (never 1m30s), on failed runs too; never on the TUI path; checkWIQL skips a decorator's pure QueryByWiql pass-through
+- [Phase 08]: 08-08: User overrode the Task 2 Phase 7 precondition on 2026-10-21 (verbatim: "lets just move on"); 07-VERIFICATION.md is still status human_needed with 9 pending UAT rows
+- [Phase 08]: 08-08: SC5 live smoke and SC1 CI-on-push were WAIVED by the user, not met; only TUI reads ran on the v7.1.0 build (all failure_count=0, no refusals). 08-SMOKE.md status complete only because Blocks Phase 9 is empty under the blanket waiver
+- [Phase 08]: 08-08: PLAT-05 and PLAT-02 left Pending: the plan closes a missing dry run only with a per-row user waiver and has no waiver path for the CI check
+- [Phase 08]: 08-08: TF401019 branch-stats WARN for UQUAL and uqual-service-df is pre-existing D-06b behaviour (under b5 since 2026-08-17), non-blocking, carried in BL-02
 
 ### Roadmap Evolution
 
@@ -319,13 +324,13 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-20T17:00:53.513Z
-Stopped at: 08-08 Task 2 human checkpoint (blocked on Phase 7 verification)
+Last session: 2026-10-21T16:53:55.238Z
+Stopped at: Completed 08-08-PLAN.md (live smoke waived by user; SC5 and SC1 CI not met)
 Resume file: None
 
 ## Operator Next Steps
 
-- Run /gsd-verify-work 7 (9 pending UAT checks) until 07-VERIFICATION.md reads status: passed
-- git push origin dev and confirm the CI govulncheck step is green (PLAT-02 SC1)
-- Run scripts/smoke.sh plus the 08-08 manual checklist (a-e) against the real org
-- Re-run /gsd-execute-phase 8 and paste the results so a continuation agent finishes 08-08 Task 3
+- Verify Phase 8 (/gsd-verify-work 8). Treat SC5 (live smoke) and SC1's CI half as WAIVED, not met; PLAT-05 and PLAT-02 stay Pending until they are proven
+- Phase 7 is still unverified: run /gsd-verify-work 7 (9 pending UAT checks) until 07-VERIFICATION.md reads status: passed. The 08-08 precondition was overridden by the user, not satisfied
+- To retire the waivers (recommended before Phase 9 adds its first write verb; no write has gone over the v7 wire yet): git push origin dev and confirm the CI govulncheck step; run scripts/smoke.sh with the SMOKE_* targets plus 08-SMOKE.md checklist 1, 2, 3 and 5; rerun the 08-08 Task 3 record gate, then mark PLAT-05 and PLAT-02 complete
+- Phase 9 planning is not blocked by 08-SMOKE.md (status complete, Blocks Phase 9 empty)

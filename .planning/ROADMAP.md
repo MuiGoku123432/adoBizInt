@@ -117,7 +117,7 @@ Plans:
   4. The PAT is only ever sent to hosts validated against the configured organization; a request aimed at any other host is refused before the credential leaves the process
   5. One live read per ADO sub-client and one dry run per write verb pass against the real organization, and the results are recorded before Phase 9 starts
 
-**Plans**: 7/8 plans executed
+**Plans**: 8/8 plans executed
 Plans:
 **Wave 1** *(execution waits for Phase 7 verification)*
 
@@ -146,7 +146,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 08-08-PLAN.md — Human live smoke run against the real org, CI green check, findings and dry-run waivers recorded (D-13, D-15, D-16)
+- [x] 08-08-PLAN.md — Human live smoke run against the real org, CI green check, findings and dry-run waivers recorded (D-13, D-15, D-16)
 
 **Research**: Yes. Live behaviour after the 5.1-preview to 7.1 API version jump (PR complete, vsrm approvals, comments); request-body replay via `GetBody` on POST; `LocationUrl` host rules
 **Notes**: Kept after Phase 7 so the live smoke run also exercises the new TUI guard path. PLAT-02 lands as one change before the PLAT-03 pacer, because `http.Client` injection needs v7. Update the "Go 1.25.4" constraint in PROJECT.md. v7 does not fix offline startup (`g-01-1`); carry it forward. The PLAT-05 smoke run overlaps the deferred v1.0 live checks: record what it finds without reopening v1.0.
@@ -298,7 +298,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
-| 8. Platform Upgrade and Pacing | v2.0 | 7/8 | In Progress|  |
+| 8. Platform Upgrade and Pacing | v2.0 | 8/8 | In Progress|  |
 | 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
 | 11. Board Honesty | v2.0 | 0/TBD | Not started | - |
