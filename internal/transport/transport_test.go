@@ -1045,26 +1045,36 @@ func assertFailFast(t *testing.T, err error) {
 	}
 }
 
-// TestFailFastBoundary is the PLAT-03 boundary probe for D-01: after
-// Retry-After 5, a request with less than or exactly 5s left before its
-// deadline fails fast without reaching the base, and one with a nanosecond
-// more waits exactly 5s and is sent.
+// TestFailFastBoundary is the PLAT-03 boundary probe for D-01 with the send
+// budget (WR-02): after Retry-After 5, a request is held only when the hold
+// ends with at least minSendBudget (2s) of its deadline left, so the boundary
+// is 7s. With less than 7s left it fails fast without reaching the base; with
+// exactly 7s or more it waits exactly 5s and is sent, and reaches the base with
+// at least 2s left. The 5s plus 1ns row is the old boundary: it was held and
+// sent with 1ns left, which WR-02 flips to a refusal.
 func TestFailFastBoundary(t *testing.T) {
 	tests := []struct {
 		name     string
 		left     time.Duration
 		wantSent bool
 	}{
-		{name: "minus 1ns", left: 5*time.Second - time.Nanosecond, wantSent: false},
-		{name: "equal", left: 5 * time.Second, wantSent: false},
-		{name: "plus 1ns", left: 5*time.Second + time.Nanosecond, wantSent: true},
+		{name: "old boundary 5s plus 1ns", left: 5*time.Second + time.Nanosecond, wantSent: false},
+		{name: "7s minus 1ns", left: 7*time.Second - time.Nanosecond, wantSent: false},
+		{name: "exactly 7s", left: 7 * time.Second, wantSent: true},
+		{name: "7s plus 1ns", left: 7*time.Second + time.Nanosecond, wantSent: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				var sent []time.Time
+				// atBase is how long each request still had before its
+				// context deadline when it reached the base.
+				var atBase []time.Duration
 				base := rtFunc(func(r *http.Request) (*http.Response, error) {
 					sent = append(sent, time.Now())
+					if deadline, ok := r.Context().Deadline(); ok {
+						atBase = append(atBase, time.Until(deadline))
+					}
 					if len(sent) == 1 {
 						return emptyResp(r, http.StatusOK, "Retry-After", "5"), nil
 					}
@@ -1106,6 +1116,17 @@ func TestFailFastBoundary(t *testing.T) {
 				if gap := sent[1].Sub(primed); gap != 5*time.Second {
 					t.Errorf("request sent %v after Retry-After 5, want exactly 5s", gap)
 				}
+				// The priming request has no deadline, so atBase holds only
+				// the held request's.
+				if len(atBase) != 1 {
+					t.Fatalf("base saw %d requests with a deadline, want 1", len(atBase))
+				}
+				if atBase[0] < 2*time.Second {
+					t.Errorf("request reached the base with %v left, want at least minSendBudget (2s)", atBase[0])
+				}
+				if want := tt.left - 5*time.Second; atBase[0] != want {
+					t.Errorf("request reached the base with %v left, want exactly %v (%v less the 5s hold)", atBase[0], want, tt.left)
+				}
 			})
 		})
 	}
@@ -1114,7 +1135,8 @@ func TestFailFastBoundary(t *testing.T) {
 // TestFailFastClientTimeoutIsDeadline pins the deadline source the CLI and TUI
 // rely on when no caller deadline is set: http.Client.Timeout, which
 // http.Client installs on the request context before calling a custom
-// RoundTripper. A 45s instruction with a 10s per-call budget fails fast.
+// RoundTripper. A 45s instruction with a 10s per-call budget fails fast, and
+// the message gives the hold budget: the 10s less the 2s send budget.
 func TestFailFastClientTimeoutIsDeadline(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		calls := 0
@@ -1133,7 +1155,7 @@ func TestFailFastClientTimeoutIsDeadline(t *testing.T) {
 		if calls != 1 {
 			t.Errorf("base called %d times, want 1 (the priming request only)", calls)
 		}
-		for _, want := range []string{"ADO asked for 45s", "10s left in budget"} {
+		for _, want := range []string{"ADO asked for 45s", "8s left in budget"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("fail-fast error %q does not contain %q (D-08)", err, want)
 			}
@@ -1143,7 +1165,8 @@ func TestFailFastClientTimeoutIsDeadline(t *testing.T) {
 
 // TestFailFastNotCounted pins that a fail-fast is not a wait: Stats is
 // unchanged and no wait-taken line is logged, but one Warn line records what
-// ADO asked for, what was left and the host, never the URL.
+// ADO asked for, the hold budget and the host, never the URL. The budget is
+// the 1s left less the 2s send budget, floored at zero.
 func TestFailFastNotCounted(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		buf := captureLog(t)
@@ -1183,7 +1206,7 @@ func TestFailFastNotCounted(t *testing.T) {
 		if len(warn) != 1 {
 			t.Fatalf("a fail-fast logged %d Warn lines, want 1: %q", len(warn), warn)
 		}
-		for _, want := range []string{"asked=1m0s", "left=1s", "host=dev.azure.com"} {
+		for _, want := range []string{"asked=1m0s", "budget=0s", "host=dev.azure.com"} {
 			if !strings.Contains(warn[0], want) {
 				t.Errorf("fail-fast line %q does not contain %s", warn[0], want)
 			}
@@ -1196,10 +1219,13 @@ func TestFailFastNotCounted(t *testing.T) {
 
 // TestFailFastWhenNotBeforeMovesPastDeadline pins that the wait is decided
 // again after every sleep: a hold that fitted, overtaken by a later response
-// that moves notBefore past the deadline, fails fast before the deadline
-// arrives. The budget is http.Client.Timeout on purpose: if the hold ran on to
-// the deadline, the client's own timer would replace the not-sent error with a
-// plain timeout, losing ErrNotSent, and a never-sent write would read unknown.
+// that moves notBefore past the hold budget, fails fast before the deadline
+// arrives. With a 10s per-call budget the first 5s hold fits its 8s hold
+// budget (10s less the 2s send budget); when it ends, 5s are left, a 3s hold
+// budget, against the 57s still to wait. The budget is http.Client.Timeout on
+// purpose: if the hold ran on to the deadline, the client's own timer would
+// replace the not-sent error with a plain timeout, losing ErrNotSent, and a
+// never-sent write would read unknown.
 func TestFailFastWhenNotBeforeMovesPastDeadline(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		release := make(chan struct{})
@@ -1244,7 +1270,7 @@ func TestFailFastWhenNotBeforeMovesPastDeadline(t *testing.T) {
 		elapsed := time.Since(start)
 
 		assertFailFast(t, err)
-		if want := "ADO asked for 57s, 5s left in budget"; err != nil && !strings.Contains(err.Error(), want) {
+		if want := "ADO asked for 57s, 3s left in budget"; err != nil && !strings.Contains(err.Error(), want) {
 			t.Errorf("fail-fast error %q does not contain %q", err, want)
 		}
 		if elapsed != 5*time.Second {
