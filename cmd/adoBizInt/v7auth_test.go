@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
@@ -34,6 +36,9 @@ const v7AuthLocations = `{"count":2,"value":[` +
 
 // v7AuthBody is the body ADO returns for a rejected PAT on a data call.
 const v7AuthBody = `{"$id":"1","message":"TF400813: The user is not authorized to access this resource.","typeKey":"UnauthorizedRequestException","errorCode":0,"eventId":3000}`
+
+// v7AuthSeq makes each invocation's org unique, so the SDK's process-global location cache never answers for it.
+var v7AuthSeq atomic.Int64
 
 // TestV7AuthFailureExitsAuth is the SC2 exit-code proof (08-CONTEXT SC2
 // clarification, user, 2026-10-19). SC2 is proven on the read and write paths,
@@ -73,14 +78,17 @@ func TestV7AuthFailureExitsAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// A per-subtest org: the SDK's location cache is a process global
-			// keyed by base URL (RESEARCH Pitfall 6).
+			// The org is unique per invocation, not per name: the SDK's
+			// location cache is a process global keyed by base URL and outlives
+			// a subtest, so a rerun under -count=N with a name-only org would
+			// skip OPTIONS (RESEARCH Pitfall 6, 08-REVIEW WR-05).
 			var org strings.Builder
 			for _, r := range strings.ToLower(t.Name()) {
 				if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
 					org.WriteRune(r)
 				}
 			}
+			org.WriteString(strconv.FormatInt(v7AuthSeq.Add(1), 10))
 
 			var seen []string
 			base := rtFunc(func(r *http.Request) (*http.Response, error) {
