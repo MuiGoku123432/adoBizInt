@@ -5,15 +5,15 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: Completed 08-09-PLAN.md
-last_updated: "2026-10-21T20:06:03.655Z"
+stopped_at: Completed 08-10-PLAN.md
+last_updated: "2026-10-21T20:20:48.640Z"
 last_activity: 2026-10-21
-last_activity_desc: "08-09 complete: go directive 1.27.3, govulncheck v1.9.0 clean locally (CI half pending 08-12); WR-05 and WR-04 test fixes"
+last_activity_desc: "08-10 complete: host rule refuses non-ASCII hosts and decides the dev.azure.com org on the escaped path (CR-01, WR-01); org_url refuses non-ASCII and encoded orgs (IN-01)"
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 18
+  completed_plans: 19
   percent: 10
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
@@ -30,11 +30,11 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 ## Current Position
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
-Plan: 10 of 12
+Plan: 11 of 12
 Status: Ready to execute
-Last activity: 2026-10-21 — 08-09 complete: go 1.27.3, govulncheck clean locally; SC2 proof repeatable; retry test two-sided
+Last activity: 2026-10-21 — 08-10 complete: SC4 host rule hardened (homograph hosts refused, escaped-path org binding, org_url canonical); non-ASCII names after the org stay allowed
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -114,6 +114,7 @@ Progress: [█████████░] 86%
 | Phase 08 P07 | 11 min | 2 tasks | 8 files |
 | Phase 08 P08 | 12 min | 3 tasks | 3 files |
 | Phase 08 P09 | 10 min | 3 tasks | 4 files |
+| Phase 08 P10 | 11 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -261,6 +262,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-09: go directive pinned at 1.27.3 (lowest govulncheck-clean 1.27 patch, GO-2026-6809 closed); go mod edit -go, no toolchain line, go.sum unchanged; CI and smoke.sh follow go.mod with no edit
 - [Phase 08]: 08-09: TestV7AuthFailureExitsAuth org is unique per invocation (name plus v7AuthSeq atomic counter), keeping the exact OPTIONS-then-data-route assertion; passes 12/12 under -count=3 (WR-05)
 - [Phase 08]: 08-09: TestRetryNeverWrapsWrites requires every interface method in exactly one of readMethods (16) or writeMethods (5); unclassified fails with text naming both lists and never an override (WR-04)
+- [Phase 08]: 08-10: user decision 2026-10-21 Allow non-ASCII names -- the host rule refuses non-ASCII HOSTS only (asciiLower before folding); non-ASCII names after the org such as Caf%C3%A9 stay allowed; the CR-01 Kelvin-org path variant is closed by the escaped-path compare (/%E2%84%AAcme never equals /kcme)
+- [Phase 08]: 08-10: dev.azure.com org binding is decided on u.EscapedPath() against /+lower(url.PathEscape(org)); %2f, %5c, %2e, dot and empty segments and opaque URLs are refused, never normalised (WR-01)
+- [Phase 08]: 08-10: parseOrgURL refuses a fragment marker, any non-ASCII byte in the raw value or host, . and .. orgs, and an org segment that is percent-encoded or that url.PathEscape would change, as the named org_url error (D-12, IN-01)
+- [Phase 08]: 08-10: double-encoded dot after the org (/acme/%252e%252e/other/_apis) accepted as a risk in deferred-items.md; only exploitable if ADO double-decodes, via a same-host redirect
 
 ### Roadmap Evolution
 
@@ -328,8 +333,8 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T20:06:03.639Z
-Stopped at: Completed 08-09-PLAN.md
+Last session: 2026-10-21T20:20:48.614Z
+Stopped at: Completed 08-10-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
