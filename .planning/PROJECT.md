@@ -21,6 +21,8 @@ An agent driving this tool must never mistake a broken call for an empty result.
 - Writes default to dry run, require `--confirm`, and append a JSONL audit record before the request is sent
 - Closed as `override_closeout`: Phases 2, 4 and 5 verifications are stale against later code, and live-ADO confirmation of the write path is deferred
 
+**v2.0 in progress:** Phase 8 complete (2026-10-21) — the tool runs on azuredevops/v7 v7.1.0 and Go 1.27.3 behind an org-bound pacing transport. Passed with two user overrides: no CI-on-push run and no live dry runs or writes on v7 yet (BACKLOG BL-02). Phase 7 verification is still pending human UAT.
+
 ## Current Milestone: v2.0 Scrum Master
 
 **Goal:** Make sprint health visible and actionable across teams -- the agent informs through CLI read verbs, the TUI acts through a Sprint tab and grooming mode.
@@ -60,6 +62,11 @@ An agent driving this tool must never mistake a broken call for an empty result.
 - ✓ Audit record for every write — v1.0 (CLI only; the TUI write path is BL-01)
 - ✓ Close the attachment, path-containment and nil-dereference findings from CONCERNS.md — v1.0
 
+<!-- Validated in v2.0. -->
+
+- ✓ Azure DevOps SDK upgrade off the 2020 beta: azuredevops/v7 v7.1.0 on Go 1.27.3, govulncheck gate in CI — Validated in Phase 8: Platform Upgrade and Pacing (CI-on-push run accepted by user override)
+- ✓ Rate-limit backoff: header-driven pacing on any status, deadline fail-fast, bounded read-only retry, writes never retried, PAT bound to the configured org — Validated in Phase 8: Platform Upgrade and Pacing (live smoke and live writes waived by user override, tracked in BL-02)
+
 ### Active
 
 <!-- v2.0 Scrum Master. Full REQ-IDs in REQUIREMENTS.md. -->
@@ -73,8 +80,7 @@ An agent driving this tool must never mistake a broken call for an empty result.
 - [ ] Keyboard-only grooming mode with inline edits and backlog reorder
 - [ ] Agent write tiers enforced in the CLI surface
 - [ ] Work item creation, comments and links
-- [ ] Rate-limit backoff and fan-out caps
-- [ ] Azure DevOps SDK upgrade off the 2020 beta
+- [ ] Fan-out caps (PLAT-04, Phase 9)
 
 ### Out of Scope
 
@@ -149,4 +155,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-10-13 after starting v2.0 milestone*
+*Last updated: 2026-10-21 after Phase 8 completion*
