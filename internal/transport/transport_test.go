@@ -65,6 +65,8 @@ func basicAuth(pat string) string {
 // port, dev.azure.com and *.dev.azure.com only under /{org} after path.Clean,
 // {org}.visualstudio.com and {org}.*.visualstudio.com on any path, host and path
 // case-insensitive, and every look-alike, traversal and cross-org form refused.
+// A non-ASCII host, including an IDN homograph that folds onto an allowed host,
+// is refused (CR-01); a non-ASCII project name after the org stays allowed.
 // A failing row is a defect in Allowed, never a row to weaken.
 func TestAllowed(t *testing.T) {
 	tests := []struct {
@@ -100,6 +102,21 @@ func TestAllowed(t *testing.T) {
 
 		// 08-02: an empty org fails closed, or "/"+org would admit the root.
 		{name: "empty org refuses dev.azure.com root", org: "", url: "https://dev.azure.com/", want: false},
+
+		// 08-10 CR-01: Unicode case folding maps U+0130 to i and U+212A to k,
+		// while net/http dials the IDNA form of the original host, so each of
+		// these would match an allowed host after folding yet dial a different,
+		// registrable domain. A non-ASCII host is refused before any folding.
+		{name: "homograph host percent-encoded dotted capital I", org: "acme", url: "https://acme.v%C4%B0sualstudio.com/x", want: false},
+		{name: "homograph service host dotted capital I", org: "acme", url: "https://acme.evil.v\u0130sualstudio.com/x", want: false},
+		{name: "homograph org label Kelvin sign", org: "kcme", url: "https://\u212Acme.visualstudio.com/x", want: false},
+		// Cyrillic a does not fold to ASCII, so this was already refused; it
+		// stays pinned because no decoded-path refusal exists.
+		{name: "Cyrillic look-alike org segment", org: "acme", url: "https://dev.azure.com/\u0430cme/x", want: false},
+		// Non-ASCII names after the org are allowed (user decision 2026-10-21,
+		// "Allow non-ASCII names"): the SDK sends them percent-encoded.
+		{name: "non-ASCII project after the org", org: "acme", url: "https://dev.azure.com/acme/Caf%C3%A9/_apis/wit/workitems/42", want: true},
+		{name: "non-ASCII project on the legacy org host", org: "acme", url: "https://acme.visualstudio.com/Caf%C3%A9/_apis", want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -162,11 +179,47 @@ func TestRefuseNeverReachesBase(t *testing.T) {
 	}
 }
 
+// TestRefuseHomographNeverReachesBase pins CR-01 on a first hop: an IDN
+// homograph of an allowed host, which Go's case folding would map onto
+// acme.visualstudio.com while net/http dials acme.xn--visualstudio-n4g.com, is
+// refused before the base transport sees it, with the typed not-sent refusal and
+// the body closed.
+func TestRefuseHomographNeverReachesBase(t *testing.T) {
+	tr := New("acme", 0, mustNotSend(t))
+	body := &closeRecorder{Reader: strings.NewReader(`{"op":"add"}`)}
+	req, err := http.NewRequest(http.MethodPost, "https://acme.v%C4%B0sualstudio.com/x", body)
+	if err != nil {
+		t.Fatalf("NewRequest() error = %v", err)
+	}
+	req.Header.Set("Authorization", basicAuth("homograph-fixture-pat"))
+
+	resp, err := tr.HTTPClient().Do(req)
+
+	if resp != nil {
+		t.Errorf("Do() returned a response, want nil")
+	}
+	if err == nil {
+		t.Fatal("Do() error = nil, want the refusal")
+	}
+	if !errors.Is(err, ErrNotSent) {
+		t.Errorf("errors.Is(%v, ErrNotSent) = false, want true on a first hop", err)
+	}
+	var ns *notSentError
+	if !errors.As(err, &ns) {
+		t.Fatalf("Do() error = %v (%T), want it to wrap *notSentError", err, err)
+	}
+	if !body.closed {
+		t.Errorf("request body was not closed on refusal (RoundTripper contract)")
+	}
+}
+
 // TestRefuseRedirectHopIsNotNotSent pins D-10b on redirect hops and Pitfall 4.
 // The first hop reached ADO, so a refused hop must not read as never sent: a
 // write that got this far is unknown, not failed. The second row is the case
 // the per-hop check exists for: Go forwards Authorization on a redirect to the
-// same host, so a cross-org redirect on dev.azure.com would carry the PAT.
+// same host, so a cross-org redirect on dev.azure.com would carry the PAT. The
+// third row is CR-01: an IDN homograph host must be refused by the transport
+// itself, not left to net/http's cross-domain header stripping.
 func TestRefuseRedirectHopIsNotNotSent(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -185,6 +238,12 @@ func TestRefuseRedirectHopIsNotNotSent(t *testing.T) {
 			first:    "https://dev.azure.com/acme/_apis/wit/workitems",
 			location: "https://dev.azure.com/other/_apis/wit/workitems",
 			wantHost: "dev.azure.com",
+		},
+		{
+			name:     "redirect to an IDN homograph of the legacy org host",
+			first:    "https://dev.azure.com/acme/_apis/wit/workitems",
+			location: "https://acme.v%C4%B0sualstudio.com/y",
+			wantHost: "acme.v\u0130sualstudio.com",
 		},
 	}
 	for _, tt := range tests {
