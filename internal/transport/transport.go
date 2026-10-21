@@ -10,10 +10,10 @@
 //
 // It also paces: a response that tells the client to slow down holds every
 // later request until the instructed time (D-04). A hold that does not fit the
-// hold budget, the time left before the request's deadline less minSendBudget,
-// is refused at once as rate limited (D-01). It paces but never retries, and
-// never reads or replays a request body (Pitfall 8): reads retry in the service
-// layer, writes never.
+// hold budget, the time left before the request's deadline less minSendBudget
+// and never more than maxHold, is refused at once as rate limited (D-01). It
+// paces but never retries, and never reads or replays a request body (Pitfall
+// 8): reads retry in the service layer, writes never.
 //
 // The package imports the standard library and internal/logging only. It must
 // never import internal/ado, internal/guard or internal/config: ado imports
@@ -46,8 +46,9 @@ import (
 var ErrNotSent = errors.New("request not sent")
 
 // ErrRateLimited marks the D-01 fail-fast only: ADO asked for a wait that does
-// not fit the hold budget, the time left before the request's deadline less
-// minSendBudget, so the request was refused instead of held. It lets
+// not fit the hold budget, so the request was refused instead of held. The hold
+// budget is the time left before the request's deadline less minSendBudget,
+// and never more than maxHold, with or without a deadline. It lets
 // classifyFailure label the refusal rate_limit structurally, without reading
 // error text. A request held and then cancelled, or refused by the host rule,
 // does not match it.
@@ -62,6 +63,13 @@ var ErrRateLimited = errors.New("rate limited")
 // (2026-10-21), under the 08-CONTEXT discretion for a cap on a single honoured
 // Retry-After.
 const minSendBudget = 2 * time.Second
+
+// maxHold is the longest single hold the pacer takes. ADO documents a 5-minute
+// consumption window and delays of up to 30s (Pitfall 9), so no honest
+// instruction needs a longer hold. A longer wait is refused at once as rate
+// limited, never held and never sent early, so no header can park the process,
+// including on the deadline-less startup context when request_timeout is 0.
+const maxHold = 5 * time.Minute
 
 // Transport is the http.RoundTripper every SDK sub-client sends through. The
 // zero value is not usable; build one with New.
@@ -86,7 +94,8 @@ type Transport struct {
 // New returns a Transport bound to org that hands allowed requests to base.
 // org is the lowercase {org} parsed from org_url (config.Config.Org); an empty
 // org refuses every request. requestTimeout bounds a single HTTP call, and zero
-// keeps its existing meaning of no per-call bound.
+// keeps its existing meaning of no per-call bound. Either way a single pacer
+// hold is bounded by maxHold.
 func New(org string, requestTimeout time.Duration, base http.RoundTripper) *Transport {
 	return &Transport{org: strings.ToLower(org), requestTimeout: requestTimeout, base: base}
 }
@@ -175,9 +184,10 @@ func asciiLower(s string) (string, bool) {
 // the base transport sees it, then holds an allowed request until the pacer's
 // notBefore has passed, or refuses it as rate limited when that hold does not
 // fit the hold budget, the time left before its deadline less minSendBudget
-// (D-01), and otherwise passes the request on unchanged. Every response's
-// headers are observed before it is returned, whatever its status. A redirect
-// hop is any request carrying the response that caused it.
+// and never more than maxHold (D-01), and otherwise passes the request on
+// unchanged. Every response's headers are observed before it is returned,
+// whatever its status. A redirect hop is any request carrying the response
+// that caused it.
 func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	hop := req.Response != nil
 	if !t.Allowed(req.URL) {
@@ -211,16 +221,17 @@ func (t *Transport) Stats() (waits int64, waited time.Duration) {
 // Before every sleep, including the re-check after one, it decides whether the
 // wait fits: a context that has already ended is not sent and wraps its
 // context error, and a wait longer than the hold budget is refused at once as
-// rate limited (D-01). The hold budget is the time left before the request's
-// deadline less minSendBudget; a wait equal to it is taken. So a request that
-// is held is sent with at least minSendBudget left, and no hold outlives the
-// deadline. That matters beyond honesty: once http.Client's own Timeout fires,
-// Client.do replaces whatever this returned with its timeout error, which
-// would drop ErrNotSent and turn a never-sent write into unknown. The deadline
-// seen here already includes the Client.Timeout, which http.Client installs on
-// the request context before calling a custom RoundTripper. If the request's
-// context ends during a hold, the request is not sent and the error wraps the
-// context error.
+// rate limited (D-01). The hold budget is maxHold, lowered to the time left
+// before the request's deadline less minSendBudget when the context has a
+// deadline; a wait equal to it is taken. So a request that is held is sent
+// with at least minSendBudget left, no single hold exceeds maxHold, and no hold
+// outlives the deadline. That last matters beyond honesty: once http.Client's
+// own Timeout fires, Client.do replaces whatever this returned with its timeout
+// error, which would drop ErrNotSent and turn a never-sent write into unknown.
+// The deadline seen here already includes the Client.Timeout, which
+// http.Client installs on the request context before calling a custom
+// RoundTripper. If the request's context ends during a hold, the request is
+// not sent and the error wraps the context error.
 func (t *Transport) hold(req *http.Request, hop bool) error {
 	ctx := req.Context()
 	host := req.URL.Hostname()
@@ -233,14 +244,16 @@ func (t *Transport) hold(req *http.Request, hop bool) error {
 			closeBody(req)
 			return &notSentError{reason: reasonHeld, host: host, org: t.org, hop: hop, cause: err}
 		}
+		budget := maxHold
 		if deadline, ok := ctx.Deadline(); ok {
-			if budget := time.Until(deadline) - minSendBudget; wait > budget {
-				budget = max(budget, 0)
-				closeBody(req)
-				logging.Logger().Warn("Refused to hold a request for ADO rate-limit pacing",
-					"asked", wait, "budget", budget, "host", host)
-				return &notSentError{reason: reasonRateLimited, host: host, org: t.org, hop: hop, wait: wait, left: budget}
-			}
+			budget = min(budget, time.Until(deadline)-minSendBudget)
+		}
+		if wait > budget {
+			budget = max(budget, 0)
+			closeBody(req)
+			logging.Logger().Warn("Refused to hold a request for ADO rate-limit pacing",
+				"asked", wait, "budget", budget, "host", host)
+			return &notSentError{reason: reasonRateLimited, host: host, org: t.org, hop: hop, wait: wait, left: budget}
 		}
 		timer := time.NewTimer(wait)
 		select {
@@ -371,8 +384,9 @@ const (
 	// reasonHeld: the request's context ended while the pacer held it.
 	reasonHeld notSentReason = "held"
 	// reasonRateLimited: the pacer's wait did not fit the hold budget, the
-	// time left before the request's deadline less minSendBudget, so it
-	// refused the request instead of holding it (D-01).
+	// time left before the request's deadline less minSendBudget and never
+	// more than maxHold, so it refused the request instead of holding it
+	// (D-01).
 	reasonRateLimited notSentReason = "rate_limited"
 )
 
@@ -390,24 +404,27 @@ type notSentError struct {
 	hop    bool
 	cause  error
 	// wait is what ADO asked for and left is the longest hold the budget
-	// allowed, floored at zero, for the D-01 fail-fast only.
+	// allowed (at most maxHold), floored at zero, for the D-01 fail-fast only.
 	wait, left time.Duration
 }
 
 func (e *notSentError) Error() string {
 	switch e.reason {
 	case reasonRateLimited:
-		// D-08: the cause, in the Failure.Message an agent reads.
-		return fmt.Sprintf("rate limited: ADO asked for %ds, %ds left in budget", wholeSeconds(e.wait), wholeSeconds(e.left))
+		// D-08: the cause, in the Failure.Message an agent reads. The asked
+		// wait rounds up and the budget down: a wait is refused only when it
+		// exceeds the budget, so the printed pair never reads as one that
+		// fits. Ceiling by remainder, because adding a second to a saturated
+		// wait would overflow.
+		asked := e.wait / time.Second
+		if e.wait%time.Second != 0 {
+			asked++
+		}
+		return fmt.Sprintf("rate limited: ADO asked for %ds, %ds left in budget", int64(asked), int64(e.left/time.Second))
 	case reasonHeld:
 		return fmt.Sprintf("request to host %q not sent: its context ended while held by ADO rate-limit pacing: %v", e.host, e.cause)
 	}
 	return fmt.Sprintf("refused to send credentials to host %q: not bound to organization %q", e.host, e.org)
-}
-
-// wholeSeconds rounds d to the nearest second, as a count of seconds.
-func wholeSeconds(d time.Duration) int64 {
-	return int64(d.Round(time.Second) / time.Second)
 }
 
 // Unwrap returns the context error of a held request, and nil otherwise.
