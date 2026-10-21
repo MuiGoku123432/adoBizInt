@@ -1286,3 +1286,159 @@ func TestFailFastWhenNotBeforeMovesPastDeadline(t *testing.T) {
 		}
 	})
 }
+
+// TestHoldCap pins WR-03: no single hold exceeds maxHold (5m), with or without
+// a deadline. On a deadline-less request (request_timeout: 0 and
+// context.Background, the startup shape) Retry-After 300 is held exactly 5m
+// and sent, while Retry-After 301, or an HTTP-date centuries ahead, is refused
+// at once as rate limited and never sent. Under a 10-minute per-call budget the
+// cap binds before the deadline does. A refusal is not a counted wait (D-05).
+func TestHoldCap(t *testing.T) {
+	tests := []struct {
+		name       string
+		timeout    time.Duration
+		retryAfter func() string // built inside the bubble, so a date uses the fake clock
+		wantSent   bool
+		wantMsg    string
+	}{
+		{
+			name:       "300s held with no deadline",
+			retryAfter: func() string { return "300" },
+			wantSent:   true,
+		},
+		{
+			name:       "301s refused with no deadline",
+			retryAfter: func() string { return "301" },
+			wantMsg:    "ADO asked for 301s, 300s left in budget",
+		},
+		{
+			// The wait saturates time.Duration; the message still prints it
+			// as a positive count of whole seconds.
+			name: "far-future HTTP-date refused with no deadline",
+			retryAfter: func() string {
+				return time.Date(9999, time.December, 31, 23, 59, 59, 0, time.UTC).Format(http.TimeFormat)
+			},
+			wantMsg: "ADO asked for 9223372037s, 300s left in budget",
+		},
+		{
+			name:       "400s refused under a 10-minute budget",
+			timeout:    10 * time.Minute,
+			retryAfter: func() string { return "400" },
+			wantMsg:    "ADO asked for 400s, 300s left in budget",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				retryAfter := tt.retryAfter()
+				var sent []time.Time
+				base := rtFunc(func(r *http.Request) (*http.Response, error) {
+					sent = append(sent, time.Now())
+					if len(sent) == 1 {
+						return emptyResp(r, http.StatusOK, "Retry-After", retryAfter), nil
+					}
+					return emptyResp(r, http.StatusOK), nil
+				})
+				tr := New("acme", tt.timeout, base)
+				client := tr.HTTPClient()
+				if err := send(client, pacedURL); err != nil {
+					t.Fatalf("priming request error = %v", err)
+				}
+				primed := time.Now()
+
+				err := send(client, pacedURL)
+
+				if tt.wantSent {
+					if err != nil {
+						t.Fatalf("request error = %v, want it held 5m and sent", err)
+					}
+					if len(sent) != 2 {
+						t.Fatalf("base saw %d requests, want 2", len(sent))
+					}
+					if gap := sent[1].Sub(primed); gap != 5*time.Minute {
+						t.Errorf("request sent %v after Retry-After %s, want exactly 5m (maxHold)", gap, retryAfter)
+					}
+					if waits, waited := tr.Stats(); waits != 1 || waited != 5*time.Minute {
+						t.Errorf("Stats() = %d, %v, want 1, 5m", waits, waited)
+					}
+					return
+				}
+				assertFailFast(t, err)
+				if len(sent) != 1 {
+					t.Errorf("base saw %d requests, want 1 (the priming request only)", len(sent))
+				}
+				if held := time.Since(primed); held != 0 {
+					t.Errorf("refusal took %v, want no hold at all", held)
+				}
+				if waits, waited := tr.Stats(); waits != 0 || waited != 0 {
+					t.Errorf("Stats() after a refusal = %d, %v, want 0, 0", waits, waited)
+				}
+				if err != nil && !strings.Contains(err.Error(), tt.wantMsg) {
+					t.Errorf("refusal error %q does not contain %q (D-08)", err, tt.wantMsg)
+				}
+			})
+		})
+	}
+}
+
+// TestFailFastMessageRounding pins IN-02: the D-08 message rounds the asked
+// wait up and the hold budget down, so the printed asked value is always
+// greater than the printed budget and the message reads as a wait that did not
+// fit. Under round-to-nearest these rows read "5s, 5s" and "0s, 0s".
+func TestFailFastMessageRounding(t *testing.T) {
+	tests := []struct {
+		name   string
+		header []string
+		left   time.Duration
+		want   string
+	}{
+		{
+			// 6.6s left less the 2s send budget is a 4.6s hold budget.
+			name:   "Retry-After 5 with 6.6s left",
+			header: []string{"Retry-After", "5"},
+			left:   6600 * time.Millisecond,
+			want:   "ADO asked for 5s, 4s left in budget",
+		},
+		{
+			// 2.2s left less the 2s send budget is a 0.2s hold budget.
+			name:   "X-RateLimit-Delay 0.4 with 2.2s left",
+			header: []string{"X-RateLimit-Delay", "0.4"},
+			left:   2200 * time.Millisecond,
+			want:   "ADO asked for 1s, 0s left in budget",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				calls := 0
+				base := rtFunc(func(r *http.Request) (*http.Response, error) {
+					calls++
+					return emptyResp(r, http.StatusOK, tt.header...), nil
+				})
+				client := New("acme", 0, base).HTTPClient()
+				if err := send(client, pacedURL); err != nil {
+					t.Fatalf("priming request error = %v", err)
+				}
+
+				ctx, cancel := context.WithTimeout(context.Background(), tt.left)
+				defer cancel()
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, pacedURL, nil)
+				if err != nil {
+					t.Fatalf("NewRequest() error = %v", err)
+				}
+				resp, err := client.Do(req)
+				if resp != nil {
+					resp.Body.Close()
+				}
+
+				assertFailFast(t, err)
+				if calls != 1 {
+					t.Errorf("base called %d times, want 1 (the priming request only)", calls)
+				}
+				if err != nil && !strings.Contains(err.Error(), tt.want) {
+					t.Errorf("fail-fast error %q does not contain %q (D-08)", err, tt.want)
+				}
+			})
+		})
+	}
+}
