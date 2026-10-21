@@ -33,6 +33,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"sentinovo.ai/bizInt/internal/logging"
 )
@@ -90,13 +91,16 @@ func (t *Transport) HTTPClient() *http.Client {
 // rule: RoundTrip applies it to every request and redirect hop (D-10b), and
 // ado.NewClient applies it to every discovered location at startup (D-10a).
 //
-// Only https with no userinfo and no explicit port is considered. A
+// Only https with no userinfo and no explicit port is considered. A host that
+// holds any non-ASCII byte is refused before anything is folded (CR-01). A
 // dev.azure.com host, or any *.dev.azure.com host such as vsrm or vssps, is
 // allowed only when the cleaned path is /{org} or starts with /{org}/; that
 // holds even when org_url itself is on dev.azure.com, so another organization
 // on the same host is refused. {org}.visualstudio.com and
 // {org}.*.visualstudio.com are allowed for any path. Host and path compare
-// case-insensitively (Pitfall 7). Everything else is refused.
+// case-insensitively (Pitfall 7). Everything else is refused. A non-ASCII path
+// is not refused on its own: project, repository and team names after the org
+// may be non-ASCII, and the SDK sends them percent-encoded.
 //
 // An empty org refuses everything: path.Clean yields "/" for an empty path, and
 // "/"+org would also be "/", which would admit the root of dev.azure.com.
@@ -107,7 +111,10 @@ func (t *Transport) Allowed(u *url.URL) bool {
 	if u.Scheme != "https" || u.User != nil || u.Port() != "" {
 		return false
 	}
-	host := strings.ToLower(u.Hostname())
+	host, ok := asciiLower(u.Hostname())
+	if !ok {
+		return false
+	}
 	if host == "dev.azure.com" || strings.HasSuffix(host, ".dev.azure.com") {
 		p := strings.ToLower(path.Clean("/" + u.Path))
 		return p == "/"+t.org || strings.HasPrefix(p, "/"+t.org+"/")
@@ -116,6 +123,20 @@ func (t *Transport) Allowed(u *url.URL) bool {
 		return true
 	}
 	return strings.HasPrefix(host, t.org+".") && strings.HasSuffix(host, ".visualstudio.com")
+}
+
+// asciiLower lowercases s, or returns "" and false when s holds any non-ASCII
+// byte. Go's Unicode case mapping folds U+0130 to i and U+212A to k, while
+// net/http dials the IDNA form of the original host, so a folded match is not
+// the host that gets dialed (CR-01): acme.v\u0130sualstudio.com folds to
+// acme.visualstudio.com but dials acme.xn--visualstudio-n4g.com.
+func asciiLower(s string) (string, bool) {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return "", false
+		}
+	}
+	return strings.ToLower(s), true
 }
 
 // RoundTrip refuses a request whose URL the host rule does not allow, before
