@@ -5,16 +5,16 @@ milestone_name: Scrum Master
 current_phase: 08
 current_phase_name: platform-upgrade-and-pacing
 status: executing
-stopped_at: 08-12 Task 2 human checkpoint (user push + live smoke re-run)
-last_updated: "2026-10-21T20:35:58.090Z"
+stopped_at: Completed 08-12-PLAN.md (re-run waived by user)
+last_updated: "2026-10-21T21:09:01.128Z"
 last_activity: 2026-10-21
-last_activity_desc: "08-10 complete: host rule refuses non-ASCII hosts and decides the dev.azure.com org on the escaped path (CR-01, WR-01); org_url refuses non-ASCII and encoded orgs (IN-01)"
+last_activity_desc: "08-12 complete: live smoke re-run, dev push and CI check waived by user (verbatim: I am willing to move to phase 9 as is); SC5 and SC1 CI half not met; PLAT-05 and PLAT-02 Pending"
 progress:
   total_phases: 10
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 21
-  completed_plans: 20
-  percent: 10
+  completed_plans: 21
+  percent: 20
 state_head: 016a82cf3a27ebcd23fbf333b9301529528fba81
 ---
 
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md (updated 2026-10-13)
 
 Phase: 08 (platform-upgrade-and-pacing) — EXECUTING
 Plan: 12 of 12
-Status: Awaiting human checkpoint (08-12 Task 2): push dev, CI run, smoke.sh, checklist a/b/c/e on go1.27.3; Task 1 pre-flight passed at 71ae935
-Last activity: 2026-10-21 — 08-10 complete: SC4 host rule hardened (homograph hosts refused, escaped-path org binding, org_url canonical); non-ASCII names after the org stay allowed
+Status: All 12 plans have summaries; ready for phase verification. 08-12 re-run waived by user, not run
+Last activity: 2026-10-21 — 08-12 complete: the user declined the push, CI check, smoke.sh and checklist a/b/c/e ("I am willing to move to phase 9 as is"); 08-SMOKE.md closed as waived, not met (status complete only under the blanket waiver); PLAT-05 and PLAT-02 left Pending
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -116,6 +116,7 @@ Progress: [██████████] 95%
 | Phase 08 P09 | 10 min | 3 tasks | 4 files |
 | Phase 08 P10 | 11 min | 3 tasks | 4 files |
 | Phase 08 P11 | 13 min | 2 tasks | 3 files |
+| Phase 08 P12 | 25 min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -270,6 +271,10 @@ Full log in PROJECT.md Key Decisions.
 - [Phase 08]: 08-11: D-01 refined -- a hold is taken only if it ends with at least minSendBudget of the deadline left and is no longer than maxHold; refusals stay the D-01 fail-fast
 - [Phase 08]: 08-11: minSendBudget = 2s (user, 2026-10-21: use 2s budget) under the 08-CONTEXT cap discretion; waits up to 28s honoured at the 30s default request_timeout
 - [Phase 08]: 08-11: WR-03 via maxHold = 5m, not by rejecting request_timeout: 0; supersedes 08-RESEARCH Open Question 5 under the same discretion grant
+- [Phase 08]: 08-12: user waived the whole live smoke re-run on 2026-10-21, verbatim: "I am willing to move to phase 9 as is"; no push, no CI run, no smoke.sh, no checklist a/b/c/e. SC5 and SC1 CI half waived a second time, not met
+- [Phase 08]: 08-12: 08-SMOKE.md status complete only because Blocks Phase 9 is empty under the blanket waiver; the per-row dry-run waiver rule and the CI-conclusion rule are not met (strictly it would be blocked)
+- [Phase 08]: 08-12: PLAT-05 and PLAT-02 stay Pending (evidence waived, not met); 08-10 host rule and 08-11 pacer never exercised against real ADO; no write has gone over v7
+- [Phase 08]: 08-12: recommended - first Phase 9 live run doubles as the host-rule smoke (smoke.sh plus checklist 3 before the first Phase 9 write verb); push dev and confirm CI govulncheck (near-zero cost)
 
 ### Roadmap Evolution
 
@@ -337,14 +342,15 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-21T20:35:58.078Z
-Stopped at: 08-12 Task 2 human checkpoint (user push + live smoke re-run)
+Last session: 2026-10-21T21:09:01.113Z
+Stopped at: Completed 08-12-PLAN.md (re-run waived by user)
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 8 verified 2026-10-21: gaps_found (2/5 SC). Gap plans 08-09..08-12 are ready: run /gsd-execute-phase 8 --gaps-only. 08-12 stops at a blocking checkpoint: you push dev (executor never pushes), paste the CI run, and run smoke.sh plus checklist a, b, c, e on the go1.27.3 build. PLAT-02/03/05 all Pending
+- Phase 8 gap plans 08-09..08-12 all have summaries; re-verify Phase 8. 08-12's live smoke re-run, dev push and CI check were WAIVED by the user on 2026-10-21 (verbatim: "I am willing to move to phase 9 as is"), not met: SC5 and SC1's CI half need the phase-level override at verification. PLAT-05 and PLAT-02 Pending
+- Still unproven live (BL-02): CI on push; every write over v7 (none has run); all six dry runs; attachment download under the 08-10 host rule (IN-05); the 08-10 host rule and 08-11 pacer against real ADO; live pacing (ADO never throttled). Recommended: make the first Phase 9 live run double as the host-rule smoke (smoke.sh plus checklist 3 before Phase 9's first write verb), and push dev to confirm the CI govulncheck step (near-zero cost)
 - Gap-planning decisions (user, 2026-10-21): SC5 re-run the live smoke; SC1 CI user pushes; pacer send budget 2s (waits up to 28s honoured at the 30s default); non-ASCII names after the org stay allowed (host still refused)
 - Phase 7 is still unverified: run /gsd-verify-work 7 (9 pending UAT checks) until 07-VERIFICATION.md reads status: passed. The 08-08 precondition was overridden by the user, not satisfied
 - To retire the waivers (recommended before Phase 9 adds its first write verb; no write has gone over the v7 wire yet): git push origin dev and confirm the CI govulncheck step; run scripts/smoke.sh with the SMOKE_* targets plus 08-SMOKE.md checklist 1, 2, 3 and 5; rerun the 08-08 Task 3 record gate, then mark PLAT-05 and PLAT-02 complete
-- Phase 9 should not start until the Phase 8 gaps close (verifier status gaps_found)
+- Phase 9: the user chose to move on with the 08-12 re-run waived (2026-10-21); 08-SMOKE.md does not block it. The verifier's gaps_found status from before 08-09..08-12 still needs re-verification
