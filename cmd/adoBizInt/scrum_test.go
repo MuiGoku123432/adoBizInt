@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -253,4 +254,57 @@ func TestScrumVerbsEndToEnd(t *testing.T) {
 			t.Errorf("stderr = %q", stderr)
 		}
 	})
+}
+
+// TestScrumInterruptDuringValidation: a signal that lands while teams are
+// being validated yields the interrupt crash record, as every other read
+// does, not a validation error.
+func TestScrumInterruptDuringValidation(t *testing.T) {
+	withReadBudget(t, time.Minute)
+	withScrumConfig(t, scrumTestConfig())
+	stdout, stderr := captureOutput(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &fakeReadClient{t: t, ResolveTeamsFunc: func(rctx context.Context, _ []string, _ map[string][]string) ([]ado.Team, error) {
+		cancel()
+		return nil, rctx.Err()
+	}}
+	if code := dispatch(ctx, c, []string{"sprint", "current", "--json"}); code != exitUnknown {
+		t.Errorf("exit = %d, want 3", code)
+	}
+	if !strings.Contains(stdout.String(), `"interrupt"`) {
+		t.Errorf("stdout = %q, want the interrupt crash record", stdout)
+	}
+	if strings.Contains(stderr.String(), "team validation failed") {
+		t.Errorf("stderr = %q, an interrupt is not a validation failure", stderr)
+	}
+}
+
+// TestDefaultCapRefuses26Teams is AC9 as the spec states it: 26 configured
+// teams under the default cap of 25 exit 3 with zero ADO calls.
+func TestDefaultCapRefuses26Teams(t *testing.T) {
+	withReadBudget(t, time.Minute)
+	cfg := scrumTestConfig()
+	cfg.Teams = map[string]config.StringSlice{"A": {}, "B": {"Mobile"}}
+	for i := 0; i < 25; i++ {
+		cfg.Teams["A"] = append(cfg.Teams["A"], "T"+string(rune('a'+i)))
+	}
+	withScrumConfig(t, cfg)
+	_, stderr := captureOutput(t)
+	if code := dispatch(context.Background(), &fakeReadClient{t: t}, []string{"teams", "members"}); code != exitUnknown {
+		t.Errorf("exit = %d, want 3", code)
+	}
+	if !strings.Contains(stderr.String(), "request covers 26 teams, over max_teams 25") {
+		t.Errorf("stderr = %q", stderr)
+	}
+}
+
+// TestHumanOutputSanitizesADOTeamNames: team names come from ADO, so an escape
+// sequence in one never reaches the terminal raw.
+func TestHumanOutputSanitizesADOTeamNames(t *testing.T) {
+	var b bytes.Buffer
+	renderFindings(&b, []ado.Finding{{Kind: ado.FindingCadenceMismatch, Detail: "x (P/\x1b[31mRed\nTeam)"}})
+	renderFailures(&b, []ado.Failure{{Project: "P", Team: "\x1b[2JEvil", Operation: "op", Kind: ado.FailureOther}})
+	if strings.ContainsRune(b.String(), '\x1b') || strings.Count(b.String(), "\n") != 2 {
+		t.Errorf("output = %q", b.String())
+	}
 }

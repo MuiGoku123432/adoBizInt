@@ -72,9 +72,6 @@ func renderBranches(w io.Writer, items []ado.Branch) {
 	})
 }
 
-// renderDashboardCounts renders the single-element Items slice the dashboard
-// read returns (Phase 2 D-01). It stays a loop rather than an items[0] index so
-// an empty envelope writes nothing instead of panicking.
 func renderTeams(w io.Writer, items []ado.Team) {
 	writeRows(w, items, func(b *strings.Builder, i ado.Team) {
 		row(b, i.Project, i.Team, i.TeamID)
@@ -109,6 +106,9 @@ func renderProcessFields(w io.Writer, items []ado.ProcessFields) {
 	})
 }
 
+// renderDashboardCounts renders the single-element Items slice the dashboard
+// read returns (Phase 2 D-01). It stays a loop rather than an items[0] index so
+// an empty envelope writes nothing instead of panicking.
 func renderDashboardCounts(w io.Writer, items []ado.DashboardCounts) {
 	writeRows(w, items, func(b *strings.Builder, i ado.DashboardCounts) {
 		row(b, fmt.Sprintf("work_items=%d", i.WorkItems),
@@ -135,7 +135,8 @@ func renderFailures(w io.Writer, failures []ado.Failure) {
 	for _, f := range failures {
 		where := f.Project
 		if f.Team != "" {
-			where += "/" + f.Team
+			// Team names come from ADO (ResolveTeams returns its spelling).
+			where += "/" + sanitize(f.Team)
 		}
 		fmt.Fprintf(&b, "warning: %s: %s failed (%s)\n", where, f.Operation, f.Kind)
 	}
@@ -144,11 +145,11 @@ func renderFailures(w io.Writer, failures []ado.Failure) {
 
 // renderFindings writes one line per finding to the stderr writer, after the
 // scope line, the human counterpart of the envelope's findings. Detail is
-// code-generated text (ado.Finding), so it needs no sanitizing.
+// built by code but embeds team names ADO returned, so it is sanitized.
 func renderFindings(w io.Writer, findings []ado.Finding) {
 	var b strings.Builder
 	for _, f := range findings {
-		fmt.Fprintf(&b, "finding: %s: %s\n", f.Kind, f.Detail)
+		fmt.Fprintf(&b, "finding: %s: %s\n", f.Kind, sanitize(f.Detail))
 	}
 	_, _ = io.WriteString(w, b.String())
 }

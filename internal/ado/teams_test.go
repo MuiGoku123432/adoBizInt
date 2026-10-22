@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -117,4 +118,29 @@ func TestResolveTeams(t *testing.T) {
 			t.Errorf("calls = %d, want 1", calls)
 		}
 	})
+}
+
+// TestGetTeamsStopsWhenPagingDoesNotAdvance: a server that ignores $skip and
+// repeats a full page ends the read with an error instead of looping.
+func TestGetTeamsStopsWhenPagingDoesNotAdvance(t *testing.T) {
+	ids := make([]uuid.UUID, teamsPageSize)
+	for i := range ids {
+		ids[i] = uuid.New()
+	}
+	calls := 0
+	c := &Client{projects: []string{"P"}, coreClient: &fakeCoreAPI{t: t, GetTeamsFunc: func(context.Context, core.GetTeamsArgs) (*[]core.WebApiTeam, error) {
+		calls++
+		if calls > 3 {
+			t.Fatalf("paging did not stop")
+		}
+		page := make([]core.WebApiTeam, teamsPageSize)
+		for i := range page {
+			page[i] = core.WebApiTeam{Id: &ids[i], Name: strPtr("T")}
+		}
+		return &page, nil
+	}}}
+	result, _ := c.GetTeams(context.Background(), nil)
+	if len(result.Failures) != 1 || !strings.Contains(result.Failures[0].Err.Error(), "did not advance") {
+		t.Errorf("result = %+v", result)
+	}
 }

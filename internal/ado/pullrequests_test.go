@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -298,6 +299,10 @@ func TestGetPullRequestsReportsProjectFailure(t *testing.T) {
 	}
 	if result.Failures[0].Project != failedProject {
 		t.Errorf("GetPullRequests() Failures[0].Project = %v, want %v", result.Failures[0].Project, failedProject)
+	}
+	// TEAM-08: a v1 read is project-scoped, so its failure carries team "".
+	if raw, _ := json.Marshal(result.Failures[0]); !strings.Contains(string(raw), `"team":""`) {
+		t.Errorf("failure JSON = %s, want \"team\":\"\"", raw)
 	}
 	if result.Failures[0].Operation == "" {
 		t.Errorf("GetPullRequests() Failures[0].Operation = %q, want a named operation", result.Failures[0].Operation)

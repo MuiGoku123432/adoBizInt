@@ -39,8 +39,8 @@
 #   SMOKE_DEFINITION_ID  a pipeline definition id (pipelines queue)
 #   SMOKE_BRANCH         the branch the queue dry run names (--branch)
 #   SMOKE_TEAM           one team as project/team (Phase 9 scrum reads). The
-#                        run passes it as ADO_TEAMS, so no teams config is
-#                        needed; the project must be a configured one. Unset
+#                        run passes it as ADO_TEAMS and its project as
+#                        ADO_PROJECTS, so no teams config is needed. Unset
 #                        records SKIP for the three scrum reads. The PAT needs
 #                        the Project and Team (Read) scope.
 # D-13 requires a dry run of every write verb. A SKIP row therefore closes the
@@ -214,17 +214,19 @@ run_read releases list         # release (vsrm host)
 run_read releases approvals    # release (vsrm host)
 run_read teams list            # core (Phase 9 discovery; needs no teams config)
 
-# Phase 9 scrum reads (core and work sub-clients). SMOKE_TEAM is passed as
-# ADO_TEAMS for these three runs only, and as --team, so each read covers
-# exactly that team and no teams config is required.
+# Phase 9 scrum reads (core and work sub-clients). For these three runs only,
+# SMOKE_TEAM is passed as ADO_TEAMS and --team, and its project as
+# ADO_PROJECTS: scrum verbs need teams for every configured project, so the
+# run is narrowed to that one project. No teams config is required.
 if [ -z "${SMOKE_TEAM:-}" ]; then
     row "teams members" SKIP "set SMOKE_TEAM"
     row "sprint current" SKIP "set SMOKE_TEAM"
     row "teams process" SKIP "set SMOKE_TEAM"
 else
-    ADO_TEAMS="$SMOKE_TEAM" run_read teams members --team "$SMOKE_TEAM"
-    ADO_TEAMS="$SMOKE_TEAM" run_read sprint current --team "$SMOKE_TEAM"
-    ADO_TEAMS="$SMOKE_TEAM" run_read teams process --team "$SMOKE_TEAM"
+    smoke_team_project=${SMOKE_TEAM%%/*}
+    ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read teams members --team "$SMOKE_TEAM"
+    ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read sprint current --team "$SMOKE_TEAM"
+    ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read teams process --team "$SMOKE_TEAM"
 fi
 
 # Identity (location sub-client, GetConnectionData at client construction).

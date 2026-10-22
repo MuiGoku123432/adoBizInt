@@ -68,6 +68,10 @@ func selectTeams(ctx context.Context, c client, team string, projects []string) 
 	}
 	var cfgErr *config.ConfigError
 	switch {
+	case errors.Is(err, context.Canceled):
+		// Only the parent cancels readCtx: an interrupt. runScrum writes the
+		// crash record, as finishRead does for every other read.
+		return nil, exitUnknown, false
 	case errors.As(err, &cfgErr):
 		fmt.Fprintf(stderrWriter, "Invalid config: %v\n", err)
 	case ado.ClassifyFailure(err) == ado.FailureAuth:
@@ -108,6 +112,11 @@ func runScrum[T any](
 
 	teams, code, ok := selectTeams(readCtx, c, gf.team, gf.projects)
 	if !ok {
+		if ctx.Err() != nil {
+			logging.Logger().Warn("Read interrupted", "command", name, "error", ctx.Err())
+			writeCrashRecord(crashKindInterrupt,
+				"read interrupted before any output was written: "+ctx.Err().Error())
+		}
 		return code
 	}
 	result, err := fetch(readCtx, teams)

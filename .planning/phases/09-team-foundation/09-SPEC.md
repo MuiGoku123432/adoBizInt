@@ -62,7 +62,8 @@ Steps, before any scrum read:
 5. Any configured name not found (exact, case-insensitive match as ADO treats names): config error `teams: unknown team "ProjA/Foo"`, exit 3.
 6. A `GetTeams` call that fails:
    - auth: exit 2. Message names the "Project and Team (Read)" scope (research section 5).
-   - other: exit 3 with the error. Validation cannot be partial: it is a precondition, not a read.
+   - other: exit 3, naming the failure kind on stderr; the server's error text goes to the log only (house rule: no server text on the terminal). Validation cannot be partial: it is a precondition, not a read.
+   - an interrupt (signal) writes the interrupt crash record, exit 3, like every other read.
 
 The resolved team ID is carried forward. Reads use team IDs, not names.
 
@@ -171,7 +172,7 @@ The resolution lives in `internal/ado` so Phases 10-12 reuse it in-process. Verb
 
 ## Resolved decisions (user, 2026-10-22)
 
-- **[D-6]** Process fields come from the first configured team per project; no cross-team comparison.
+- **[D-6]** Process fields come from the first configured team per project; no cross-team comparison. Under `--team` (or `--project`) narrowing, the first *selected* team is used; teams in a project share one process, so the result is the same.
 - **[D-7]** Unresolvable process fields are a named per-project failure, exit 1 (partial), not exit 3.
 - **[D-8]** `scripts/smoke.sh` gains the four reads, gated on `SMOKE_TEAM`. Human-run only, never in CI.
 

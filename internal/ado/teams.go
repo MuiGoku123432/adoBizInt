@@ -2,6 +2,7 @@ package ado
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -29,6 +30,9 @@ const opGetTeams = "get teams"
 // project (09-RESEARCH section 1).
 const teamsPageSize = 100
 
+// note: projectTeams and teamMembers share this offset-paging loop shape; two
+// call sites, left inline (rule of three).
+//
 // projectTeams pages core.GetTeams for one project. Paging is offset-only:
 // there is no continuation token and no total count, so it stops on a page
 // shorter than the page size, an empty page included.
@@ -43,6 +47,11 @@ func (c *Client) projectTeams(ctx context.Context, project string) ([]Team, erro
 		n := 0
 		if page != nil {
 			n = len(*page)
+			// A server that ignored $skip would return the same full page
+			// forever; a repeated first team ends the read instead.
+			if n > 0 && skip > 0 && (*page)[0].Id != nil && len(teams) > 0 && teams[0].TeamID == (*page)[0].Id.String() {
+				return nil, errors.New("team paging did not advance")
+			}
 			for _, t := range *page {
 				team := Team{Project: project}
 				if t.Name != nil {
@@ -171,6 +180,10 @@ func (c *Client) teamMembers(ctx context.Context, team Team) ([]TeamMember, erro
 		n := 0
 		if page != nil {
 			n = len(*page)
+			if n > 0 && skip > 0 && len(members) > 0 && (*page)[0].Identity != nil &&
+				deref((*page)[0].Identity.Id) == members[0].ID {
+				return nil, errors.New("team member paging did not advance")
+			}
 			for _, m := range *page {
 				member := TeamMember{Project: team.Project, Team: team.Team}
 				if m.IsTeamAdmin != nil {
