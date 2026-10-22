@@ -122,7 +122,7 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[Wo
 		// Record the remaining projects as unreached rather than issuing calls
 		// that are already doomed (D-12).
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetWorkItems, err)
+			failures = appendFailure(failures, project, "", opGetWorkItems, err)
 			continue
 		}
 
@@ -138,7 +138,7 @@ func (c *Client) GetWorkItems(ctx context.Context, projects []string) (Result[Wo
 			log.Error("Failed to get work items for project", "project", project, "error", err)
 			// The loop still visits every configured project: D-08 rejected
 			// short-circuiting on auth failure explicitly.
-			failures = appendFailure(failures, project, opGetWorkItems, err)
+			failures = appendFailure(failures, project, "", opGetWorkItems, err)
 			continue
 		}
 		allItems = append(allItems, items...)
@@ -165,7 +165,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 		// its iteration clause, so the list is taken under a substituted filter
 		// and must not be presented with the same authority as a correct one
 		// (T-02-05, D-02). The items are kept, and the caller sees Complete=false.
-		failures = appendFailure(failures, project, opGetWorkItemsIterations, err)
+		failures = appendFailure(failures, project, "", opGetWorkItemsIterations, err)
 	} else if len(iterations) > 0 {
 		log.Info("Using iteration filter", "project", project, "sprints", iterations)
 	}
@@ -229,7 +229,7 @@ func (c *Client) getProjectWorkItems(ctx context.Context, project string) ([]Wor
 			log.Error("Failed to get work item batch", "project", project, "batch", i/batchSize+1, "error", err)
 			// Still collect as many batches as possible, but report the gap so
 			// the caller cannot present this project as complete (D-02).
-			failures = appendFailure(failures, project, opGetWorkItemsBatch, err)
+			failures = appendFailure(failures, project, "", opGetWorkItemsBatch, err)
 			continue
 		}
 		if items != nil {

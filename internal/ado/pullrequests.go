@@ -56,7 +56,7 @@ func (c *Client) GetPullRequests(ctx context.Context, projects []string) (Result
 		// Record the remaining projects as unreached rather than issuing calls
 		// that are already doomed (D-12).
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetPullRequests, err)
+			failures = appendFailure(failures, project, "", opGetPullRequests, err)
 			continue
 		}
 
@@ -70,7 +70,7 @@ func (c *Client) GetPullRequests(ctx context.Context, projects []string) (Result
 			log.Error("Failed to get pull requests", "project", project, "error", err)
 			// The loop still visits every configured project: D-08 rejected
 			// short-circuiting on auth failure explicitly.
-			failures = appendFailure(failures, project, opGetPullRequests, err)
+			failures = appendFailure(failures, project, "", opGetPullRequests, err)
 		} else if prs != nil {
 			for _, pr := range *prs {
 				allPRs = append(allPRs, c.convertPR(pr, project))

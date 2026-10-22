@@ -81,7 +81,7 @@ func (c *Client) GetDashboardCounts(ctx context.Context, projects []string) (Res
 		// Record the remaining projects as unreached rather than issuing calls
 		// that are already doomed (D-12).
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opDashboardWorkItems, err)
+			failures = appendFailure(failures, project, "", opDashboardWorkItems, err)
 			continue
 		}
 
@@ -142,7 +142,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		// intended. A count produced under a substituted filter is presented with
 		// the same authority as a correct one, so it is recorded rather than left
 		// silent (T-02-05).
-		failures = appendFailure(failures, project, opDashboardIterations, err)
+		failures = appendFailure(failures, project, "", opDashboardIterations, err)
 	}
 
 	// Get work item count using WIQL query with filters. The project never
@@ -160,7 +160,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	workItems, err := c.workitemClient.QueryByWiql(ctx, query)
 	if err != nil {
 		log.Error("Failed to query work items", "project", project, "error", err)
-		failures = appendFailure(failures, project, opDashboardWorkItems, err)
+		failures = appendFailure(failures, project, "", opDashboardWorkItems, err)
 	} else if workItems != nil && workItems.WorkItems != nil {
 		counts.WorkItems = len(*workItems.WorkItems)
 		log.Info("Dashboard work item count", "project", project, "count", counts.WorkItems)
@@ -175,7 +175,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 	})
 	if err != nil {
 		log.Error("Failed to get pull requests", "project", project, "error", err)
-		failures = appendFailure(failures, project, opDashboardPullRequests, err)
+		failures = appendFailure(failures, project, "", opDashboardPullRequests, err)
 	} else if prs != nil {
 		counts.PRs = len(*prs)
 	}
@@ -187,7 +187,7 @@ func (c *Client) getProjectCounts(ctx context.Context, project string) (*Dashboa
 		})
 		if err != nil {
 			log.Error("Failed to get builds", "project", project, "error", err)
-			failures = appendFailure(failures, project, opDashboardBuilds, err)
+			failures = appendFailure(failures, project, "", opDashboardBuilds, err)
 		} else if builds != nil && builds.Value != nil {
 			// Filter to only configured pipelines using normalized matching
 			for _, b := range builds.Value {

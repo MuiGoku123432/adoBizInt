@@ -186,6 +186,32 @@ func TestValidate(t *testing.T) {
 			mutate:    func(c *Config) { c.Projects = StringSlice{" P "} },
 			wantField: "",
 		},
+		{
+			name:      "teams for an unconfigured project",
+			mutate:    func(c *Config) { c.Teams = map[string]StringSlice{"Other": {"T"}} },
+			wantField: "teams",
+		},
+		{
+			name:      "blank team name",
+			mutate:    func(c *Config) { c.Teams = map[string]StringSlice{"P": {" "}} },
+			wantField: "teams",
+		},
+		{
+			name:      "duplicate team differing only in case",
+			mutate:    func(c *Config) { c.Teams = map[string]StringSlice{"P": {"Core", "core"}} },
+			wantField: "teams",
+		},
+		{
+			// D-2: v1 verbs and the TUI need no teams and no caps.
+			name:      "no teams and zero caps is valid for v1",
+			mutate:    func(c *Config) { c.Teams = nil; c.Caps = Caps{} },
+			wantField: "",
+		},
+		{
+			name:      "valid teams",
+			mutate:    func(c *Config) { c.Teams = map[string]StringSlice{"P": {"Core", "Mobile"}} },
+			wantField: "",
+		},
 	}
 
 	for _, tt := range tests {
@@ -430,4 +456,102 @@ func TestLoadedConfigNeverRendersPAT(t *testing.T) {
 			t.Errorf("%s does not render the org URL, so the check is vacuous: %s", how, out)
 		}
 	}
+}
+
+// TestValidateScrum pins the scrum-only preconditions (TEAM-01, PLAT-04, D-2):
+// every configured project needs at least one team, and every cap must be
+// positive. v1 verbs never call it.
+func TestValidateScrum(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Projects: StringSlice{"A", "B"},
+			Teams:    map[string]StringSlice{"A": {"T1"}, "B": {"T2"}},
+			Caps:     Caps{MaxTeams: 25, MaxSprintHistory: 12, MaxBacklogDepth: 500},
+		}
+	}
+	tests := []struct {
+		name      string
+		mutate    func(*Config)
+		wantField string
+	}{
+		{name: "valid", mutate: func(c *Config) {}, wantField: ""},
+		{name: "zero teams", mutate: func(c *Config) { c.Teams = nil }, wantField: "teams"},
+		{name: "project without teams", mutate: func(c *Config) { delete(c.Teams, "B") }, wantField: "teams"},
+		{name: "zero max_teams", mutate: func(c *Config) { c.Caps.MaxTeams = 0 }, wantField: "caps"},
+		{name: "negative sprint history", mutate: func(c *Config) { c.Caps.MaxSprintHistory = -1 }, wantField: "caps"},
+		{name: "zero backlog depth", mutate: func(c *Config) { c.Caps.MaxBacklogDepth = 0 }, wantField: "caps"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := base()
+			tt.mutate(cfg)
+			err := cfg.ValidateScrum()
+			if tt.wantField == "" {
+				if err != nil {
+					t.Fatalf("ValidateScrum() error = %v, want nil", err)
+				}
+				return
+			}
+			cfgErr, ok := err.(*ConfigError)
+			if !ok {
+				t.Fatalf("ValidateScrum() error = %v (%T), want *ConfigError", err, err)
+			}
+			if cfgErr.Field != tt.wantField {
+				t.Errorf("ValidateScrum() ConfigError.Field = %v, want %v", cfgErr.Field, tt.wantField)
+			}
+		})
+	}
+}
+
+// TestLoadTeamsAndCaps covers the YAML teams map, the ADO_TEAMS override (which
+// replaces the map and splits on the first "/" only), and the cap defaults.
+func TestLoadTeamsAndCaps(t *testing.T) {
+	t.Setenv("ADO_PAT", "")
+	t.Setenv("ADO_ORG_URL", "")
+	t.Setenv("ADO_PROJECT", "")
+	t.Setenv("ADO_PROJECTS", "")
+
+	t.Run("yaml map and default caps", func(t *testing.T) {
+		t.Setenv("ADO_TEAMS", "")
+		writeConfig(t, "projects: [A]\nteams:\n  A: [Core, Mobile]\n")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if got := []string(cfg.Teams["A"]); len(got) != 2 || got[0] != "Core" || got[1] != "Mobile" {
+			t.Errorf("Teams[A] = %v, want [Core Mobile]", got)
+		}
+		want := Caps{MaxTeams: 25, MaxSprintHistory: 12, MaxBacklogDepth: 500}
+		if cfg.Caps != want {
+			t.Errorf("Caps = %+v, want %+v", cfg.Caps, want)
+		}
+	})
+
+	t.Run("yaml caps override defaults per key", func(t *testing.T) {
+		t.Setenv("ADO_TEAMS", "")
+		writeConfig(t, "caps:\n  max_teams: 3\n")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		want := Caps{MaxTeams: 3, MaxSprintHistory: 12, MaxBacklogDepth: 500}
+		if cfg.Caps != want {
+			t.Errorf("Caps = %+v, want %+v", cfg.Caps, want)
+		}
+	})
+
+	t.Run("env replaces yaml", func(t *testing.T) {
+		writeConfig(t, "teams:\n  A: [Core]\n")
+		t.Setenv("ADO_TEAMS", "B/Web/UI, B/Data ,A/Ops")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if got := []string(cfg.Teams["B"]); len(got) != 2 || got[0] != "Web/UI" || got[1] != "Data" {
+			t.Errorf("Teams[B] = %v, want [Web/UI Data]", got)
+		}
+		if got := []string(cfg.Teams["A"]); len(got) != 1 || got[0] != "Ops" {
+			t.Errorf("Teams[A] = %v, want [Ops] (env must replace yaml)", got)
+		}
+	})
 }

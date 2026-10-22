@@ -46,7 +46,7 @@ const (
 // assumed to reach both. Project, operation and kind are the whole vocabulary,
 // with the underlying error carried for the caller to inspect via errors.Is.
 //
-// From Phase 3 onward these four field names are a machine-readable public
+// From Phase 3 onward these field names (five since Phase 9, TEAM-08) are a machine-readable public
 // contract. Adding a fifth field REQUIRES updating the exact-key-set assertion
 // in json_test.go in the same change; that test exists to make a silent
 // addition impossible.
@@ -62,12 +62,13 @@ const (
 // stdout/stderr split, not this struct's job.
 type Failure struct {
 	Project   string      `json:"project"`   // the configured project whose read failed
+	Team      string      `json:"team"`      // the team whose read failed; "" for project-scoped reads (TEAM-08)
 	Operation string      `json:"operation"` // short label for the call being made, e.g. "get pull requests"
 	Kind      FailureKind `json:"kind"`      // "auth", "timeout", "rate_limit", "other"
 	Err       error       `json:"-"`         // the underlying error, preserved for errors.Is / errors.As
 }
 
-// MarshalJSON emits the four-key failure record, flattening Err to its message
+// MarshalJSON emits the five-key failure record, flattening Err to its message
 // string (or null) so no error implementation's internal fields can reach the
 // output. See the T-02-01 note on Failure.
 func (f Failure) MarshalJSON() ([]byte, error) {
@@ -78,11 +79,13 @@ func (f Failure) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(struct {
 		Project   string      `json:"project"`
+		Team      string      `json:"team"`
 		Operation string      `json:"operation"`
 		Kind      FailureKind `json:"kind"`
 		Err       *string     `json:"err"`
 	}{
 		Project:   f.Project,
+		Team:      f.Team,
 		Operation: f.Operation,
 		Kind:      f.Kind,
 		Err:       msg,
@@ -123,8 +126,29 @@ type Scope struct {
 type Result[T any] struct {
 	Items    []T       `json:"items"`
 	Failures []Failure `json:"failures"`
+	Findings []Finding `json:"findings"`
 	Complete bool      `json:"complete"`
 	Scope    *Scope    `json:"scope"`
+}
+
+// FindingKind classifies a finding. The set is closed; a caller may switch on
+// it exhaustively. Phase 9 defines only cadence_mismatch (TEAM-05).
+type FindingKind string
+
+// FindingCadenceMismatch means configured teams resolved current sprints with
+// different dates, so a cross-team rollup would compare unlike periods.
+const FindingCadenceMismatch FindingKind = "cadence_mismatch"
+
+// Finding reports something true about the data that a caller should act on,
+// as opposed to a Failure, which reports data that could not be read. Findings
+// never affect Complete. Detail is code-generated text, never server text, for
+// the same reason Failure never carries response detail (T-02-01). Teams holds
+// "project/team" names.
+type Finding struct {
+	Kind    FindingKind `json:"kind"`
+	Project string      `json:"project"`
+	Teams   []string    `json:"teams"`
+	Detail  string      `json:"detail"`
 }
 
 // newResult derives Complete from the failure slice so no call site has to
@@ -144,19 +168,22 @@ func newResult[T any](items []T, failures []Failure) Result[T] {
 	return Result[T]{
 		Items:    items,
 		Failures: failures,
+		Findings: []Finding{},
 		Complete: len(failures) == 0,
 	}
 }
 
-// appendFailure records a classified failure against a project and operation.
-// A nil error is not a failure and is ignored, so callers may pass an error
-// unconditionally. This is the one call-site shape the expansion reads copy.
-func appendFailure(failures []Failure, project, operation string, err error) []Failure {
+// appendFailure records a classified failure against a project, team and
+// operation. Project-scoped reads pass team "" (TEAM-08). A nil error is not a
+// failure and is ignored, so callers may pass an error unconditionally. This is
+// the one call-site shape the expansion reads copy.
+func appendFailure(failures []Failure, project, team, operation string, err error) []Failure {
 	if err == nil {
 		return failures
 	}
 	return append(failures, Failure{
 		Project:   project,
+		Team:      team,
 		Operation: operation,
 		Kind:      classifyFailure(err),
 		Err:       err,

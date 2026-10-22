@@ -138,7 +138,7 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 		// that are already doomed (D-12). These N+1 fan-outs are the reads most
 		// likely to exhaust the fan-out budget mid-sweep.
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetPipelineRuns, err)
+			failures = appendFailure(failures, project, "", opGetPipelineRuns, err)
 			continue
 		}
 
@@ -150,7 +150,7 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 			log.Error("Failed to get pipeline definitions", "project", project, "error", err)
 			// The loop still visits every configured project: D-08 rejected
 			// short-circuiting on auth failure explicitly.
-			failures = appendFailure(failures, project, opGetPipelineRuns, err)
+			failures = appendFailure(failures, project, "", opGetPipelineRuns, err)
 			continue
 		}
 
@@ -183,7 +183,7 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 			// between projects: record the definitions not yet reached rather
 			// than issuing calls that are already doomed (D-12).
 			if err := ctx.Err(); err != nil {
-				failures = appendFailure(failures, project, opGetLatestBuild+" for "+defName, err)
+				failures = appendFailure(failures, project, "", opGetLatestBuild+" for "+defName, err)
 				continue
 			}
 
@@ -216,7 +216,7 @@ func (c *Client) GetPipelineRuns(ctx context.Context, projects []string) (Result
 				// The definition is left out of Items so a failed lookup can never
 				// read as neverRun, and the loop moves on to the remaining
 				// definitions: D-08 rejected short-circuiting on auth failure.
-				failures = appendFailure(failures, project, opGetLatestBuild+" for "+defName, err)
+				failures = appendFailure(failures, project, "", opGetLatestBuild+" for "+defName, err)
 				continue
 			}
 
@@ -302,7 +302,7 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 		// Record the remaining projects as unreached rather than issuing calls
 		// that are already doomed (D-12).
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetPipelineDefinitions, err)
+			failures = appendFailure(failures, project, "", opGetPipelineDefinitions, err)
 			continue
 		}
 
@@ -311,7 +311,7 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 		})
 		if err != nil {
 			log.Error("Failed to get pipeline definitions", "project", project, "error", err)
-			failures = appendFailure(failures, project, opGetPipelineDefinitions, err)
+			failures = appendFailure(failures, project, "", opGetPipelineDefinitions, err)
 			continue
 		}
 
@@ -341,7 +341,7 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 			// Unmatched definitions above are data filters; a matching one the
 			// fetch deadline has already overtaken is an unreached call (D-12).
 			if err := ctx.Err(); err != nil {
-				failures = appendFailure(failures, project, opGetDefinitionDetail+" for "+*d.Name, err)
+				failures = appendFailure(failures, project, "", opGetDefinitionDetail+" for "+*d.Name, err)
 				continue
 			}
 
@@ -370,7 +370,7 @@ func (c *Client) GetPipelineDefinitions(ctx context.Context, projects []string) 
 				// Omitted rather than returned with a blank repository_id, which
 				// the trigger modal would later surface as an unrelated
 				// branch-fetch error. The loop keeps going (D-08).
-				failures = appendFailure(failures, project, opGetDefinitionDetail+" for "+*d.Name, err)
+				failures = appendFailure(failures, project, "", opGetDefinitionDetail+" for "+*d.Name, err)
 				continue
 			}
 			if fullDef != nil && fullDef.Repository != nil {

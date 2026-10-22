@@ -173,7 +173,7 @@ func TestResultCompleteness(t *testing.T) {
 	})
 
 	t.Run("one failure reports incomplete", func(t *testing.T) {
-		failures := appendFailure(nil, "project-a", "get pull requests", errors.New("boom"))
+		failures := appendFailure(nil, "project-a", "", "get pull requests", errors.New("boom"))
 		got := newResult([]int{1}, failures)
 		if got.Complete {
 			t.Errorf("newResult() Complete = %v, want false", got.Complete)
@@ -193,13 +193,16 @@ func TestResultCompleteness(t *testing.T) {
 
 func TestAppendFailureRecordsProjectOperationAndKind(t *testing.T) {
 	err := wrappedErrorValue(401, "unauthorized")
-	failures := appendFailure(nil, "project-a", "get pull requests", err)
+	failures := appendFailure(nil, "project-a", "team-a", "get pull requests", err)
 	if len(failures) != 1 {
 		t.Fatalf("appendFailure() length = %d, want 1", len(failures))
 	}
 	got := failures[0]
 	if got.Project != "project-a" {
 		t.Errorf("appendFailure() Project = %v, want project-a", got.Project)
+	}
+	if got.Team != "team-a" {
+		t.Errorf("appendFailure() Team = %v, want team-a", got.Team)
 	}
 	if got.Operation != "get pull requests" {
 		t.Errorf("appendFailure() Operation = %v, want %q", got.Operation, "get pull requests")
@@ -214,9 +217,9 @@ func TestAppendFailureRecordsProjectOperationAndKind(t *testing.T) {
 
 func TestAppendFailurePreservesInsertionOrder(t *testing.T) {
 	var failures []Failure
-	failures = appendFailure(failures, "project-a", "op", wrappedErrorValue(500, "a"))
-	failures = appendFailure(failures, "project-b", "op", wrappedErrorValue(401, "b"))
-	failures = appendFailure(failures, "project-c", "op", wrappedErrorValue(500, "c"))
+	failures = appendFailure(failures, "project-a", "", "op", wrappedErrorValue(500, "a"))
+	failures = appendFailure(failures, "project-b", "", "op", wrappedErrorValue(401, "b"))
+	failures = appendFailure(failures, "project-c", "", "op", wrappedErrorValue(500, "c"))
 
 	wantProjects := []string{"project-a", "project-b", "project-c"}
 	for i, want := range wantProjects {
@@ -230,7 +233,7 @@ func TestAppendFailurePreservesInsertionOrder(t *testing.T) {
 }
 
 func TestAppendFailureIgnoresNilError(t *testing.T) {
-	if got := appendFailure(nil, "project-a", "op", nil); got != nil {
+	if got := appendFailure(nil, "project-a", "", "op", nil); got != nil {
 		t.Errorf("appendFailure(nil error) = %+v, want nil — a nil error is not a failure", got)
 	}
 }

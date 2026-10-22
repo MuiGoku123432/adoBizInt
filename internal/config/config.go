@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -53,6 +54,16 @@ type Config struct {
 	FetchTimeout       time.Duration                `yaml:"fetch_timeout"`   // Bounds a whole multi-project fan-out
 	StateTransitions   map[string]map[string]string `yaml:"state_transitions"`
 	UserEmail          string                       `yaml:"user_email"` // User's email for "Assigned to Me" filter
+	Teams              map[string]StringSlice       `yaml:"teams"`      // Project name to team allow-list; required only by scrum verbs (TEAM-01)
+	Caps               Caps                         `yaml:"caps"`       // Request-shape caps (PLAT-04)
+}
+
+// Caps bounds the shape of a scrum request. A request over a cap is refused
+// before the first call (PLAT-04), and the caps in force are disclosed in scope.
+type Caps struct {
+	MaxTeams         int `yaml:"max_teams" json:"max_teams"`
+	MaxSprintHistory int `yaml:"max_sprint_history" json:"max_sprint_history"`
+	MaxBacklogDepth  int `yaml:"max_backlog_depth" json:"max_backlog_depth"`
 }
 
 // LogValue, String and GoString render a Config without its PAT (WR-05). The
@@ -110,6 +121,7 @@ func Load() (*Config, error) {
 		PollInterval:   30 * time.Second,
 		RequestTimeout: 30 * time.Second,
 		FetchTimeout:   2 * time.Minute,
+		Caps:           Caps{MaxTeams: 25, MaxSprintHistory: 12, MaxBacklogDepth: 500},
 	}
 
 	if err := cfg.loadFromFile(); err != nil {
@@ -165,6 +177,19 @@ func (c *Config) loadFromEnv() {
 			}
 		}
 	}
+	// ADO_TEAMS="P/T,P/T" replaces the YAML map entirely, as ADO_PROJECTS does.
+	// It splits on the first "/" only; an entry without one is kept with an
+	// empty project so Validate names it rather than dropping it silently.
+	if teams := os.Getenv("ADO_TEAMS"); teams != "" {
+		c.Teams = map[string]StringSlice{}
+		for _, e := range strings.Split(teams, ",") {
+			if e = strings.TrimSpace(e); e == "" {
+				continue
+			}
+			project, team, _ := strings.Cut(e, "/")
+			c.Teams[project] = append(c.Teams[project], team)
+		}
+	}
 	// Backwards compat
 	if project := os.Getenv("ADO_PROJECT"); project != "" {
 		c.Project = project
@@ -203,6 +228,40 @@ func (c *Config) Validate() error {
 	// next tick fires, producing a view that fails permanently and looks like an outage.
 	if c.FetchTimeout <= c.PollInterval {
 		return &ConfigError{Field: "fetch_timeout", Message: "must be greater than poll_interval"}
+	}
+	// TEAM-01 static checks. An absent teams map is valid here: only scrum
+	// verbs require teams, and they check that before their first call.
+	for project, teams := range c.Teams {
+		if !slices.Contains(c.Projects, project) {
+			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q is not in projects", project)}
+		}
+		seen := map[string]bool{}
+		for _, t := range teams {
+			if strings.TrimSpace(t) == "" {
+				return &ConfigError{Field: "teams", Message: fmt.Sprintf("team names in project %q must not be blank", project)}
+			}
+			key := strings.ToLower(t)
+			if seen[key] {
+				return &ConfigError{Field: "teams", Message: fmt.Sprintf("duplicate team %q in project %q", t, project)}
+			}
+			seen[key] = true
+		}
+	}
+	return nil
+}
+
+// ValidateScrum adds the checks only scrum verbs need (TEAM-01, PLAT-04): at
+// least one team, a team list for every configured project, and positive caps.
+// v1 verbs and the TUI never call it, so they keep working without teams. It
+// runs after Validate and before any scrum call.
+func (c *Config) ValidateScrum() error {
+	for _, p := range c.Projects {
+		if len(c.Teams[p]) == 0 {
+			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q has no teams; scrum verbs need at least one team per project", p)}
+		}
+	}
+	if c.Caps.MaxTeams <= 0 || c.Caps.MaxSprintHistory <= 0 || c.Caps.MaxBacklogDepth <= 0 {
+		return &ConfigError{Field: "caps", Message: "every cap must be greater than zero"}
 	}
 	return nil
 }

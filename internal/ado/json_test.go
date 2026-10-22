@@ -151,20 +151,21 @@ func TestJSONFieldNames(t *testing.T) {
 
 	// The envelope and the failure record are tagged in the same convention so
 	// Phase 3 serialises the whole read response under one contract (D-01).
+	// findings joined in Phase 9 (TEAM-05, a deliberate v2 contract change).
 	t.Run("Result", func(t *testing.T) {
-		assertKeySet(t, Result[WorkItem]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[WorkItem]{}, []string{"items", "failures", "findings", "complete", "scope"})
 	})
 
-	// Result must present the same four keys for every payload type, including
+	// Result must present the same five keys for every payload type, including
 	// the dashboard's single-element Items slice from 02-03.
 	t.Run("Result_uniform_across_reads", func(t *testing.T) {
-		assertKeySet(t, Result[Branch]{}, []string{"items", "failures", "complete", "scope"})
-		assertKeySet(t, Result[PullRequest]{}, []string{"items", "failures", "complete", "scope"})
-		assertKeySet(t, Result[PipelineRun]{}, []string{"items", "failures", "complete", "scope"})
-		assertKeySet(t, Result[Release]{}, []string{"items", "failures", "complete", "scope"})
-		assertKeySet(t, Result[ReleaseApproval]{}, []string{"items", "failures", "complete", "scope"})
-		assertKeySet(t, Result[WorkItemDetail]{}, []string{"items", "failures", "complete", "scope"})
-		assertKeySet(t, Result[DashboardCounts]{}, []string{"items", "failures", "complete", "scope"})
+		assertKeySet(t, Result[Branch]{}, []string{"items", "failures", "findings", "complete", "scope"})
+		assertKeySet(t, Result[PullRequest]{}, []string{"items", "failures", "findings", "complete", "scope"})
+		assertKeySet(t, Result[PipelineRun]{}, []string{"items", "failures", "findings", "complete", "scope"})
+		assertKeySet(t, Result[Release]{}, []string{"items", "failures", "findings", "complete", "scope"})
+		assertKeySet(t, Result[ReleaseApproval]{}, []string{"items", "failures", "findings", "complete", "scope"})
+		assertKeySet(t, Result[WorkItemDetail]{}, []string{"items", "failures", "findings", "complete", "scope"})
+		assertKeySet(t, Result[DashboardCounts]{}, []string{"items", "failures", "findings", "complete", "scope"})
 	})
 
 	// Scope is the one struct exempt from the stable-key-set rule: a key's
@@ -180,11 +181,16 @@ func TestJSONFieldNames(t *testing.T) {
 		assertKeySet(t, Scope{}, []string{})
 	})
 
-	// Threat T-02-01: exactly four keys. If a field is ever added to Failure
+	// Threat T-02-01: exactly five keys. If a field is ever added to Failure
 	// this assertion fails, which is the entire point — the failure record is
 	// the struct most likely to accidentally gain a URL, a header, or a token.
+	// team joined in Phase 9 (TEAM-08) and is always present.
 	t.Run("Failure", func(t *testing.T) {
-		assertKeySet(t, Failure{}, []string{"project", "operation", "kind", "err"})
+		assertKeySet(t, Failure{}, []string{"project", "team", "operation", "kind", "err"})
+	})
+
+	t.Run("Finding", func(t *testing.T) {
+		assertKeySet(t, Finding{}, []string{"kind", "project", "teams", "detail"})
 	})
 }
 
@@ -454,6 +460,7 @@ func TestNewResultEmitsEmptyArraysNotNull(t *testing.T) {
 	var envelope struct {
 		Items    json.RawMessage `json:"items"`
 		Failures json.RawMessage `json:"failures"`
+		Findings json.RawMessage `json:"findings"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		t.Fatalf("unmarshal %s: %v", raw, err)
@@ -463,6 +470,20 @@ func TestNewResultEmitsEmptyArraysNotNull(t *testing.T) {
 	}
 	if string(envelope.Failures) != "[]" {
 		t.Errorf("failures = %s, want [] (raw: %s)", envelope.Failures, raw)
+	}
+	if string(envelope.Findings) != "[]" {
+		t.Errorf("findings = %s, want [] (raw: %s)", envelope.Findings, raw)
+	}
+}
+
+// TestFindingsNeverAffectComplete pins that a finding reports a fact about the
+// data, not a read that failed: a result with findings and no failures is
+// still complete (TEAM-05).
+func TestFindingsNeverAffectComplete(t *testing.T) {
+	result := newResult[PullRequest](nil, nil)
+	result.Findings = append(result.Findings, Finding{Kind: FindingCadenceMismatch, Project: "P", Teams: []string{"P/A", "P/B"}})
+	if !result.Complete {
+		t.Errorf("Complete = false with findings and no failures, want true")
 	}
 }
 

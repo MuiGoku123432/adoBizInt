@@ -83,7 +83,7 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 		// that are already doomed (D-12). This N+1 fan-out is among the reads
 		// most likely to exhaust the fan-out budget mid-sweep.
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetReleases, err)
+			failures = appendFailure(failures, project, "", opGetReleases, err)
 			continue
 		}
 
@@ -95,7 +95,7 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 			log.Error("Failed to get release definitions", "project", project, "error", err)
 			// The loop still visits every configured project: D-08 rejected
 			// short-circuiting on auth failure explicitly.
-			failures = appendFailure(failures, project, opGetReleases, err)
+			failures = appendFailure(failures, project, "", opGetReleases, err)
 			continue
 		}
 
@@ -135,7 +135,7 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 			// between projects: record the definitions not yet reached rather
 			// than issuing calls that are already doomed (D-12).
 			if err := ctx.Err(); err != nil {
-				failures = appendFailure(failures, project, opGetLatestRelease+" for "+defName, err)
+				failures = appendFailure(failures, project, "", opGetLatestRelease+" for "+defName, err)
 				continue
 			}
 
@@ -164,7 +164,7 @@ func (c *Client) GetReleases(ctx context.Context, projects []string) (Result[Rel
 				// The definition is left out of Items so a failed lookup can never
 				// read as noReleases, and the loop moves on to the remaining
 				// definitions: D-08 rejected short-circuiting on auth failure.
-				failures = appendFailure(failures, project, opGetLatestRelease+" for "+defName, err)
+				failures = appendFailure(failures, project, "", opGetLatestRelease+" for "+defName, err)
 				continue
 			}
 
@@ -250,7 +250,7 @@ func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) (Re
 		// Record the remaining projects as unreached rather than issuing calls
 		// that are already doomed (D-12).
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetPendingApprovals, err)
+			failures = appendFailure(failures, project, "", opGetPendingApprovals, err)
 			continue
 		}
 
@@ -262,7 +262,7 @@ func (c *Client) GetPendingApprovals(ctx context.Context, projects []string) (Re
 		})
 		if err != nil {
 			log.Error("Failed to get approvals", "project", project, "error", err)
-			failures = appendFailure(failures, project, opGetPendingApprovals, err)
+			failures = appendFailure(failures, project, "", opGetPendingApprovals, err)
 			continue
 		}
 

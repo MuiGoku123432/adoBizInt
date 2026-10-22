@@ -97,7 +97,11 @@ func renderFailures(w io.Writer, failures []ado.Failure) {
 	}
 	var b strings.Builder
 	for _, f := range failures {
-		fmt.Fprintf(&b, "warning: %s: %s failed (%s)\n", f.Project, f.Operation, f.Kind)
+		where := f.Project
+		if f.Team != "" {
+			where += "/" + f.Team
+		}
+		fmt.Fprintf(&b, "warning: %s: %s failed (%s)\n", where, f.Operation, f.Kind)
 	}
 	_, _ = io.WriteString(w, b.String())
 }

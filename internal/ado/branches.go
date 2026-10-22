@@ -105,7 +105,7 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 		// Record the remaining projects as unreached rather than issuing calls
 		// that are already doomed (D-12).
 		if err := ctx.Err(); err != nil {
-			failures = appendFailure(failures, project, opGetRepositories, err)
+			failures = appendFailure(failures, project, "", opGetRepositories, err)
 			continue
 		}
 
@@ -114,7 +114,7 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 			log.Error("Failed to get repositories", "project", project, "error", err)
 			// The loop still visits every configured project: D-08 rejected
 			// short-circuiting on auth failure explicitly.
-			failures = appendFailure(failures, project, opGetRepositories, err)
+			failures = appendFailure(failures, project, "", opGetRepositories, err)
 			continue
 		}
 		if repos == nil {
@@ -145,7 +145,7 @@ func (c *Client) GetBranches(ctx context.Context, projects, repositories []strin
 				// Empty (D-06a) and disabled (D-06b) repositories are not broken
 				// reads; anything else, including a 401/403 or a timeout, is recorded.
 				if !unreadableRepository(err) {
-					failures = appendFailure(failures, project, opGetBranchStats+" for "+*repo.Name, err)
+					failures = appendFailure(failures, project, "", opGetBranchStats+" for "+*repo.Name, err)
 				}
 				continue
 			}
