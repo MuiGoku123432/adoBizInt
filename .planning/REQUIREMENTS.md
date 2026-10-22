@@ -31,21 +31,21 @@ an empty sprint, and one failing team.
 
 - [x] **PLAT-02**: The Azure DevOps SDK moves from `v1.0.0-b5` to `azuredevops/v7` v7.1.0 in one change, with the Go toolchain raised to 1.27 and `golang.org/x/sys` to a version with no known vulnerabilities. CI runs `govulncheck` and fails on any reachable vulnerability. A test proves a v7 401 still classifies as an auth failure
 - [x] **PLAT-03**: A pacing HTTP transport honours `Retry-After` and rate-limit headers on any response, including HTTP 200. Reads retry on a rate-limit failure a bounded number of times within their deadline; writes are never retried automatically. The PAT is only sent to hosts validated against the configured organization
-- [ ] **PLAT-04**: Request-shape caps (maximum teams, maximum sprints of history, backlog depth) are validated before the first call and disclosed in `scope`
+- [x] **PLAT-04**: Request-shape caps (maximum teams, maximum sprints of history, backlog depth) are validated before the first call and disclosed in `scope`
 - [x] **PLAT-05**: After the upgrade, one live read per ADO sub-client and one dry run per write verb pass against the real organization before later phases build on v7
 
 ### Team Foundation
 
 Every scrum API is `(project, team)` scoped. Current config knows only projects.
 
-- [ ] **TEAM-01**: Config carries teams per project as an allow-list, validated at startup against `core.GetTeams` (paged). An unknown team or zero configured teams is a config error (exit 3). A `teams list` verb supports discovery
-- [ ] **TEAM-02**: Team membership is resolved with identities keyed by id; group members are flagged rather than silently expanded or dropped
-- [ ] **TEAM-03**: The current sprint is resolved per team. No current iteration, or an iteration with null dates, is a per-team failure, never an empty sprint. Sprint dates are civil dates stored as UTC midnight, and the finish date is inclusive
-- [ ] **TEAM-04**: Every scrum verb operates across all configured teams and aggregates by default; `--team P/T` filters to one. Rollups never emit a synthetic "all teams" row
-- [ ] **TEAM-05**: Shared sprint cadence across teams is checked at runtime, and a mismatch is reported as a finding rather than assumed away
+- [x] **TEAM-01**: Config carries teams per project as an allow-list, validated against `core.GetTeams` (paged) before any scrum read (D-2: scrum verbs only). An unknown team or zero configured teams is a config error (exit 3). A `teams list` verb supports discovery
+- [x] **TEAM-02**: Team membership is resolved with identities keyed by id; group members are flagged rather than silently expanded or dropped
+- [x] **TEAM-03**: The current sprint is resolved per team. No current iteration, or an iteration with null dates, is a per-team failure, never an empty sprint. Sprint dates are civil dates stored as UTC midnight, and the finish date is inclusive
+- [x] **TEAM-04**: Every scrum verb operates across all configured teams and aggregates by default; `--team P/T` filters to one. Rollups never emit a synthetic "all teams" row
+- [x] **TEAM-05**: Shared sprint cadence across teams is checked at runtime, and a mismatch is reported as a finding rather than assumed away
 - [ ] **TEAM-06**: Team membership of work items is the team's iteration intersected with the team's area paths (with their include-children flags), applied identically at every point in time. Items claimed by two teams produce an overlap finding
-- [ ] **TEAM-07**: The process template is resolved per project: the points field (StoryPoints, Effort or Size), the done-category states and the backlog rank field. A project whose fields cannot be resolved fails with a named config failure
-- [ ] **TEAM-08**: Read failures carry an always-present `team` key (empty for project-scoped reads); the JSON contract test is updated in the same change
+- [x] **TEAM-07**: The process template is resolved per project: the points field (StoryPoints, Effort or Size), the done-category states and the backlog rank field. A project whose fields cannot be resolved fails with a named config failure
+- [x] **TEAM-08**: Read failures carry an always-present `team` key (empty for project-scoped reads); the JSON contract test is updated in the same change
 
 ### Sprint Data Access
 
@@ -193,16 +193,16 @@ Deferred. Tracked but not in this roadmap.
 | GUARD-06 | Phase 7 | Pending |
 | PLAT-02 | Phase 8 | Complete (CI-on-push run accepted by user override 2026-10-21; govulncheck clean locally on go1.27.3) |
 | PLAT-03 | Phase 8 | Complete |
-| PLAT-04 | Phase 9 | Pending |
+| PLAT-04 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
 | PLAT-05 | Phase 8 | Complete by user override 2026-10-21 (live reads observed; dry runs and live writes not run, tracked in BACKLOG BL-02) |
-| TEAM-01 | Phase 9 | Pending |
-| TEAM-02 | Phase 9 | Pending |
-| TEAM-03 | Phase 9 | Pending |
-| TEAM-04 | Phase 9 | Pending |
-| TEAM-05 | Phase 9 | Pending |
+| TEAM-01 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
+| TEAM-02 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
+| TEAM-03 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
+| TEAM-04 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
+| TEAM-05 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
 | TEAM-06 | Phase 10 | Pending |
-| TEAM-07 | Phase 9 | Pending |
-| TEAM-08 | Phase 9 | Pending |
+| TEAM-07 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
+| TEAM-08 | Phase 9 | Complete 2026-10-22 (fakes and unit tests; live smoke waived) |
 | DATA-01 | Phase 10 | Pending |
 | DATA-02 | Phase 10 | Pending |
 | DATA-03 | Phase 10 | Pending |

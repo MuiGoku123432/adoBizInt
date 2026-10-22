@@ -46,7 +46,7 @@ template is resolved per project; working days come from team settings only.
 
 - [ ] **Phase 7: Guarded TUI Writes** - TUI writes go through the same guard and audit path as the CLI (BL-01)
 - [x] **Phase 8: Platform Upgrade and Pacing** - SDK v7, Go 1.27 and govulncheck in CI, a rate-limit pacing transport, and a live smoke run (completed 2026-10-21)
-- [ ] **Phase 9: Team Foundation** - Validated teams per project, membership, current sprint per team, process fields, and request-shape caps
+- [x] **Phase 9: Team Foundation** - Validated teams per project, membership, current sprint per team, process fields, and request-shape caps (completed 2026-10-22)
 - [ ] **Phase 10: Sprint Data Access** - Team-scoped sprint snapshot with completed work, nullable effort, and as-of baseline, exposed as `sprint items`
 - [ ] **Phase 11: Board Honesty** - Hardcoded nag rules with configurable thresholds, emitted as actionable JSON findings
 - [ ] **Phase 12: Ceremony Output** - `sprint report`, `standup` and `planning` as reproducible cross-team JSON
@@ -165,13 +165,13 @@ Plans:
 **Requirements**: TEAM-01, TEAM-02, TEAM-03, TEAM-04, TEAM-05, TEAM-07, TEAM-08, PLAT-04
 **Success Criteria** (what must be TRUE):
 
-  1. `teams list` discovers each configured project's teams (paged), and configuring an unknown team or zero teams stops the tool at startup with exit 3 and a named config error
+  1. `teams list` discovers each configured project's teams (paged), and configuring an unknown team or zero teams stops any scrum read before its first call with exit 3 and a named config error (D-2: v1 verbs and the TUI need no teams)
   2. Each configured team's current sprint resolves to civil start and inclusive finish dates that stay correct under `TZ=America/Chicago` and `TZ=Asia/Kolkata`; a team with no current iteration or null dates is a per-team failure, never an empty sprint, and every read failure carries a `team` key (empty for project-scoped reads)
   3. A scrum read covers all configured teams by default, `--team P/T` narrows it to one, output never contains a synthetic "all teams" row, and teams whose sprint cadences differ produce a mismatch finding
   4. Team membership lists identities keyed by id with group members flagged, and each project's points field, done-category states and backlog rank field are resolved, or the project fails with a named config failure
   5. A request exceeding a shape cap (maximum teams, sprints of history, backlog depth) is refused before the first call, and the caps in force appear in `scope`
 
-**Plans**: TBD
+**Plans**: Built as Bearing slices on feat/team-foundation (see 09-SPEC.md). Live smoke waived by user 2026-10-22 (verbatim: "lets wave it and move one").
 **Research**: Light checks only: `GetTeams` paging, group-member handling, and PAT scopes for the new team calls
 **Notes**: TEAM-08 is a deliberate v2 JSON contract change; update the contract test in the same change. TEAM-06 (area-path intersection) is in Phase 10, where work items are first read, so one filter serves both the live set and the baseline.
 
@@ -306,7 +306,7 @@ Phases execute in numeric order: 7 → 8 → 9 → 10 → 11 → 12 → 13 → 1
 |-------|-----------|----------------|--------|-----------|
 | 7. Guarded TUI Writes | v2.0 | 9/9 | In Progress|  |
 | 8. Platform Upgrade and Pacing | v2.0 | 12/12 | Complete    | 2026-10-21 |
-| 9. Team Foundation | v2.0 | 0/TBD | Not started | - |
+| 9. Team Foundation | v2.0 | 5 slices | Complete    | 2026-10-22 |
 | 10. Sprint Data Access | v2.0 | 0/TBD | Not started | - |
 | 11. Board Honesty | v2.0 | 0/TBD | Not started | - |
 | 12. Ceremony Output | v2.0 | 0/TBD | Not started | - |
