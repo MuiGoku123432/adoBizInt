@@ -13,8 +13,9 @@
 #      toolchain, and refuses to go on unless `go version -m` shows the go.mod
 #      go directive and azuredevops/v7 v7.1.0. A binary found on PATH is never
 #      run: older builds there predate the v7 swap (08-RESEARCH Pitfall 12).
-#   2. Runs the eight CLI reads with --json, one or two per sub-client with a
-#      call site (D-16). A read passes only on exit 0 with .complete == true.
+#   2. Runs the eight v1 CLI reads plus the four Phase 9 team reads with
+#      --json, one or two per sub-client with a call site (D-16). A read
+#      passes only on exit 0 with .complete == true.
 #   3. Checks identity (the location sub-client): the log lines this run
 #      appended must not say the current user ID could not be cached.
 #   4. Dry-runs the six write verbs with --json. PASS needs exit 0 and
@@ -37,6 +38,11 @@
 #                        and can be throttled (08-RESEARCH Pitfall 14)
 #   SMOKE_DEFINITION_ID  a pipeline definition id (pipelines queue)
 #   SMOKE_BRANCH         the branch the queue dry run names (--branch)
+#   SMOKE_TEAM           one team as project/team (Phase 9 scrum reads). The
+#                        run passes it as ADO_TEAMS, so no teams config is
+#                        needed; the project must be a configured one. Unset
+#                        records SKIP for the three scrum reads. The PAT needs
+#                        the Project and Team (Read) scope.
 # D-13 requires a dry run of every write verb. A SKIP row therefore closes the
 # live smoke only with a waiver the user writes in 08-SMOKE.md, section
 # "Dry-run waivers (D-13)"; an unwaived SKIP blocks Phase 9.
@@ -132,15 +138,18 @@ throttle_note() {
     grep '^throttled by ADO:' "$tmp/err" | tr '\n' ' ' | sed 's/ *$//'
 }
 
-# run_read NOUN VERB runs one CLI read with --json and records a row named
-# "NOUN VERB". It passes only on exit 0 with .complete == true.
+# run_read NOUN VERB [ARGS...] runs one CLI read with --json and records a row
+# named "NOUN VERB". It passes only on exit 0 with .complete == true. Any
+# findings the envelope carries are counted in the row detail.
 run_read() {
-    local name="$1 $2" rc complete detail note
-    "$tmp/adoBizInt" "$1" "$2" --json >"$tmp/out" 2>"$tmp/err" </dev/null
+    local name="$1 $2" rc complete findings detail note
+    "$tmp/adoBizInt" "$@" --json >"$tmp/out" 2>"$tmp/err" </dev/null
     rc=$?
     complete=$(jq -r '.complete' <"$tmp/out" 2>/dev/null)
     [ -n "$complete" ] || complete=none
     detail="exit=$rc complete=$complete"
+    findings=$(jq -r '.findings | length' <"$tmp/out" 2>/dev/null)
+    [ -z "$findings" ] || [ "$findings" = 0 ] || detail="$detail findings=$findings"
     note=$(throttle_note)
     [ -z "$note" ] || detail="$detail; $note"
     if [ "$rc" -eq 0 ] && [ "$complete" = true ]; then
@@ -203,6 +212,20 @@ run_read pipelines runs        # build
 run_read pipelines definitions # build
 run_read releases list         # release (vsrm host)
 run_read releases approvals    # release (vsrm host)
+run_read teams list            # core (Phase 9 discovery; needs no teams config)
+
+# Phase 9 scrum reads (core and work sub-clients). SMOKE_TEAM is passed as
+# ADO_TEAMS for these three runs only, and as --team, so each read covers
+# exactly that team and no teams config is required.
+if [ -z "${SMOKE_TEAM:-}" ]; then
+    row "teams members" SKIP "set SMOKE_TEAM"
+    row "sprint current" SKIP "set SMOKE_TEAM"
+    row "teams process" SKIP "set SMOKE_TEAM"
+else
+    ADO_TEAMS="$SMOKE_TEAM" run_read teams members --team "$SMOKE_TEAM"
+    ADO_TEAMS="$SMOKE_TEAM" run_read sprint current --team "$SMOKE_TEAM"
+    ADO_TEAMS="$SMOKE_TEAM" run_read teams process --team "$SMOKE_TEAM"
+fi
 
 # Identity (location sub-client, GetConnectionData at client construction).
 # Exit 0, 1 or 2 means the client was built; exit 3 means startup stopped first.
