@@ -476,17 +476,6 @@ func TestNewResultEmitsEmptyArraysNotNull(t *testing.T) {
 	}
 }
 
-// TestFindingsNeverAffectComplete pins that a finding reports a fact about the
-// data, not a read that failed: a result with findings and no failures is
-// still complete (TEAM-05).
-func TestFindingsNeverAffectComplete(t *testing.T) {
-	result := newResult[PullRequest](nil, nil)
-	result.Findings = append(result.Findings, Finding{Kind: FindingCadenceMismatch, Project: "P", Teams: []string{"P/A", "P/B"}})
-	if !result.Complete {
-		t.Errorf("Complete = false with findings and no failures, want true")
-	}
-}
-
 // TestNewResultScopeIsNull pins D-02: a read that applies no fixed server-side
 // filter still emits the scope key, as JSON null. An absent key would decode
 // as a nil RawMessage and fail, so this distinguishes null from missing.

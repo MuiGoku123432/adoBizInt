@@ -47,7 +47,7 @@ const (
 // with the underlying error carried for the caller to inspect via errors.Is.
 //
 // From Phase 3 onward these field names (five since Phase 9, TEAM-08) are a machine-readable public
-// contract. Adding a fifth field REQUIRES updating the exact-key-set assertion
+// contract. Adding a sixth field REQUIRES updating the exact-key-set assertion
 // in json_test.go in the same change; that test exists to make a silent
 // addition impossible.
 //

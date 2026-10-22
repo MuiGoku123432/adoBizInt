@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -178,8 +179,9 @@ func (c *Config) loadFromEnv() {
 		}
 	}
 	// ADO_TEAMS="P/T,P/T" replaces the YAML map entirely, as ADO_PROJECTS does.
-	// It splits on the first "/" only; an entry without one is kept with an
-	// empty project so Validate names it rather than dropping it silently.
+	// It splits on the first "/" only and trims both halves. An entry without a
+	// "/" is kept as a project with a blank team, so Validate names it rather
+	// than dropping it silently.
 	if teams := os.Getenv("ADO_TEAMS"); teams != "" {
 		c.Teams = map[string]StringSlice{}
 		for _, e := range strings.Split(teams, ",") {
@@ -187,6 +189,7 @@ func (c *Config) loadFromEnv() {
 				continue
 			}
 			project, team, _ := strings.Cut(e, "/")
+			project, team = strings.TrimSpace(project), strings.TrimSpace(team)
 			c.Teams[project] = append(c.Teams[project], team)
 		}
 	}
@@ -230,24 +233,34 @@ func (c *Config) Validate() error {
 		return &ConfigError{Field: "fetch_timeout", Message: "must be greater than poll_interval"}
 	}
 	// TEAM-01 static checks. An absent teams map is valid here: only scrum
-	// verbs require teams, and they check that before their first call.
-	for project, teams := range c.Teams {
-		if !slices.Contains(c.Projects, project) {
+	// verbs require teams, and they check that before their first call. Keys are
+	// walked in sorted order so the same config always reports the same error.
+	keys := slices.Sorted(maps.Keys(c.Teams))
+	for i, project := range keys {
+		if !slices.ContainsFunc(c.Projects, func(p string) bool { return sameName(p, project) }) {
 			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q is not in projects", project)}
 		}
-		seen := map[string]bool{}
-		for _, t := range teams {
+		if slices.ContainsFunc(keys[:i], func(prev string) bool { return sameName(prev, project) }) {
+			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q is listed more than once", project)}
+		}
+		teams := c.Teams[project]
+		for i, t := range teams {
 			if strings.TrimSpace(t) == "" {
 				return &ConfigError{Field: "teams", Message: fmt.Sprintf("team names in project %q must not be blank", project)}
 			}
-			key := strings.ToLower(t)
-			if seen[key] {
+			if slices.ContainsFunc(teams[:i], func(prev string) bool { return sameName(prev, t) }) {
 				return &ConfigError{Field: "teams", Message: fmt.Sprintf("duplicate team %q in project %q", t, project)}
 			}
-			seen[key] = true
 		}
 	}
 	return nil
+}
+
+// sameName is the one rule for matching configured project and team names:
+// surrounding space is ignored and case is folded, as Azure DevOps treats
+// names. Names are matched this way, never rewritten (D-11).
+func sameName(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
 // ValidateScrum adds the checks only scrum verbs need (TEAM-01, PLAT-04): at
@@ -255,13 +268,28 @@ func (c *Config) Validate() error {
 // v1 verbs and the TUI never call it, so they keep working without teams. It
 // runs after Validate and before any scrum call.
 func (c *Config) ValidateScrum() error {
+	if len(c.Teams) == 0 {
+		return &ConfigError{Field: "teams", Message: "at least one team is required for scrum verbs"}
+	}
 	for _, p := range c.Projects {
-		if len(c.Teams[p]) == 0 {
+		if len(c.TeamsFor(p)) == 0 {
 			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q has no teams; scrum verbs need at least one team per project", p)}
 		}
 	}
 	if c.Caps.MaxTeams <= 0 || c.Caps.MaxSprintHistory <= 0 || c.Caps.MaxBacklogDepth <= 0 {
 		return &ConfigError{Field: "caps", Message: "every cap must be greater than zero"}
+	}
+	return nil
+}
+
+// TeamsFor returns the configured teams for project, matching the teams key by
+// sameName so a key written "p" serves project "P". Validate rejects two keys
+// that match the same name, so at most one key matches.
+func (c *Config) TeamsFor(project string) []string {
+	for k, teams := range c.Teams {
+		if sameName(k, project) {
+			return teams
+		}
 	}
 	return nil
 }

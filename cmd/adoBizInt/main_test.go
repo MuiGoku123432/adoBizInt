@@ -1114,3 +1114,17 @@ func TestTimeoutUnparseableExitsThreeWithCleanStdout(t *testing.T) {
 		t.Errorf("stderr is empty; want the parse error and usage")
 	}
 }
+
+// TestRenderFailuresNamesTeam pins the human warning line: a team-scoped
+// failure is named "project/team", a project-scoped one by project alone.
+func TestRenderFailuresNamesTeam(t *testing.T) {
+	var b bytes.Buffer
+	renderFailures(&b, []ado.Failure{
+		{Project: "P", Operation: "get pull requests", Kind: ado.FailureOther},
+		{Project: "P", Team: "Core", Operation: "get current sprint", Kind: ado.FailureAuth},
+	})
+	want := "warning: P: get pull requests failed (other)\nwarning: P/Core: get current sprint failed (auth)\n"
+	if b.String() != want {
+		t.Errorf("renderFailures() = %q, want %q", b.String(), want)
+	}
+}

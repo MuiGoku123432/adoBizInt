@@ -202,6 +202,22 @@ func TestValidate(t *testing.T) {
 			wantField: "teams",
 		},
 		{
+			name:      "duplicate team differing only in trailing space",
+			mutate:    func(c *Config) { c.Teams = map[string]StringSlice{"P": {"Core", "core "}} },
+			wantField: "teams",
+		},
+		{
+			// One matching rule for projects and teams: trim and fold case.
+			name:      "teams key matches project ignoring case and space",
+			mutate:    func(c *Config) { c.Projects = StringSlice{" P "}; c.Teams = map[string]StringSlice{"p": {"Core"}} },
+			wantField: "",
+		},
+		{
+			name:      "two teams keys naming one project",
+			mutate:    func(c *Config) { c.Teams = map[string]StringSlice{"P": {"A"}, "p": {"B"}} },
+			wantField: "teams",
+		},
+		{
 			// D-2: v1 verbs and the TUI need no teams and no caps.
 			name:      "no teams and zero caps is valid for v1",
 			mutate:    func(c *Config) { c.Teams = nil; c.Caps = Caps{} },
@@ -475,6 +491,7 @@ func TestValidateScrum(t *testing.T) {
 		wantField string
 	}{
 		{name: "valid", mutate: func(c *Config) {}, wantField: ""},
+		{name: "teams key matched ignoring case", mutate: func(c *Config) { c.Teams = map[string]StringSlice{"a": {"T1"}, "B": {"T2"}} }, wantField: ""},
 		{name: "zero teams", mutate: func(c *Config) { c.Teams = nil }, wantField: "teams"},
 		{name: "project without teams", mutate: func(c *Config) { delete(c.Teams, "B") }, wantField: "teams"},
 		{name: "zero max_teams", mutate: func(c *Config) { c.Caps.MaxTeams = 0 }, wantField: "caps"},
@@ -500,6 +517,29 @@ func TestValidateScrum(t *testing.T) {
 				t.Errorf("ValidateScrum() ConfigError.Field = %v, want %v", cfgErr.Field, tt.wantField)
 			}
 		})
+	}
+
+	// Spec 2.1 names this message exactly.
+	cfg := base()
+	cfg.Teams = nil
+	if err := cfg.ValidateScrum(); err == nil || err.Error() != "teams: at least one team is required for scrum verbs" {
+		t.Errorf("ValidateScrum() with no teams = %v, want the spec 2.1 message", err)
+	}
+}
+
+// TestValidateReportsSameErrorEveryRun pins that Validate walks the teams map
+// in sorted order, so a config with several errors always reports the same one.
+func TestValidateReportsSameErrorEveryRun(t *testing.T) {
+	cfg := &Config{
+		PAT: "token", OrgURL: "https://dev.azure.com/example",
+		PollInterval: 30 * time.Second, FetchTimeout: 2 * time.Minute,
+		Projects: StringSlice{"P"},
+		Teams:    map[string]StringSlice{"Z": {"T"}, "Y": {"T"}, "X": {"T"}, "W": {"T"}},
+	}
+	for range 20 {
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), `"W"`) {
+			t.Fatalf("Validate() = %v, want the error for the first sorted key \"W\"", err)
+		}
 	}
 }
 
@@ -542,7 +582,7 @@ func TestLoadTeamsAndCaps(t *testing.T) {
 
 	t.Run("env replaces yaml", func(t *testing.T) {
 		writeConfig(t, "teams:\n  A: [Core]\n")
-		t.Setenv("ADO_TEAMS", "B/Web/UI, B/Data ,A/Ops")
+		t.Setenv("ADO_TEAMS", "B/Web/UI, B / Data ,A/Ops")
 		cfg, err := Load()
 		if err != nil {
 			t.Fatalf("Load() error = %v", err)
@@ -552,6 +592,21 @@ func TestLoadTeamsAndCaps(t *testing.T) {
 		}
 		if got := []string(cfg.Teams["A"]); len(got) != 1 || got[0] != "Ops" {
 			t.Errorf("Teams[A] = %v, want [Ops] (env must replace yaml)", got)
+		}
+	})
+
+	// yaml.v3 leaves a struct untouched on an explicit null, so caps: ~ keeps
+	// the defaults rather than zeroing them (review finding, verified here).
+	t.Run("null caps keeps defaults", func(t *testing.T) {
+		t.Setenv("ADO_TEAMS", "")
+		writeConfig(t, "projects: [A]\nteams:\n  A: [Core]\ncaps: ~\n")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		want := Caps{MaxTeams: 25, MaxSprintHistory: 12, MaxBacklogDepth: 500}
+		if cfg.Caps != want {
+			t.Errorf("Caps = %+v, want defaults %+v", cfg.Caps, want)
 		}
 	})
 }
