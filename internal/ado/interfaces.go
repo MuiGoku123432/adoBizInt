@@ -8,6 +8,8 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 )
 
@@ -53,4 +55,10 @@ type releaseAPI interface {
 
 type coreAPI interface {
 	GetTeams(context.Context, core.GetTeamsArgs) (*[]core.WebApiTeam, error)
+	GetTeamMembersWithExtendedProperties(context.Context, core.GetTeamMembersWithExtendedPropertiesArgs) (*[]webapi.TeamMember, error)
+}
+
+type workAPI interface {
+	GetTeamIterations(context.Context, work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error)
+	GetBacklogConfigurations(context.Context, work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error)
 }

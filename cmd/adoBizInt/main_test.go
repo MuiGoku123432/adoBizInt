@@ -277,9 +277,18 @@ var wantWriteCommands = []string{
 	"workitems set-state",
 }
 
+// wantScrumCommands are the team-scoped reads (scrumCommands). They run
+// selectTeams first, so the plain-read dispatch tests do not drive them;
+// scrum_test.go does.
+var wantScrumCommands = []string{
+	"sprint current",
+	"teams members",
+	"teams process",
+}
+
 // allCommands is the full published `noun verb` surface in commandKeys order.
 func allCommands() []string {
-	all := append(append([]string{}, wantCommands...), wantWriteCommands...)
+	all := append(append(append([]string{}, wantCommands...), wantWriteCommands...), wantScrumCommands...)
 	sort.Strings(all)
 	return all
 }

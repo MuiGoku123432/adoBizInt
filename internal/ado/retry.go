@@ -22,6 +22,8 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 
 	"sentinovo.ai/bizInt/internal/logging"
@@ -75,6 +77,26 @@ type retryingCore struct {
 
 func (r retryingCore) GetTeams(ctx context.Context, args core.GetTeamsArgs) (*[]core.WebApiTeam, error) {
 	return retryRead(ctx, r.retries, func() (*[]core.WebApiTeam, error) { return r.coreAPI.GetTeams(ctx, args) })
+}
+
+func (r retryingCore) GetTeamMembersWithExtendedProperties(ctx context.Context, args core.GetTeamMembersWithExtendedPropertiesArgs) (*[]webapi.TeamMember, error) {
+	return retryRead(ctx, r.retries, func() (*[]webapi.TeamMember, error) {
+		return r.coreAPI.GetTeamMembersWithExtendedProperties(ctx, args)
+	})
+}
+
+// retryingWork retries the workAPI reads. workAPI has no writes.
+type retryingWork struct {
+	workAPI
+	retries *atomic.Int64
+}
+
+func (r retryingWork) GetTeamIterations(ctx context.Context, args work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error) {
+	return retryRead(ctx, r.retries, func() (*[]work.TeamSettingsIteration, error) { return r.workAPI.GetTeamIterations(ctx, args) })
+}
+
+func (r retryingWork) GetBacklogConfigurations(ctx context.Context, args work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error) {
+	return retryRead(ctx, r.retries, func() (*work.BacklogConfiguration, error) { return r.workAPI.GetBacklogConfigurations(ctx, args) })
 }
 
 // retryingWorkItems retries the workItemAPI reads, QueryByWiql included: it

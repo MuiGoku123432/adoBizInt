@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -59,6 +60,7 @@ func TestSelectTeams(t *testing.T) {
 		name       string
 		mutate     func(*config.Config)
 		team       string
+		projects   []string
 		resolveErr error
 		wantOK     bool
 		wantCode   int
@@ -68,6 +70,7 @@ func TestSelectTeams(t *testing.T) {
 	}{
 		{name: "all configured teams by default", wantOK: true, wantCode: exitOK, wantCalls: 1, wantTeams: 3},
 		{name: "--team narrows to one", team: "A/Web", wantOK: true, wantCode: exitOK, wantCalls: 1, wantTeams: 1},
+		{name: "--project narrows the selection", projects: []string{"B"}, wantOK: true, wantCode: exitOK, wantCalls: 1, wantTeams: 1},
 		{name: "unconfigured --team", team: "A/Nope", wantCode: exitUnknown, wantStderr: `not a configured team: "A/Nope"`},
 		{name: "--team match is exact", team: "a/web", wantCode: exitUnknown, wantStderr: "not a configured team"},
 		{name: "no teams configured", mutate: func(c *config.Config) { c.Teams = nil }, wantCode: exitUnknown,
@@ -95,7 +98,7 @@ func TestSelectTeams(t *testing.T) {
 			var selected map[string][]string
 			c := resolveRecorder(t, &calls, &selected, tt.resolveErr)
 
-			teams, code, ok := selectTeams(context.Background(), c, tt.team)
+			teams, code, ok := selectTeams(context.Background(), c, tt.team, tt.projects)
 			if ok != tt.wantOK || code != tt.wantCode {
 				t.Fatalf("selectTeams() = ok %v code %d, want ok %v code %d (stderr %q)", ok, code, tt.wantOK, tt.wantCode, stderr)
 			}
@@ -130,4 +133,124 @@ func TestTeamsListNeedsNoTeamsConfig(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Core") || !strings.Contains(stdout.String(), "id-1") {
 		t.Errorf("stdout = %q, want the team row", stdout)
 	}
+}
+
+// scrumFake resolves every selected team and serves fixed scrum reads.
+func scrumFake(t *testing.T) *fakeReadClient {
+	calls := 0
+	var selected map[string][]string
+	c := resolveRecorder(t, &calls, &selected, nil)
+	c.GetCurrentSprintsFunc = func(_ context.Context, teams []ado.Team) (ado.Result[ado.Sprint], error) {
+		r := emptyResult[ado.Sprint]()
+		for i, tm := range teams {
+			r.Items = append(r.Items, ado.Sprint{Project: tm.Project, Team: tm.Team, StartDate: "2026-10-0" + string(rune('1'+i)), FinishDate: "2026-10-14"})
+		}
+		if len(teams) > 1 {
+			r.Findings = []ado.Finding{{Kind: ado.FindingCadenceMismatch, Teams: []string{"A/Core", "A/Web"}, Detail: "teams have different current sprints"}}
+		}
+		return r, nil
+	}
+	c.GetTeamMembersFunc = func(_ context.Context, teams []ado.Team) (ado.Result[ado.TeamMember], error) {
+		r := emptyResult[ado.TeamMember]()
+		for _, tm := range teams {
+			r.Items = append(r.Items, ado.TeamMember{Project: tm.Project, Team: tm.Team, ID: "g", DisplayName: "Devs", IsGroup: true})
+		}
+		return r, nil
+	}
+	c.GetProcessFieldsFunc = func(_ context.Context, teams []ado.Team) (ado.Result[ado.ProcessFields], error) {
+		r := emptyResult[ado.ProcessFields]()
+		r.Failures = []ado.Failure{{Project: "B", Team: "Mobile", Operation: "resolve process fields", Kind: ado.FailureOther, Err: errors.New("rank field (Order) is not mapped")}}
+		r.Complete = false
+		return r, nil
+	}
+	return c
+}
+
+// TestTeamFlagOnlyOnScrumVerbs: --team parses only where it can mean
+// something, like every other per-verb flag (flags.go).
+func TestTeamFlagOnlyOnScrumVerbs(t *testing.T) {
+	for _, name := range commandKeys() {
+		fs, _, _, _ := newFlagSet(name)
+		if got := fs.Lookup("team") != nil; got != scrumCommands[name] {
+			t.Errorf("%s registers --team = %v, want %v", name, got, scrumCommands[name])
+		}
+	}
+}
+
+func TestScrumVerbsEndToEnd(t *testing.T) {
+	withReadBudget(t, time.Minute)
+
+	t.Run("sprint current --json carries caps and findings", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		stdout, _ := captureOutput(t)
+		if code := dispatch(context.Background(), scrumFake(t), []string{"sprint", "current", "--json"}); code != exitOK {
+			t.Fatalf("exit = %d, want 0", code)
+		}
+		var env struct {
+			Items    []ado.Sprint  `json:"items"`
+			Findings []ado.Finding `json:"findings"`
+			Complete bool          `json:"complete"`
+			Scope    struct {
+				Caps config.Caps `json:"caps"`
+			} `json:"scope"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &env); err != nil {
+			t.Fatalf("unmarshal %s: %v", stdout, err)
+		}
+		if len(env.Items) != 3 || len(env.Findings) != 1 || !env.Complete || env.Scope.Caps.MaxTeams != 25 {
+			t.Errorf("envelope = %+v", env)
+		}
+		for _, s := range env.Items {
+			if s.Team == "" {
+				t.Errorf("item without team: %+v", s)
+			}
+		}
+	})
+
+	t.Run("human mode prints scope caps and the finding", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		_, stderr := captureOutput(t)
+		dispatch(context.Background(), scrumFake(t), []string{"sprint", "current"})
+		if !strings.Contains(stderr.String(), "caps max_teams=25") ||
+			!strings.Contains(stderr.String(), "finding: cadence_mismatch: teams have different current sprints") {
+			t.Errorf("stderr = %q", stderr)
+		}
+	})
+
+	t.Run("--team narrows the read", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		stdout, _ := captureOutput(t)
+		if code := dispatch(context.Background(), scrumFake(t), []string{"teams", "members", "--json", "--team", "B/Mobile"}); code != exitOK {
+			t.Fatalf("exit = %d", code)
+		}
+		var env struct {
+			Items []ado.TeamMember `json:"items"`
+		}
+		_ = json.Unmarshal(stdout.Bytes(), &env)
+		if len(env.Items) != 1 || env.Items[0].Team != "Mobile" || !env.Items[0].IsGroup {
+			t.Errorf("items = %+v", env.Items)
+		}
+	})
+
+	t.Run("over the cap exits 3 before reading", func(t *testing.T) {
+		cfg := scrumTestConfig()
+		cfg.Caps.MaxTeams = 1
+		withScrumConfig(t, cfg)
+		captureOutput(t)
+		c := &fakeReadClient{t: t} // any call fails the test
+		if code := dispatch(context.Background(), c, []string{"sprint", "current"}); code != exitUnknown {
+			t.Errorf("exit = %d, want 3", code)
+		}
+	})
+
+	t.Run("teams process partial failure exits 1", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		_, stderr := captureOutput(t)
+		if code := dispatch(context.Background(), scrumFake(t), []string{"teams", "process"}); code != exitPartial {
+			t.Errorf("exit = %d, want 1", code)
+		}
+		if !strings.Contains(stderr.String(), "warning: B/Mobile: resolve process fields failed (other)") {
+			t.Errorf("stderr = %q", stderr)
+		}
+	})
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 
@@ -119,4 +120,87 @@ func (c *Client) ResolveTeams(ctx context.Context, projects []string, selected m
 		}
 	}
 	return resolved, nil
+}
+
+// TeamMember is one member of a team, keyed by ID (TEAM-02). A group is
+// listed and flagged, never expanded or dropped.
+type TeamMember struct {
+	Project     string `json:"project"`
+	Team        string `json:"team"`
+	ID          string `json:"id"`
+	DisplayName string `json:"display_name"`
+	UniqueName  string `json:"unique_name"`
+	IsGroup     bool   `json:"is_group"`
+	IsTeamAdmin bool   `json:"is_team_admin"`
+	Inactive    bool   `json:"inactive"`
+}
+
+const opGetTeamMembers = "get team members"
+
+// GetTeamMembers lists the members of each team, paged like GetTeams. A team
+// whose listing fails is a per-team failure; the other teams still return.
+func (c *Client) GetTeamMembers(ctx context.Context, teams []Team) (Result[TeamMember], error) {
+	var all []TeamMember
+	var failures []Failure
+	for _, team := range teams {
+		if err := ctx.Err(); err != nil {
+			failures = appendFailure(failures, team.Project, team.Team, opGetTeamMembers, err)
+			continue
+		}
+		members, err := c.teamMembers(ctx, team)
+		if err != nil {
+			logging.Logger().Error("Failed to get team members", "project", team.Project, "team", team.Team, "error", err)
+			failures = appendFailure(failures, team.Project, team.Team, opGetTeamMembers, err)
+			continue
+		}
+		all = append(all, members...)
+	}
+	return newResult(all, failures), nil
+}
+
+func (c *Client) teamMembers(ctx context.Context, team Team) ([]TeamMember, error) {
+	var members []TeamMember
+	top := teamsPageSize
+	for skip := 0; ; {
+		page, err := c.coreClient.GetTeamMembersWithExtendedProperties(ctx, core.GetTeamMembersWithExtendedPropertiesArgs{
+			ProjectId: &team.Project, TeamId: &team.TeamID, Top: &top, Skip: &skip,
+		})
+		if err != nil {
+			return nil, err
+		}
+		n := 0
+		if page != nil {
+			n = len(*page)
+			for _, m := range *page {
+				member := TeamMember{Project: team.Project, Team: team.Team}
+				if m.IsTeamAdmin != nil {
+					member.IsTeamAdmin = *m.IsTeamAdmin
+				}
+				if id := m.Identity; id != nil {
+					member.ID = deref(id.Id)
+					member.DisplayName = deref(id.DisplayName)
+					member.UniqueName = deref(id.UniqueName)
+					member.Inactive = id.Inactive != nil && *id.Inactive
+					// IsContainer is deprecated in favour of the descriptor's
+					// subject type, so either marks a group (09-RESEARCH section 2).
+					d := deref(id.Descriptor)
+					member.IsGroup = (id.IsContainer != nil && *id.IsContainer) ||
+						strings.HasPrefix(d, "vssgp.") || strings.HasPrefix(d, "aadgp.")
+				}
+				members = append(members, member)
+			}
+		}
+		if n < top {
+			return members, nil
+		}
+		skip += n
+	}
+}
+
+// deref returns *p, or "" for nil.
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }

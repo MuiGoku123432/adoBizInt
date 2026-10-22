@@ -10,6 +10,8 @@ import (
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/webapi"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/work"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
 )
 
@@ -19,6 +21,7 @@ var (
 	_ buildAPI    = (*fakeBuildAPI)(nil)
 	_ releaseAPI  = (*fakeReleaseAPI)(nil)
 	_ coreAPI     = (*fakeCoreAPI)(nil)
+	_ workAPI     = (*fakeWorkAPI)(nil)
 )
 
 // azuredevops.Client.UnwrapError returns a *WrappedError on two paths and a bare
@@ -256,7 +259,39 @@ func (f *fakeReleaseAPI) UpdateReleaseApproval(ctx context.Context, args release
 type fakeCoreAPI struct {
 	t *testing.T
 
-	GetTeamsFunc func(context.Context, core.GetTeamsArgs) (*[]core.WebApiTeam, error)
+	GetTeamsFunc       func(context.Context, core.GetTeamsArgs) (*[]core.WebApiTeam, error)
+	GetTeamMembersFunc func(context.Context, core.GetTeamMembersWithExtendedPropertiesArgs) (*[]webapi.TeamMember, error)
+}
+
+func (f *fakeCoreAPI) GetTeamMembersWithExtendedProperties(ctx context.Context, args core.GetTeamMembersWithExtendedPropertiesArgs) (*[]webapi.TeamMember, error) {
+	f.t.Helper()
+	if f.GetTeamMembersFunc == nil {
+		f.t.Fatalf("unexpected call to coreAPI.GetTeamMembersWithExtendedProperties")
+	}
+	return f.GetTeamMembersFunc(ctx, args)
+}
+
+type fakeWorkAPI struct {
+	t *testing.T
+
+	GetTeamIterationsFunc        func(context.Context, work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error)
+	GetBacklogConfigurationsFunc func(context.Context, work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error)
+}
+
+func (f *fakeWorkAPI) GetTeamIterations(ctx context.Context, args work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error) {
+	f.t.Helper()
+	if f.GetTeamIterationsFunc == nil {
+		f.t.Fatalf("unexpected call to workAPI.GetTeamIterations")
+	}
+	return f.GetTeamIterationsFunc(ctx, args)
+}
+
+func (f *fakeWorkAPI) GetBacklogConfigurations(ctx context.Context, args work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error) {
+	f.t.Helper()
+	if f.GetBacklogConfigurationsFunc == nil {
+		f.t.Fatalf("unexpected call to workAPI.GetBacklogConfigurations")
+	}
+	return f.GetBacklogConfigurationsFunc(ctx, args)
 }
 
 func (f *fakeCoreAPI) GetTeams(ctx context.Context, args core.GetTeamsArgs) (*[]core.WebApiTeam, error) {

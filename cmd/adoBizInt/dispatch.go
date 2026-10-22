@@ -75,6 +75,11 @@ type readClient interface {
 	// read: it validates configured team names against ADO and returns IDs.
 	ResolveTeams(ctx context.Context, projects []string, selected map[string][]string) ([]ado.Team, error)
 
+	// The scrum reads take the teams selectTeams resolved, not projects.
+	GetTeamMembers(ctx context.Context, teams []ado.Team) (ado.Result[ado.TeamMember], error)
+	GetCurrentSprints(ctx context.Context, teams []ado.Team) (ado.Result[ado.Sprint], error)
+	GetProcessFields(ctx context.Context, teams []ado.Team) (ado.Result[ado.ProcessFields], error)
+
 	// CurrentUserEmail is the cached identity --assigned-to-me filters on. It
 	// is a read of an already-resolved field, not a network call: Phase 1 D-12
 	// makes identity resolution non-fatal, so it can legitimately return "".
@@ -156,6 +161,15 @@ var commands = map[string]commandFunc{
 		return runRead[ado.Team](ctx, "teams list", args, "",
 			ignoreRepos(c.GetTeams), nil, renderTeams)
 	},
+	"teams members": func(ctx context.Context, c client, args []string) int {
+		return runScrum(ctx, "teams members", args, c, c.GetTeamMembers, renderTeamMembers)
+	},
+	"teams process": func(ctx context.Context, c client, args []string) int {
+		return runScrum(ctx, "teams process", args, c, c.GetProcessFields, renderProcessFields)
+	},
+	"sprint current": func(ctx context.Context, c client, args []string) int {
+		return runScrum(ctx, "sprint current", args, c, c.GetCurrentSprints, renderSprints)
+	},
 	"workitems set-state": func(ctx context.Context, c client, args []string) int {
 		return runWrite(ctx, setStateOp(c), args)
 	},
@@ -205,28 +219,11 @@ func runRead[T any](
 	postFilter func([]T, *filterFlags, io.Writer) []T,
 	render func(io.Writer, []T),
 ) int {
-	fs, gf, ff, _ := newFlagSet(name)
-	if err := fs.Parse(args); err != nil {
-		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
-		// been written and the request succeeded rather than failed.
-		if errors.Is(err, flag.ErrHelp) {
-			return exitOK
-		}
-		return exitUnknown
-	}
-	// D-17: stdlib stops parsing at the first token it cannot read as a flag,
-	// so a stray positional would silently drop itself and every flag after
-	// it. Nothing ran, so the exit is 3. The token is quoted with %q, so a
-	// control character cannot reach the terminal raw; naming the first one is
-	// enough to locate the mistake.
-	if len(fs.Args()) > 0 {
-		fmt.Fprintf(stderrWriter, "%s takes no positional arguments; got %q; run 'adoBizInt %s --help' for its flags\n",
-			name, fs.Args()[0], name)
-		return exitUnknown
+	gf, ff, code, ok := parseRead(name, args)
+	if !ok {
+		return code
 	}
 	ff.identity = identity
-
-	log := logging.Logger()
 
 	// --project narrows the read: its values become the projects argument. An
 	// omitted flag passes an empty slice rather than the configured project
@@ -258,6 +255,48 @@ func runRead[T any](
 	defer cancel()
 
 	result, err := fetch(readCtx, projects, repositories)
+
+	return finishRead(ctx, name, gf, ff, result, err, postFilter, render)
+}
+
+// parseRead parses a read verb's flags. ok is false when the caller must
+// return code without reading: help was shown (0) or the arguments were bad (3).
+func parseRead(name string, args []string) (gf *globalFlags, ff *filterFlags, code int, ok bool) {
+	fs, gf, ff, _ := newFlagSet(name)
+	if err := fs.Parse(args); err != nil {
+		// flag.ErrHelp means -h/--help reached the FlagSet: usage has already
+		// been written and the request succeeded rather than failed.
+		if errors.Is(err, flag.ErrHelp) {
+			return nil, nil, exitOK, false
+		}
+		return nil, nil, exitUnknown, false
+	}
+	// D-17: stdlib stops parsing at the first token it cannot read as a flag,
+	// so a stray positional would silently drop itself and every flag after
+	// it. Nothing ran, so the exit is 3. The token is quoted with %q, so a
+	// control character cannot reach the terminal raw; naming the first one is
+	// enough to locate the mistake.
+	if len(fs.Args()) > 0 {
+		fmt.Fprintf(stderrWriter, "%s takes no positional arguments; got %q; run 'adoBizInt %s --help' for its flags\n",
+			name, fs.Args()[0], name)
+		return nil, nil, exitUnknown, false
+	}
+	return gf, ff, exitOK, true
+}
+
+// finishRead is the shared tail of every read verb, v1 and scrum alike:
+// interrupt check, error, post-filter, output and exit-code mapping.
+func finishRead[T any](
+	ctx context.Context,
+	name string,
+	gf *globalFlags,
+	ff *filterFlags,
+	result ado.Result[T],
+	err error,
+	postFilter func([]T, *filterFlags, io.Writer) []T,
+	render func(io.Writer, []T),
+) int {
+	log := logging.Logger()
 
 	// The interrupt check keys on the parent's Err(), not on the failure kind.
 	// The failure classifier maps a cancellation to the generic kind on purpose,
@@ -306,6 +345,7 @@ func runRead[T any](
 		// for zero rows.
 		render(stdoutWriter, result.Items)
 		renderScope(stderrWriter, result.Scope)
+		renderFindings(stderrWriter, result.Findings)
 		renderFailures(stderrWriter, result.Failures)
 	}
 

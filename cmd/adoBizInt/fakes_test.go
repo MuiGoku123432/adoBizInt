@@ -31,6 +31,9 @@ type fakeReadClient struct {
 	GetDashboardCountsFunc     func(ctx context.Context, projects []string) (ado.Result[ado.DashboardCounts], error)
 	GetTeamsFunc               func(ctx context.Context, projects []string) (ado.Result[ado.Team], error)
 	ResolveTeamsFunc           func(ctx context.Context, projects []string, selected map[string][]string) ([]ado.Team, error)
+	GetTeamMembersFunc         func(ctx context.Context, teams []ado.Team) (ado.Result[ado.TeamMember], error)
+	GetCurrentSprintsFunc      func(ctx context.Context, teams []ado.Team) (ado.Result[ado.Sprint], error)
+	GetProcessFieldsFunc       func(ctx context.Context, teams []ado.Team) (ado.Result[ado.ProcessFields], error)
 
 	// currentUserEmail is a plain field rather than a closure: it stands in for
 	// a cached value the real client resolved at construction, and its empty
@@ -109,6 +112,27 @@ func (f *fakeReadClient) ResolveTeams(ctx context.Context, projects []string, se
 		f.t.Fatalf("readClient.ResolveTeams called with no ResolveTeamsFunc set")
 	}
 	return f.ResolveTeamsFunc(ctx, projects, selected)
+}
+
+func (f *fakeReadClient) GetTeamMembers(ctx context.Context, teams []ado.Team) (ado.Result[ado.TeamMember], error) {
+	if f.GetTeamMembersFunc == nil {
+		f.t.Fatalf("readClient.GetTeamMembers called with no GetTeamMembersFunc set")
+	}
+	return f.GetTeamMembersFunc(ctx, teams)
+}
+
+func (f *fakeReadClient) GetCurrentSprints(ctx context.Context, teams []ado.Team) (ado.Result[ado.Sprint], error) {
+	if f.GetCurrentSprintsFunc == nil {
+		f.t.Fatalf("readClient.GetCurrentSprints called with no GetCurrentSprintsFunc set")
+	}
+	return f.GetCurrentSprintsFunc(ctx, teams)
+}
+
+func (f *fakeReadClient) GetProcessFields(ctx context.Context, teams []ado.Team) (ado.Result[ado.ProcessFields], error) {
+	if f.GetProcessFieldsFunc == nil {
+		f.t.Fatalf("readClient.GetProcessFields called with no GetProcessFieldsFunc set")
+	}
+	return f.GetProcessFieldsFunc(ctx, teams)
 }
 
 // allReadsFake returns a fake whose every closure is set to an empty, complete

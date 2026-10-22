@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,6 +81,34 @@ func renderTeams(w io.Writer, items []ado.Team) {
 	})
 }
 
+func renderTeamMembers(w io.Writer, items []ado.TeamMember) {
+	writeRows(w, items, func(b *strings.Builder, i ado.TeamMember) {
+		kind := "user"
+		if i.IsGroup {
+			kind = "group"
+		}
+		row(b, i.Project, i.Team, i.DisplayName, i.UniqueName, kind,
+			fmt.Sprintf("admin=%t", i.IsTeamAdmin), fmt.Sprintf("inactive=%t", i.Inactive))
+	})
+}
+
+func renderSprints(w io.Writer, items []ado.Sprint) {
+	writeRows(w, items, func(b *strings.Builder, i ado.Sprint) {
+		row(b, i.Project, i.Team, i.Name, i.StartDate+".."+i.FinishDate)
+	})
+}
+
+func renderProcessFields(w io.Writer, items []ado.ProcessFields) {
+	writeRows(w, items, func(b *strings.Builder, i ado.ProcessFields) {
+		types := slices.Sorted(maps.Keys(i.DoneStates))
+		done := make([]string, 0, len(types))
+		for _, t := range types {
+			done = append(done, t+"="+strings.Join(i.DoneStates[t], "/"))
+		}
+		row(b, i.Project, "points="+i.PointsField, "rank="+i.RankField, "done: "+strings.Join(done, ", "))
+	})
+}
+
 func renderDashboardCounts(w io.Writer, items []ado.DashboardCounts) {
 	writeRows(w, items, func(b *strings.Builder, i ado.DashboardCounts) {
 		row(b, fmt.Sprintf("work_items=%d", i.WorkItems),
@@ -112,6 +142,17 @@ func renderFailures(w io.Writer, failures []ado.Failure) {
 	_, _ = io.WriteString(w, b.String())
 }
 
+// renderFindings writes one line per finding to the stderr writer, after the
+// scope line, the human counterpart of the envelope's findings. Detail is
+// code-generated text (ado.Finding), so it needs no sanitizing.
+func renderFindings(w io.Writer, findings []ado.Finding) {
+	var b strings.Builder
+	for _, f := range findings {
+		fmt.Fprintf(&b, "finding: %s: %s\n", f.Kind, f.Detail)
+	}
+	_, _ = io.WriteString(w, b.String())
+}
+
 // renderScope writes the read's fixed server-side scope as one line to the
 // stderr writer (D-04), never to stdout. It prints even when the read returned
 // zero rows: an empty result under an undisclosed filter is exactly audit W4.
@@ -134,6 +175,10 @@ func renderScope(w io.Writer, s *ado.Scope) {
 	}
 	if s.ApprovalStatus != "" {
 		parts = append(parts, s.ApprovalStatus+" approvals only")
+	}
+	if s.Caps != nil {
+		parts = append(parts, fmt.Sprintf("caps max_teams=%d max_sprint_history=%d max_backlog_depth=%d",
+			s.Caps.MaxTeams, s.Caps.MaxSprintHistory, s.Caps.MaxBacklogDepth))
 	}
 	_, _ = io.WriteString(w, "scope: "+strings.Join(parts, "; ")+"\n")
 }

@@ -15,6 +15,15 @@ type globalFlags struct {
 	asJSON   bool
 	timeout  time.Duration
 	projects stringList
+	team     string // scrum verbs only (scrumCommands)
+}
+
+// scrumCommands are the verbs that run against configured teams. They alone
+// register --team and run selectTeams before reading (TEAM-01, TEAM-04).
+var scrumCommands = map[string]bool{
+	"sprint current": true,
+	"teams members":  true,
+	"teams process":  true,
 }
 
 // configuredProjects is the D-09 allow-list every --project value is checked
@@ -213,6 +222,11 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 			gf.projects = append(gf.projects, parts...)
 			return nil
 		})
+
+	if scrumCommands[name] {
+		fs.StringVar(&gf.team, "team", "",
+			"restrict the read to one configured team, written project/team; default is every configured team")
+	}
 
 	ff := &filterFlags{}
 	sup := filterSupportByCommand[name]

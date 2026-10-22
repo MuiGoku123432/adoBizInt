@@ -30,11 +30,9 @@ import (
 // tags. Plan 02-04 asserts that this file contains zero encoding/json struct
 // tags, so adding one here fails an acceptance criterion.
 type Client struct {
-	workitemClient workItemAPI
-	coreClient     coreAPI
-	// workClient is intentionally dormant; the v2 scrum requirements consume
-	// this seam, so it must not be removed as dead code.
-	workClient         work.Client
+	workitemClient     workItemAPI
+	coreClient         coreAPI
+	workClient         workAPI
 	gitClient          gitAPI
 	buildClient        buildAPI
 	releaseClient      releaseAPI
@@ -121,15 +119,14 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 		return nil, err
 	}
 
-	// The four narrow-interface clients are wrapped in their read-only retry
-	// decorators (retry.go). The dormant work client has no interface and no
-	// reads until Phase 9 (D-16), so it stays unwrapped.
+	// Every narrow-interface client is wrapped in its read-only retry
+	// decorator (retry.go).
 	workitemClient := retryingWorkItems{workItemAPI: &workitemtracking.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, witURL, opt)}, retries: retries}
 	gitClient := retryingGit{gitAPI: &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, gitURL, opt)}, retries: retries}
 	buildClient := retryingBuild{buildAPI: &build.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, buildURL, opt)}, retries: retries}
 	releaseClient := retryingRelease{releaseAPI: &release.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, releaseURL, opt)}, retries: retries}
 	coreClient := retryingCore{coreAPI: &core.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, coreURL, opt)}, retries: retries}
-	workClient := &work.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, workURL, opt)}
+	workClient := retryingWork{workAPI: &work.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, workURL, opt)}, retries: retries}
 
 	// Fetch current user from PAT identity
 	log := logging.Logger()

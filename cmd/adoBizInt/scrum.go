@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"slices"
 
 	"sentinovo.ai/bizInt/internal/ado"
 	"sentinovo.ai/bizInt/internal/config"
@@ -22,13 +24,14 @@ var scrumConfig *config.Config
 //  1. ValidateScrum: teams present for every project, caps positive (exit 3).
 //  2. --team, if set, must name a configured "project/team" exactly, as
 //     --project does (D-09); otherwise every configured team is selected.
+//     A --project list narrows the selection to those projects.
 //  3. max_teams: a selection over the cap is refused before any call (exit 3).
 //  4. ResolveTeams checks names against ADO and returns team IDs. An auth
 //     rejection exits 2 and names the scope the new calls need; anything else,
 //     an unknown team included, exits 3: validation is never partial.
 //
 // ok is false when the caller must return code without reading.
-func selectTeams(ctx context.Context, c client, team string) (teams []ado.Team, code int, ok bool) {
+func selectTeams(ctx context.Context, c client, team string, projects []string) (teams []ado.Team, code int, ok bool) {
 	cfg := scrumConfig
 	if err := cfg.ValidateScrum(); err != nil {
 		fmt.Fprintf(stderrWriter, "Invalid config: %v\n", err)
@@ -38,6 +41,9 @@ func selectTeams(ctx context.Context, c client, team string) (teams []ado.Team, 
 	selected := map[string][]string{}
 	count := 0
 	for _, p := range cfg.Projects {
+		if len(projects) > 0 && !slices.Contains(projects, p) {
+			continue
+		}
 		for _, t := range cfg.TeamsFor(p) {
 			if team != "" && team != p+"/"+t {
 				continue
@@ -56,9 +62,7 @@ func selectTeams(ctx context.Context, c client, team string) (teams []ado.Team, 
 		return nil, exitUnknown, false
 	}
 
-	resolveCtx, cancel := fetchctx.NewWithParent(ctx, readBudget)
-	defer cancel()
-	teams, err := c.ResolveTeams(resolveCtx, cfg.Projects, selected)
+	teams, err := c.ResolveTeams(ctx, cfg.Projects, selected)
 	if err == nil {
 		return teams, exitOK, true
 	}
@@ -76,4 +80,38 @@ func selectTeams(ctx context.Context, c client, team string) (teams []ado.Team, 
 		fmt.Fprintf(stderrWriter, "team validation failed (%s); see the log for detail\n", ado.ClassifyFailure(err))
 	}
 	return nil, exitUnknown, false
+}
+
+// runScrum is the body every scrum verb shares: parse, select and validate
+// teams, read, then the same output and exit mapping as every v1 read
+// (finishRead). One deadline covers validation and the read, so --timeout
+// bounds the whole command.
+func runScrum[T any](
+	ctx context.Context,
+	name string,
+	args []string,
+	c client,
+	fetch func(context.Context, []ado.Team) (ado.Result[T], error),
+	render func(io.Writer, []T),
+) int {
+	gf, ff, code, ok := parseRead(name, args)
+	if !ok {
+		return code
+	}
+	// note: same budget rule as runRead; two call sites, left inline.
+	budget := readBudget
+	if gf.timeout != 0 {
+		budget = gf.timeout
+	}
+	readCtx, cancel := fetchctx.NewWithParent(ctx, budget)
+	defer cancel()
+
+	teams, code, ok := selectTeams(readCtx, c, gf.team, gf.projects)
+	if !ok {
+		return code
+	}
+	result, err := fetch(readCtx, teams)
+	caps := scrumConfig.Caps
+	result.Scope = &ado.Scope{Caps: &caps}
+	return finishRead(ctx, name, gf, ff, result, err, nil, render)
 }
