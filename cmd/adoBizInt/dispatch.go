@@ -69,6 +69,11 @@ type readClient interface {
 	GetPendingApprovals(ctx context.Context, projects []string) (ado.Result[ado.ReleaseApproval], error)
 	GetBranches(ctx context.Context, projects, repositories []string) (ado.Result[ado.Branch], error)
 	GetDashboardCounts(ctx context.Context, projects []string) (ado.Result[ado.DashboardCounts], error)
+	GetTeams(ctx context.Context, projects []string) (ado.Result[ado.Team], error)
+
+	// ResolveTeams is the scrum-verb precondition (TEAM-01), not an envelope
+	// read: it validates configured team names against ADO and returns IDs.
+	ResolveTeams(ctx context.Context, projects []string, selected map[string][]string) ([]ado.Team, error)
 
 	// CurrentUserEmail is the cached identity --assigned-to-me filters on. It
 	// is a read of an already-resolved field, not a network call: Phase 1 D-12
@@ -146,6 +151,10 @@ var commands = map[string]commandFunc{
 	"dashboard counts": func(ctx context.Context, c client, args []string) int {
 		return runRead[ado.DashboardCounts](ctx, "dashboard counts", args, "",
 			ignoreRepos(c.GetDashboardCounts), nil, renderDashboardCounts)
+	},
+	"teams list": func(ctx context.Context, c client, args []string) int {
+		return runRead[ado.Team](ctx, "teams list", args, "",
+			ignoreRepos(c.GetTeams), nil, renderTeams)
 	},
 	"workitems set-state": func(ctx context.Context, c client, args []string) int {
 		return runWrite(ctx, setStateOp(c), args)

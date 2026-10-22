@@ -237,10 +237,10 @@ func (c *Config) Validate() error {
 	// walked in sorted order so the same config always reports the same error.
 	keys := slices.Sorted(maps.Keys(c.Teams))
 	for i, project := range keys {
-		if !slices.ContainsFunc(c.Projects, func(p string) bool { return sameName(p, project) }) {
+		if !slices.ContainsFunc(c.Projects, func(p string) bool { return SameName(p, project) }) {
 			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q is not in projects", project)}
 		}
-		if slices.ContainsFunc(keys[:i], func(prev string) bool { return sameName(prev, project) }) {
+		if slices.ContainsFunc(keys[:i], func(prev string) bool { return SameName(prev, project) }) {
 			return &ConfigError{Field: "teams", Message: fmt.Sprintf("project %q is listed more than once", project)}
 		}
 		teams := c.Teams[project]
@@ -248,7 +248,7 @@ func (c *Config) Validate() error {
 			if strings.TrimSpace(t) == "" {
 				return &ConfigError{Field: "teams", Message: fmt.Sprintf("team names in project %q must not be blank", project)}
 			}
-			if slices.ContainsFunc(teams[:i], func(prev string) bool { return sameName(prev, t) }) {
+			if slices.ContainsFunc(teams[:i], func(prev string) bool { return SameName(prev, t) }) {
 				return &ConfigError{Field: "teams", Message: fmt.Sprintf("duplicate team %q in project %q", t, project)}
 			}
 		}
@@ -256,10 +256,10 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// sameName is the one rule for matching configured project and team names:
+// SameName is the one rule for matching configured project and team names:
 // surrounding space is ignored and case is folded, as Azure DevOps treats
 // names. Names are matched this way, never rewritten (D-11).
-func sameName(a, b string) bool {
+func SameName(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
 
@@ -283,11 +283,11 @@ func (c *Config) ValidateScrum() error {
 }
 
 // TeamsFor returns the configured teams for project, matching the teams key by
-// sameName so a key written "p" serves project "P". Validate rejects two keys
+// SameName so a key written "p" serves project "P". Validate rejects two keys
 // that match the same name, so at most one key matches.
 func (c *Config) TeamsFor(project string) []string {
 	for k, teams := range c.Teams {
-		if sameName(k, project) {
+		if SameName(k, project) {
 			return teams
 		}
 	}

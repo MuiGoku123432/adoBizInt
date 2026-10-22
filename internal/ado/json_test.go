@@ -6,6 +6,8 @@ import (
 	"sort"
 	"testing"
 	"time"
+
+	"sentinovo.ai/bizInt/internal/config"
 )
 
 // This file pins the JSON field contract for every serializable type in this
@@ -147,6 +149,7 @@ func TestJSONFieldNames(t *testing.T) {
 
 	t.Run("Attachment", func(t *testing.T) {
 		assertKeySet(t, Attachment{}, []string{"id", "name", "url", "size"})
+		assertKeySet(t, Team{}, []string{"project", "team", "team_id", "description"})
 	})
 
 	// The envelope and the failure record are tagged in the same convention so
@@ -177,7 +180,9 @@ func TestJSONFieldNames(t *testing.T) {
 			Iterations:     "recent",
 			PRStatus:       "active",
 			ApprovalStatus: "pending",
-		}, []string{"excluded_states", "iterations", "pr_status", "approval_status"})
+			Caps:           &config.Caps{MaxTeams: 1, MaxSprintHistory: 1, MaxBacklogDepth: 1},
+		}, []string{"excluded_states", "iterations", "pr_status", "approval_status", "caps"})
+		assertKeySet(t, config.Caps{}, []string{"max_teams", "max_sprint_history", "max_backlog_depth"})
 		assertKeySet(t, Scope{}, []string{})
 	})
 

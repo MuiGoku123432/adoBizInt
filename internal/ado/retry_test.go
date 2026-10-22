@@ -35,6 +35,7 @@ var writeMethods = map[string]bool{
 // have a retrying override. A method goes in exactly one of the two lists, and
 // a new method is classified before anyone decides whether it may retry.
 var readMethods = map[string]bool{
+	"GetTeams":                 true,
 	"GetWorkItems":             true,
 	"GetWorkItem":              true,
 	"QueryByWiql":              true,

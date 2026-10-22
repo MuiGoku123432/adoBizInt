@@ -29,6 +29,8 @@ type fakeReadClient struct {
 	GetPendingApprovalsFunc    func(ctx context.Context, projects []string) (ado.Result[ado.ReleaseApproval], error)
 	GetBranchesFunc            func(ctx context.Context, projects, repositories []string) (ado.Result[ado.Branch], error)
 	GetDashboardCountsFunc     func(ctx context.Context, projects []string) (ado.Result[ado.DashboardCounts], error)
+	GetTeamsFunc               func(ctx context.Context, projects []string) (ado.Result[ado.Team], error)
+	ResolveTeamsFunc           func(ctx context.Context, projects []string, selected map[string][]string) ([]ado.Team, error)
 
 	// currentUserEmail is a plain field rather than a closure: it stands in for
 	// a cached value the real client resolved at construction, and its empty
@@ -95,6 +97,20 @@ func (f *fakeReadClient) GetDashboardCounts(ctx context.Context, projects []stri
 	return f.GetDashboardCountsFunc(ctx, projects)
 }
 
+func (f *fakeReadClient) GetTeams(ctx context.Context, projects []string) (ado.Result[ado.Team], error) {
+	if f.GetTeamsFunc == nil {
+		f.t.Fatalf("readClient.GetTeams called with no GetTeamsFunc set")
+	}
+	return f.GetTeamsFunc(ctx, projects)
+}
+
+func (f *fakeReadClient) ResolveTeams(ctx context.Context, projects []string, selected map[string][]string) ([]ado.Team, error) {
+	if f.ResolveTeamsFunc == nil {
+		f.t.Fatalf("readClient.ResolveTeams called with no ResolveTeamsFunc set")
+	}
+	return f.ResolveTeamsFunc(ctx, projects, selected)
+}
+
 // allReadsFake returns a fake whose every closure is set to an empty, complete
 // result, so a test can exercise any of the eight verbs without caring which
 // method the dispatch table happens to call.
@@ -126,13 +142,16 @@ func allReadsFake(t *testing.T) *fakeReadClient {
 		GetDashboardCountsFunc: func(context.Context, []string) (ado.Result[ado.DashboardCounts], error) {
 			return emptyResult[ado.DashboardCounts](), nil
 		},
+		GetTeamsFunc: func(context.Context, []string) (ado.Result[ado.Team], error) {
+			return emptyResult[ado.Team](), nil
+		},
 	}
 }
 
 // emptyResult is the shape a real read produces for configured projects with
 // nothing to report: both slices present and empty, never nil.
 func emptyResult[T any]() ado.Result[T] {
-	return ado.Result[T]{Items: []T{}, Failures: []ado.Failure{}, Complete: true}
+	return ado.Result[T]{Items: []T{}, Failures: []ado.Failure{}, Findings: []ado.Finding{}, Complete: true}
 }
 
 // fakeWriteClient satisfies writeClient with the same per-call closure shape as

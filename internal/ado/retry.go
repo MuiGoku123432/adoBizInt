@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
@@ -64,6 +65,16 @@ func retryRead[T any](ctx context.Context, retries *atomic.Int64, call func() (T
 		retries.Add(1)
 		logging.Logger().Info("Retrying rate-limited read", "retry", retry+1, "max", maxReadRetries)
 	}
+}
+
+// retryingCore retries the coreAPI reads. coreAPI has no writes.
+type retryingCore struct {
+	coreAPI
+	retries *atomic.Int64
+}
+
+func (r retryingCore) GetTeams(ctx context.Context, args core.GetTeamsArgs) (*[]core.WebApiTeam, error) {
+	return retryRead(ctx, r.retries, func() (*[]core.WebApiTeam, error) { return r.coreAPI.GetTeams(ctx, args) })
 }
 
 // retryingWorkItems retries the workItemAPI reads, QueryByWiql included: it

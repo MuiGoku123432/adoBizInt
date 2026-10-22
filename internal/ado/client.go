@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/location"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
@@ -30,6 +31,7 @@ import (
 // tags, so adding one here fails an acceptance criterion.
 type Client struct {
 	workitemClient workItemAPI
+	coreClient     coreAPI
 	// workClient is intentionally dormant; the v2 scrum requirements consume
 	// this seam, so it must not be removed as dead code.
 	workClient         work.Client
@@ -114,6 +116,10 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	coreURL, err := areaURL(areas, core.ResourceAreaId, conn.BaseUrl)
+	if err != nil {
+		return nil, err
+	}
 
 	// The four narrow-interface clients are wrapped in their read-only retry
 	// decorators (retry.go). The dormant work client has no interface and no
@@ -122,6 +128,7 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 	gitClient := retryingGit{gitAPI: &git.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, gitURL, opt)}, retries: retries}
 	buildClient := retryingBuild{buildAPI: &build.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, buildURL, opt)}, retries: retries}
 	releaseClient := retryingRelease{releaseAPI: &release.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, releaseURL, opt)}, retries: retries}
+	coreClient := retryingCore{coreAPI: &core.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, coreURL, opt)}, retries: retries}
 	workClient := &work.ClientImpl{Client: *azuredevops.NewClientWithOptions(conn, workURL, opt)}
 
 	// Fetch current user from PAT identity
@@ -157,6 +164,7 @@ func NewClient(cfg *config.Config, tr *transport.Transport) (*Client, error) {
 
 	return &Client{
 		workitemClient:     workitemClient,
+		coreClient:         coreClient,
 		workClient:         workClient,
 		gitClient:          gitClient,
 		buildClient:        buildClient,
@@ -199,7 +207,7 @@ func areaURL(areas []azuredevops.ResourceAreaInfo, id uuid.UUID, baseURL string)
 
 // checkAreaHosts is the D-10a startup check. It applies the transport's host
 // rule (D-09) to the location of EVERY area the discovery returned, not only
-// the five areas a sub-client is built on (08-CONTEXT D-10a confirmation,
+// the six areas a sub-client is built on (08-CONTEXT D-10a confirmation,
 // user, 2026-10-19; RESEARCH Open Question 3's narrowing to the used areas is
 // not adopted). An unused area on an unexpected host therefore stops startup:
 // refusing an unexpected but legitimate host is the safe way to fail, and the

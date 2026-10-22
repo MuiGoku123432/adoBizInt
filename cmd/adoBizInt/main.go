@@ -109,6 +109,7 @@ func run() int {
 	// against it.
 	readBudget = cfg.FetchTimeout
 	configuredProjects = []string(cfg.Projects) // D-09: the --project allow-list, trusted only after validation
+	scrumConfig = cfg                           // read only by scrum verbs, which run ValidateScrum first (D-2)
 
 	// D-09, D-11: every SDK request goes through this one transport, which binds
 	// the PAT to the configured organization and refuses any other host.

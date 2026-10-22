@@ -14,6 +14,7 @@ import (
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/webapi"
@@ -182,7 +183,7 @@ type v7Area struct {
 	locationURL *string
 }
 
-// usedAreas returns the five areas NewClient builds a sub-client on, located
+// usedAreas returns the six areas NewClient builds a sub-client on, located
 // the way a dev.azure.com organization reports them: on {orgURL}/ in the
 // org's own mixed case with a trailing slash (Pitfall 7), and release on
 // vsrm.dev.azure.com/{org}/.
@@ -196,6 +197,7 @@ func usedAreas(orgURL string) []v7Area {
 		{build.ResourceAreaId.String(), "build", &home},
 		{release.ResourceAreaId.String(), "Release", &vsrm},
 		{work.ResourceAreaId.String(), "work", &home},
+		{core.ResourceAreaId.String(), "core", &home},
 	}
 }
 
@@ -319,7 +321,7 @@ func TestNewClientBuildsOnInjectedClient(t *testing.T) {
 }
 
 // unusedAreaID names a resource area no sub-client is built on. It matches none
-// of the five area ids NewClient looks up.
+// of the six area ids NewClient looks up.
 const unusedAreaID = "0f0e0d0c-0b0a-4909-8807-060504030201"
 
 // withLocation returns areas with the area id relocated to loc.

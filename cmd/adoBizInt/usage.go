@@ -55,6 +55,7 @@ var verbSummaries = map[string]string{
 	"prs list":              "list pull requests",
 	"releases approvals":    "list pending release approvals",
 	"releases list":         "list releases",
+	"teams list":            "list every team in the configured projects (discovery; needs no teams config)",
 	"workitems list":        "list work items",
 
 	"workitems set-state": "set a work item's state; previews the diff by default, writes only with --confirm",

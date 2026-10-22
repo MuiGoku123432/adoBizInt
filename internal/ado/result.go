@@ -8,6 +8,7 @@ import (
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 
+	"sentinovo.ai/bizInt/internal/config"
 	"sentinovo.ai/bizInt/internal/transport"
 )
 
@@ -111,6 +112,8 @@ type Scope struct {
 	Iterations     string   `json:"iterations,omitempty"`
 	PRStatus       string   `json:"pr_status,omitempty"`
 	ApprovalStatus string   `json:"approval_status,omitempty"`
+	// Caps discloses the request-shape caps in force on a scrum read (PLAT-04).
+	Caps *config.Caps `json:"caps,omitempty"`
 }
 
 // Result is the envelope every aggregate read returns. Items holds whatever was

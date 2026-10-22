@@ -7,6 +7,7 @@ import (
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
@@ -17,6 +18,7 @@ var (
 	_ gitAPI      = (*fakeGitAPI)(nil)
 	_ buildAPI    = (*fakeBuildAPI)(nil)
 	_ releaseAPI  = (*fakeReleaseAPI)(nil)
+	_ coreAPI     = (*fakeCoreAPI)(nil)
 )
 
 // azuredevops.Client.UnwrapError returns a *WrappedError on two paths and a bare
@@ -249,4 +251,18 @@ func (f *fakeReleaseAPI) UpdateReleaseApproval(ctx context.Context, args release
 		f.t.Fatalf("unexpected call to releaseAPI.UpdateReleaseApproval")
 	}
 	return f.UpdateReleaseApprovalFunc(ctx, args)
+}
+
+type fakeCoreAPI struct {
+	t *testing.T
+
+	GetTeamsFunc func(context.Context, core.GetTeamsArgs) (*[]core.WebApiTeam, error)
+}
+
+func (f *fakeCoreAPI) GetTeams(ctx context.Context, args core.GetTeamsArgs) (*[]core.WebApiTeam, error) {
+	f.t.Helper()
+	if f.GetTeamsFunc == nil {
+		f.t.Fatalf("unexpected call to coreAPI.GetTeams")
+	}
+	return f.GetTeamsFunc(ctx, args)
 }

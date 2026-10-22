@@ -73,6 +73,12 @@ func renderBranches(w io.Writer, items []ado.Branch) {
 // renderDashboardCounts renders the single-element Items slice the dashboard
 // read returns (Phase 2 D-01). It stays a loop rather than an items[0] index so
 // an empty envelope writes nothing instead of panicking.
+func renderTeams(w io.Writer, items []ado.Team) {
+	writeRows(w, items, func(b *strings.Builder, i ado.Team) {
+		row(b, i.Project, i.Team, i.TeamID)
+	})
+}
+
 func renderDashboardCounts(w io.Writer, items []ado.DashboardCounts) {
 	writeRows(w, items, func(b *strings.Builder, i ado.DashboardCounts) {
 		row(b, fmt.Sprintf("work_items=%d", i.WorkItems),

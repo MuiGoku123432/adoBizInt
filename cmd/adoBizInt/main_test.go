@@ -260,6 +260,7 @@ var wantCommands = []string{
 	"prs list",
 	"releases approvals",
 	"releases list",
+	"teams list",
 	"workitems list",
 }
 
@@ -396,6 +397,12 @@ func wrapOne(t *testing.T, f *fakeReadClient, key string, counter *int) {
 	case "dashboard counts":
 		inner := f.GetDashboardCountsFunc
 		f.GetDashboardCountsFunc = func(ctx context.Context, p []string) (ado.Result[ado.DashboardCounts], error) {
+			*counter++
+			return inner(ctx, p)
+		}
+	case "teams list":
+		inner := f.GetTeamsFunc
+		f.GetTeamsFunc = func(ctx context.Context, p []string) (ado.Result[ado.Team], error) {
 			*counter++
 			return inner(ctx, p)
 		}

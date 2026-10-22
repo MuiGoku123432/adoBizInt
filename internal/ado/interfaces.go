@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/build"
+	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/core"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/release"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/workitemtracking"
@@ -48,4 +49,8 @@ type releaseAPI interface {
 	GetReleaseDefinitions(context.Context, release.GetReleaseDefinitionsArgs) (*release.GetReleaseDefinitionsResponseValue, error)
 	GetReleases(context.Context, release.GetReleasesArgs) (*release.GetReleasesResponseValue, error)
 	UpdateReleaseApproval(context.Context, release.UpdateReleaseApprovalArgs) (*release.ReleaseApproval, error)
+}
+
+type coreAPI interface {
+	GetTeams(context.Context, core.GetTeamsArgs) (*[]core.WebApiTeam, error)
 }
