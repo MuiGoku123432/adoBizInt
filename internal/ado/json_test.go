@@ -154,6 +154,10 @@ func TestJSONFieldNames(t *testing.T) {
 		assertKeySet(t, Sprint{}, []string{"project", "team", "iteration_id", "name", "path", "start_date", "finish_date"})
 		assertKeySet(t, ProcessFields{}, []string{"project", "points_field", "rank_field", "done_states", "state_categories"})
 		assertKeySet(t, AreaPath{}, []string{"path", "include_children"})
+		assertKeySet(t, SprintItem{}, []string{"project", "team", "id", "type", "title", "state", "state_category", "done",
+			"assigned_to", "parent_id", "points", "remaining_work", "completed_work", "original_estimate", "area_path",
+			"iteration_path", "acceptance_criteria_empty", "pull_request_ids", "tasks"})
+		assertKeySet(t, SprintTeamScope{}, []string{"project", "team", "iteration_id", "area_paths", "points_field"})
 	})
 
 	// The envelope and the failure record are tagged in the same convention so
@@ -180,12 +184,15 @@ func TestJSONFieldNames(t *testing.T) {
 	// exactly the four contract keys and an empty one carries none.
 	t.Run("Scope", func(t *testing.T) {
 		assertKeySet(t, Scope{
-			ExcludedStates: []string{"Done"},
-			Iterations:     "recent",
-			PRStatus:       "active",
-			ApprovalStatus: "pending",
-			Caps:           &config.Caps{MaxTeams: 1, MaxSprintHistory: 1, MaxBacklogDepth: 1},
-		}, []string{"excluded_states", "iterations", "pr_status", "approval_status", "caps"})
+			ExcludedStates:   []string{"Done"},
+			Iterations:       "recent",
+			PRStatus:         "active",
+			ApprovalStatus:   "pending",
+			Caps:             &config.Caps{MaxTeams: 1, MaxSprintHistory: 1, MaxBacklogDepth: 1},
+			AsOf:             "live",
+			Teams:            []SprintTeamScope{{}},
+			AreaPathsCurrent: true,
+		}, []string{"excluded_states", "iterations", "pr_status", "approval_status", "caps", "as_of", "teams", "area_paths_current"})
 		assertKeySet(t, config.Caps{}, []string{"max_teams", "max_sprint_history", "max_backlog_depth"})
 		assertKeySet(t, Scope{}, []string{})
 	})
