@@ -5,6 +5,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -95,6 +96,23 @@ func renderSprints(w io.Writer, items []ado.Sprint) {
 	})
 }
 
+// renderSprintItems writes one row per item, each task indented under its
+// story. Points are blank when the item holds none, never 0.
+func renderSprintItems(w io.Writer, items []ado.SprintItem) {
+	pts := func(p *float64) string {
+		if p == nil {
+			return ""
+		}
+		return strconv.FormatFloat(*p, 'f', -1, 64)
+	}
+	writeRows(w, items, func(b *strings.Builder, i ado.SprintItem) {
+		row(b, i.Project, i.Team, strconv.Itoa(i.ID), i.Type, i.State, pts(i.Points), i.Title)
+		for _, t := range i.Tasks {
+			row(b, "", "", "  "+strconv.Itoa(t.ID), t.Type, t.State, pts(t.RemainingWork), t.Title)
+		}
+	})
+}
+
 func renderProcessFields(w io.Writer, items []ado.ProcessFields) {
 	writeRows(w, items, func(b *strings.Builder, i ado.ProcessFields) {
 		types := slices.Sorted(maps.Keys(i.DoneStates))
@@ -176,6 +194,12 @@ func renderScope(w io.Writer, s *ado.Scope) {
 	}
 	if s.ApprovalStatus != "" {
 		parts = append(parts, s.ApprovalStatus+" approvals only")
+	}
+	if s.AsOf != "" {
+		parts = append(parts, "as of "+s.AsOf)
+	}
+	if s.AreaPathsCurrent {
+		parts = append(parts, "team area paths as configured today")
 	}
 	if s.Caps != nil {
 		parts = append(parts, fmt.Sprintf("caps max_teams=%d max_sprint_history=%d max_backlog_depth=%d",

@@ -13,7 +13,7 @@
 #      toolchain, and refuses to go on unless `go version -m` shows the go.mod
 #      go directive and azuredevops/v7 v7.1.0. A binary found on PATH is never
 #      run: older builds there predate the v7 swap (08-RESEARCH Pitfall 12).
-#   2. Runs the eight v1 CLI reads plus the four Phase 9 team reads with
+#   2. Runs the eight v1 CLI reads plus the Phase 9 team reads and Phase 10 sprint items with
 #      --json, one or two per sub-client with a call site (D-16). A read
 #      passes only on exit 0 with .complete == true.
 #   3. Checks identity (the location sub-client): the log lines this run
@@ -222,11 +222,13 @@ if [ -z "${SMOKE_TEAM:-}" ]; then
     row "teams members" SKIP "set SMOKE_TEAM"
     row "sprint current" SKIP "set SMOKE_TEAM"
     row "teams process" SKIP "set SMOKE_TEAM"
+    row "sprint items" SKIP "set SMOKE_TEAM"
 else
     smoke_team_project=${SMOKE_TEAM%%/*}
     ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read teams members --team "$SMOKE_TEAM"
     ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read sprint current --team "$SMOKE_TEAM"
     ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read teams process --team "$SMOKE_TEAM"
+    ADO_PROJECTS="$smoke_team_project" ADO_TEAMS="$SMOKE_TEAM" run_read sprint items --team "$SMOKE_TEAM"
 fi
 
 # Identity (location sub-client, GetConnectionData at client construction).

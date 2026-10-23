@@ -95,7 +95,7 @@ func runScrum[T any](
 	name string,
 	args []string,
 	c client,
-	fetch func(context.Context, []ado.Team) (ado.Result[T], error),
+	fetch func(ctx context.Context, teams []ado.Team, at string) (ado.Result[T], error),
 	render func(io.Writer, []T),
 ) int {
 	gf, ff, code, ok := parseRead(name, args)
@@ -119,8 +119,20 @@ func runScrum[T any](
 		}
 		return code
 	}
-	result, err := fetch(readCtx, teams)
+	result, err := fetch(readCtx, teams, gf.at)
+	// The read may set its own scope (sprint items); caps join it.
 	caps := scrumConfig.Caps
-	result.Scope = &ado.Scope{Caps: &caps}
+	if result.Scope == nil {
+		result.Scope = &ado.Scope{}
+	}
+	result.Scope.Caps = &caps
 	return finishRead(ctx, name, gf, ff, result, err, nil, render)
+}
+
+// teamsOnly adapts a scrum read that takes no --at to runScrum's fetch
+// signature, as ignoreRepos does for runRead. Only sprint items reads --at.
+func teamsOnly[T any](f func(context.Context, []ado.Team) (ado.Result[T], error)) func(context.Context, []ado.Team, string) (ado.Result[T], error) {
+	return func(ctx context.Context, teams []ado.Team, _ string) (ado.Result[T], error) {
+		return f(ctx, teams)
+	}
 }

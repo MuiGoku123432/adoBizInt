@@ -56,6 +56,7 @@ var verbSummaries = map[string]string{
 	"releases approvals":    "list pending release approvals",
 	"releases list":         "list releases",
 	"sprint current":        "current sprint per configured team; flags teams whose sprint dates differ",
+	"sprint items":          "each team's current sprint items, completed work included; --at live, baseline or close",
 	"teams list":            "list every team in the configured projects (discovery; needs no teams config)",
 	"teams members":         "members of each configured team; groups are flagged, never expanded",
 	"teams process":         "points field, rank field and done states per project",

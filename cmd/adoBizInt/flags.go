@@ -16,12 +16,14 @@ type globalFlags struct {
 	timeout  time.Duration
 	projects stringList
 	team     string // scrum verbs only (scrumCommands)
+	at       string // sprint items only: live, baseline or close
 }
 
 // scrumCommands are the verbs that run against configured teams. They alone
 // register --team and run selectTeams before reading (TEAM-01, TEAM-04).
 var scrumCommands = map[string]bool{
 	"sprint current": true,
+	"sprint items":   true,
 	"teams members":  true,
 	"teams process":  true,
 }
@@ -226,6 +228,19 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 	if scrumCommands[name] {
 		fs.StringVar(&gf.team, "team", "",
 			"restrict the read to one configured team, written project/team; default is every configured team")
+	}
+
+	gf.at = "live"
+	if name == "sprint items" {
+		// Validated as it parses, so a bad value exits 3 before any call.
+		fs.Func("at", "which snapshot to read: live (default), baseline (sprint start, 00:00 UTC) or close (day after the finish, 00:00 UTC)",
+			func(v string) error {
+				if v != "live" && v != "baseline" && v != "close" {
+					return fmt.Errorf("--at must be live, baseline or close; got %q", v)
+				}
+				gf.at = v
+				return nil
+			})
 	}
 
 	ff := &filterFlags{}

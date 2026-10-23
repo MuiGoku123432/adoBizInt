@@ -282,6 +282,7 @@ var wantWriteCommands = []string{
 // scrum_test.go does.
 var wantScrumCommands = []string{
 	"sprint current",
+	"sprint items",
 	"teams members",
 	"teams process",
 }

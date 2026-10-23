@@ -408,6 +408,7 @@ func TestFilterFlagsRegisteredOnSupportedVerbsOnly(t *testing.T) {
 		"teams members":         {},
 		"teams process":         {},
 		"sprint current":        {},
+		"sprint items":          {},
 		"workitems set-state":   {},
 		// The two prs write verbs register --repo, but from writeSupport rather
 		// than filterSupport: on a write it names the repository holding the

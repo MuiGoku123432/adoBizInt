@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"testing"
+	"time"
 
 	"sentinovo.ai/bizInt/internal/ado"
 )
@@ -34,6 +35,7 @@ type fakeReadClient struct {
 	GetTeamMembersFunc         func(ctx context.Context, teams []ado.Team) (ado.Result[ado.TeamMember], error)
 	GetCurrentSprintsFunc      func(ctx context.Context, teams []ado.Team) (ado.Result[ado.Sprint], error)
 	GetProcessFieldsFunc       func(ctx context.Context, teams []ado.Team) (ado.Result[ado.ProcessFields], error)
+	GetSprintItemsFunc         func(ctx context.Context, teams []ado.Team, snapshot string, now time.Time) (ado.Result[ado.SprintItem], error)
 
 	// currentUserEmail is a plain field rather than a closure: it stands in for
 	// a cached value the real client resolved at construction, and its empty
@@ -133,6 +135,13 @@ func (f *fakeReadClient) GetProcessFields(ctx context.Context, teams []ado.Team)
 		f.t.Fatalf("readClient.GetProcessFields called with no GetProcessFieldsFunc set")
 	}
 	return f.GetProcessFieldsFunc(ctx, teams)
+}
+
+func (f *fakeReadClient) GetSprintItems(ctx context.Context, teams []ado.Team, snapshot string, now time.Time) (ado.Result[ado.SprintItem], error) {
+	if f.GetSprintItemsFunc == nil {
+		f.t.Fatalf("readClient.GetSprintItems called with no GetSprintItemsFunc set")
+	}
+	return f.GetSprintItemsFunc(ctx, teams, snapshot, now)
 }
 
 // allReadsFake returns a fake whose every closure is set to an empty, complete

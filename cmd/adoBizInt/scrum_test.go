@@ -308,3 +308,79 @@ func TestHumanOutputSanitizesADOTeamNames(t *testing.T) {
 		t.Errorf("output = %q", b.String())
 	}
 }
+
+func TestSprintItemsVerb(t *testing.T) {
+	withReadBudget(t, time.Minute)
+	pts := 3.0
+	fake := func(t *testing.T, gotAt *string) *fakeReadClient {
+		calls := 0
+		var sel map[string][]string
+		c := resolveRecorder(t, &calls, &sel, nil)
+		c.GetSprintItemsFunc = func(_ context.Context, teams []ado.Team, snapshot string, _ time.Time) (ado.Result[ado.SprintItem], error) {
+			*gotAt = snapshot
+			r := emptyResult[ado.SprintItem]()
+			r.Items = []ado.SprintItem{{Project: "A", Team: "Core", ID: 10, Type: "User Story", State: "Active", Points: &pts, Title: "Story",
+				Tasks: []ado.SprintItem{{Project: "A", Team: "Core", ID: 11, Type: "Task", State: "Closed", Title: "Task"}}}}
+			r.Scope = &ado.Scope{AsOf: "live", AreaPathsCurrent: true, Teams: []ado.SprintTeamScope{{Project: "A", Team: "Core", IterationID: 7}}}
+			return r, nil
+		}
+		return c
+	}
+
+	t.Run("--json keeps sprint scope and adds caps", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		stdout, _ := captureOutput(t)
+		var at string
+		if code := dispatch(context.Background(), fake(t, &at), []string{"sprint", "items", "--json", "--at", "baseline"}); code != exitOK {
+			t.Fatalf("exit = %d", code)
+		}
+		if at != "baseline" {
+			t.Errorf("snapshot = %q", at)
+		}
+		var env struct {
+			Scope map[string]json.RawMessage `json:"scope"`
+		}
+		_ = json.Unmarshal(stdout.Bytes(), &env)
+		for _, k := range []string{"caps", "as_of", "teams", "area_paths_current"} {
+			if env.Scope[k] == nil {
+				t.Errorf("scope lacks %s: %s", k, stdout)
+			}
+		}
+	})
+
+	t.Run("default is live and human output indents tasks", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		stdout, stderr := captureOutput(t)
+		var at string
+		dispatch(context.Background(), fake(t, &at), []string{"sprint", "items"})
+		if at != "live" {
+			t.Errorf("snapshot = %q, want live", at)
+		}
+		if !strings.Contains(stdout.String(), "10\tUser Story\tActive\t3\tStory") || !strings.Contains(stdout.String(), "\t  11\tTask\tClosed\t\tTask") {
+			t.Errorf("stdout = %q", stdout)
+		}
+		if !strings.Contains(stderr.String(), "as of live") || !strings.Contains(stderr.String(), "team area paths as configured today") {
+			t.Errorf("stderr = %q", stderr)
+		}
+	})
+
+	t.Run("bad --at exits 3 before any call", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		_, stderr := captureOutput(t)
+		if code := dispatch(context.Background(), &fakeReadClient{t: t}, []string{"sprint", "items", "--at", "yesterday"}); code != exitUnknown {
+			t.Errorf("exit = %d", code)
+		}
+		if !strings.Contains(stderr.String(), "--at must be live, baseline or close") {
+			t.Errorf("stderr = %q", stderr)
+		}
+	})
+
+	t.Run("--at only on sprint items", func(t *testing.T) {
+		for _, name := range commandKeys() {
+			fs, _, _, _ := newFlagSet(name)
+			if got := fs.Lookup("at") != nil; got != (name == "sprint items") {
+				t.Errorf("%s registers --at = %v", name, got)
+			}
+		}
+	})
+}

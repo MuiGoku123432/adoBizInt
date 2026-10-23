@@ -79,6 +79,7 @@ type readClient interface {
 	GetTeamMembers(ctx context.Context, teams []ado.Team) (ado.Result[ado.TeamMember], error)
 	GetCurrentSprints(ctx context.Context, teams []ado.Team) (ado.Result[ado.Sprint], error)
 	GetProcessFields(ctx context.Context, teams []ado.Team) (ado.Result[ado.ProcessFields], error)
+	GetSprintItems(ctx context.Context, teams []ado.Team, snapshot string, now time.Time) (ado.Result[ado.SprintItem], error)
 
 	// CurrentUserEmail is the cached identity --assigned-to-me filters on. It
 	// is a read of an already-resolved field, not a network call: Phase 1 D-12
@@ -162,13 +163,18 @@ var commands = map[string]commandFunc{
 			ignoreRepos(c.GetTeams), nil, renderTeams)
 	},
 	"teams members": func(ctx context.Context, c client, args []string) int {
-		return runScrum(ctx, "teams members", args, c, c.GetTeamMembers, renderTeamMembers)
+		return runScrum(ctx, "teams members", args, c, teamsOnly(c.GetTeamMembers), renderTeamMembers)
 	},
 	"teams process": func(ctx context.Context, c client, args []string) int {
-		return runScrum(ctx, "teams process", args, c, c.GetProcessFields, renderProcessFields)
+		return runScrum(ctx, "teams process", args, c, teamsOnly(c.GetProcessFields), renderProcessFields)
+	},
+	"sprint items": func(ctx context.Context, c client, args []string) int {
+		return runScrum(ctx, "sprint items", args, c, func(ctx context.Context, teams []ado.Team, at string) (ado.Result[ado.SprintItem], error) {
+			return c.GetSprintItems(ctx, teams, at, time.Now())
+		}, renderSprintItems)
 	},
 	"sprint current": func(ctx context.Context, c client, args []string) int {
-		return runScrum(ctx, "sprint current", args, c, c.GetCurrentSprints, renderSprints)
+		return runScrum(ctx, "sprint current", args, c, teamsOnly(c.GetCurrentSprints), renderSprints)
 	},
 	"workitems set-state": func(ctx context.Context, c client, args []string) int {
 		return runWrite(ctx, setStateOp(c), args)
