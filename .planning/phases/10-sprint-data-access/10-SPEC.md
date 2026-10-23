@@ -39,10 +39,9 @@ Out:
 
 Per selected team (Phase 9 `selectTeams`):
 
-1. **Iteration id.** Take the team's current sprint from Phase 9 `currentSprint`. Resolve its integer id from `classificationnodes/Iterations/{relative path}`:
-   - The relative path is the team path without its first segment.
-   - Every segment is URL-encoded, the last one included (research Q1).
-   - The id is formatted with `strconv.Itoa`, never string-built.
+1. **Iteration id.** Take the team's current sprint from Phase 9 `currentSprint`. Resolve its integer id from the project's iteration tree, read once per project with `GetClassificationNode` (depth 10), and matched on the team-style path (`\P\Iteration\X` maps to `P\X`).
+   - Build deviation (2026-10-23): this replaces a by-path node lookup. The SDK escapes a path route value as one segment (`/` becomes `%2F`), which the spike did not verify the server accepts. The tree walk cannot drop the last segment either.
+   - The id is formatted with `strconv.Itoa`, never string-built. The query is built from three reviewed escapers (`iterationIDClause`, `areaClause`, `asOfClause`) added to the WIQL structural test's allow-list.
 2. **Area paths.** Read `teamsettings/teamfieldvalues`.
    - `field.referenceName` must be `System.AreaPath`. Any other team field is a named per-team failure.
    - Each value becomes `[System.AreaPath] UNDER '<v>'` when `includeChildren` is true, and `= '<v>'` when false.
