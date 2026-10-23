@@ -226,6 +226,9 @@ func TestGetProcessFields(t *testing.T) {
 			if got := pf.DoneStates[sh.reqType]; len(got) != len(sh.wantDone) || got[0] != sh.wantDone[0] {
 				t.Errorf("done states = %v, want %v", got, sh.wantDone)
 			}
+			if pf.StateCategories[sh.reqType][sh.wantDone[0]] != "Completed" {
+				t.Errorf("state categories = %v", pf.StateCategories)
+			}
 			if _, ok := pf.DoneStates["Bug"]; ok {
 				t.Errorf("done states include a non-requirement type: %v", pf.DoneStates)
 			}

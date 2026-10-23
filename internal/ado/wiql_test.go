@@ -184,8 +184,8 @@ func TestDashboardUsesProjectMacro(t *testing.T) {
 // whose source text comes from a variable, or one extended by += after the
 // site, fails even though no literal names the source.
 //
-// The site count and the QueryByWiql call count must both be exactly 2
-// (getProjectWorkItems and getProjectCounts): a third WIQL query must fail
+// The site count and the QueryByWiql call count must both be exactly 3
+// (getProjectWorkItems, getProjectCounts, querySprintIDs): a fourth must fail
 // until it is reviewed (D-12). The read-retry decorator's pass-through is not
 // a query of its own and is not counted (forwardsOwnArgs).
 // TestWIQLCheckCatchesBypasses proves the walk reports each bypass shape.
@@ -195,17 +195,28 @@ func TestDashboardUsesProjectMacro(t *testing.T) {
 // nothing" criterion was satisfied and then quietly defeated by a prose comment
 // explaining the forbidden thing. Comments are not part of the AST, so a doc
 // line can neither satisfy nor defeat this assertion — only real code can.
+// wiqlEscapers are the reviewed functions allowed to add non-literal text to a
+// WIQL chain (D-12). iterationClause quotes iteration paths; the three Phase 10
+// clauses build the sprint query from an int (strconv), area paths quoted with
+// the same ” escaper, and a UTC instant (querySprintIDs, reviewed 2026-10-23).
+var wiqlEscapers = map[string]bool{
+	"iterationClause":   true,
+	"iterationIDClause": true,
+	"areaClause":        true,
+	"asOfClause":        true,
+}
+
 func TestWIQLInterpolationStructural(t *testing.T) {
 	fset, files := parsePackageFiles(t)
 	sites, sinks, problems := checkWIQL(fset, files)
 	for _, p := range problems {
 		t.Error(p)
 	}
-	if sites != 2 {
-		t.Errorf("found %d WIQL + chains, want exactly 2 (getProjectWorkItems and getProjectCounts); review any new site against D-10 revised and D-12", sites)
+	if sites != 3 {
+		t.Errorf("found %d WIQL + chains, want exactly 3 (getProjectWorkItems, getProjectCounts, querySprintIDs); review any new site against D-10 revised and D-12", sites)
 	}
-	if sinks != 2 {
-		t.Errorf("found %d QueryByWiql calls, want exactly 2; a new query must be reviewed against D-10 revised and D-12", sinks)
+	if sinks != 3 {
+		t.Errorf("found %d QueryByWiql calls, want exactly 3; a new query must be reviewed against D-10 revised and D-12", sinks)
 	}
 }
 
@@ -262,8 +273,8 @@ func checkWIQL(fset *token.FileSet, files map[string]*ast.File) (int, int, []str
 					}
 					text.WriteString(v)
 				case *ast.CallExpr:
-					if fun, ok := op.Fun.(*ast.Ident); !ok || fun.Name != "iterationClause" {
-						problems = append(problems, fmt.Sprintf("%s: WIQL chain operand calls something other than iterationClause; only iterationClause may add non-literal text", fset.Position(op.Pos())))
+					if fun, ok := op.Fun.(*ast.Ident); !ok || !wiqlEscapers[fun.Name] {
+						problems = append(problems, fmt.Sprintf("%s: WIQL chain operand calls something other than an allow-listed escaper; only wiqlEscapers may add non-literal text", fset.Position(op.Pos())))
 					}
 				default:
 					problems = append(problems, fmt.Sprintf("%s: WIQL chain operand is %T; only string literals and iterationClause calls are allowed (D-12)", fset.Position(op.Pos()), op))

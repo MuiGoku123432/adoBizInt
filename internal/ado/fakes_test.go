@@ -276,6 +276,15 @@ type fakeWorkAPI struct {
 
 	GetTeamIterationsFunc        func(context.Context, work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error)
 	GetBacklogConfigurationsFunc func(context.Context, work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error)
+	GetTeamFieldValuesFunc       func(context.Context, work.GetTeamFieldValuesArgs) (*work.TeamFieldValues, error)
+}
+
+func (f *fakeWorkAPI) GetTeamFieldValues(ctx context.Context, args work.GetTeamFieldValuesArgs) (*work.TeamFieldValues, error) {
+	f.t.Helper()
+	if f.GetTeamFieldValuesFunc == nil {
+		f.t.Fatalf("unexpected call to workAPI.GetTeamFieldValues")
+	}
+	return f.GetTeamFieldValuesFunc(ctx, args)
 }
 
 func (f *fakeWorkAPI) GetTeamIterations(ctx context.Context, args work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error) {

@@ -142,6 +142,11 @@ type FindingKind string
 // different dates, so a cross-team rollup would compare unlike periods.
 const FindingCadenceMismatch FindingKind = "cadence_mismatch"
 
+// FindingTeamOverlap means one work item falls inside two or more selected
+// teams' sprints (iteration and area paths), so per-team totals double-count it
+// (TEAM-06).
+const FindingTeamOverlap FindingKind = "team_overlap"
+
 // Finding reports something true about the data that a caller should act on,
 // as opposed to a Failure, which reports data that could not be read. Findings
 // never affect Complete. Detail is code-generated text, never server text, for

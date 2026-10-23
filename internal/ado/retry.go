@@ -99,6 +99,10 @@ func (r retryingWork) GetBacklogConfigurations(ctx context.Context, args work.Ge
 	return retryRead(ctx, r.retries, func() (*work.BacklogConfiguration, error) { return r.workAPI.GetBacklogConfigurations(ctx, args) })
 }
 
+func (r retryingWork) GetTeamFieldValues(ctx context.Context, args work.GetTeamFieldValuesArgs) (*work.TeamFieldValues, error) {
+	return retryRead(ctx, r.retries, func() (*work.TeamFieldValues, error) { return r.workAPI.GetTeamFieldValues(ctx, args) })
+}
+
 // retryingWorkItems retries the workItemAPI reads, QueryByWiql included: it
 // is a POST that only reads. UpdateWorkItem is a write and falls through the
 // embedded workItemAPI: never retried.

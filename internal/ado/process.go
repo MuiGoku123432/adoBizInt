@@ -18,6 +18,11 @@ type ProcessFields struct {
 	PointsField string              `json:"points_field"`
 	RankField   string              `json:"rank_field"`
 	DoneStates  map[string][]string `json:"done_states"`
+	// StateCategories maps each requirement and task type's states to their
+	// process category (Proposed, InProgress, Resolved, Completed, Removed).
+	// Phase 10 derives done and delivered from it, never from a fixed list:
+	// processes carry custom states such as "ON Hold" (10-RESEARCH Q1).
+	StateCategories map[string]map[string]string `json:"state_categories"`
 }
 
 const opResolveProcessFields = "resolve process fields"
@@ -61,7 +66,7 @@ func (c *Client) processFields(ctx context.Context, team Team) (ProcessFields, e
 	if cfg == nil {
 		return ProcessFields{}, errors.New("no backlog configuration returned")
 	}
-	pf := ProcessFields{Project: team.Project, DoneStates: map[string][]string{}}
+	pf := ProcessFields{Project: team.Project, DoneStates: map[string][]string{}, StateCategories: map[string]map[string]string{}}
 	if cfg.BacklogFields != nil && cfg.BacklogFields.TypeFields != nil {
 		pf.PointsField = (*cfg.BacklogFields.TypeFields)["Effort"]
 		pf.RankField = (*cfg.BacklogFields.TypeFields)["Order"]
@@ -84,10 +89,22 @@ func (c *Client) processFields(ctx context.Context, team Team) (ProcessFields, e
 	if len(reqTypes) == 0 {
 		return ProcessFields{}, errors.New("requirement backlog has no work item types")
 	}
+	var taskTypes []string
+	if tb := cfg.TaskBacklog; tb != nil && tb.WorkItemTypes != nil {
+		for _, t := range *tb.WorkItemTypes {
+			if t.Name != nil {
+				taskTypes = append(taskTypes, *t.Name)
+			}
+		}
+	}
 	if cfg.WorkItemTypeMappedStates != nil {
 		for _, ts := range *cfg.WorkItemTypeMappedStates {
 			name := deref(ts.WorkItemTypeName)
-			if !slices.Contains(reqTypes, name) || ts.States == nil {
+			if ts.States == nil || !(slices.Contains(reqTypes, name) || slices.Contains(taskTypes, name)) {
+				continue
+			}
+			pf.StateCategories[name] = *ts.States
+			if !slices.Contains(reqTypes, name) {
 				continue
 			}
 			for state, category := range *ts.States {

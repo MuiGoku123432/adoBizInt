@@ -38,6 +38,7 @@ var readMethods = map[string]bool{
 	"GetTeams":                             true,
 	"GetTeamMembersWithExtendedProperties": true,
 	"GetTeamIterations":                    true,
+	"GetTeamFieldValues":                   true,
 	"GetBacklogConfigurations":             true,
 	"GetWorkItems":                         true,
 	"GetWorkItem":                          true,

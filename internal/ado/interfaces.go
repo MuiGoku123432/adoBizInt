@@ -61,4 +61,5 @@ type coreAPI interface {
 type workAPI interface {
 	GetTeamIterations(context.Context, work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error)
 	GetBacklogConfigurations(context.Context, work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error)
+	GetTeamFieldValues(context.Context, work.GetTeamFieldValuesArgs) (*work.TeamFieldValues, error)
 }

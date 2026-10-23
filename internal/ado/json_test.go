@@ -152,7 +152,8 @@ func TestJSONFieldNames(t *testing.T) {
 		assertKeySet(t, Team{}, []string{"project", "team", "team_id", "description"})
 		assertKeySet(t, TeamMember{}, []string{"project", "team", "id", "display_name", "unique_name", "is_group", "is_team_admin", "inactive"})
 		assertKeySet(t, Sprint{}, []string{"project", "team", "iteration_id", "name", "path", "start_date", "finish_date"})
-		assertKeySet(t, ProcessFields{}, []string{"project", "points_field", "rank_field", "done_states"})
+		assertKeySet(t, ProcessFields{}, []string{"project", "points_field", "rank_field", "done_states", "state_categories"})
+		assertKeySet(t, AreaPath{}, []string{"path", "include_children"})
 	})
 
 	// The envelope and the failure record are tagged in the same convention so
