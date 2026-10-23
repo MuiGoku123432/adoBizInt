@@ -53,6 +53,7 @@ type sprintFixture struct {
 	items     map[int]map[string]interface{}
 	relations map[int][]workitemtracking.WorkItemRelation
 	drop      map[int]bool
+	dropRel   map[int]bool
 	queries   []string
 	batches   []workitemtracking.GetWorkItemsArgs
 }
@@ -61,22 +62,29 @@ func (fx *sprintFixture) client(t *testing.T, teamIDs ...int) *Client {
 	sprintID := uuid.New()
 	start := adoDate(2026, 10, 13)
 	finish := adoDate(2026, 10, 26)
-	leaf, mid, root := 11351, 11329, 1
+	leaf, prev, mid, root := 11351, 11350, 11329, 1
 	return &Client{
 		workClient: &fakeWorkAPI{t: t,
 			GetBacklogConfigurationsFunc: func(context.Context, work.GetBacklogConfigurationsArgs) (*work.BacklogConfiguration, error) {
 				cfg := backlogConfig(map[string]string{"Effort": "Microsoft.VSTS.Scheduling.StoryPoints", "Order": "Microsoft.VSTS.Common.StackRank"},
 					[]string{"User Story"}, map[string]map[string]string{
-						"User Story": {"Active": "InProgress", "ON Hold": "InProgress", "Closed": "Completed"},
+						"User Story": {"Active": "InProgress", "ON Hold": "InProgress", "Closed": "Completed", "Removed": "Removed"},
 						"Task":       {"Active": "InProgress", "Closed": "Completed"},
 					})
 				task := []workitemtracking.WorkItemTypeReference{{Name: strPtr("Task")}}
 				cfg.TaskBacklog = &work.BacklogLevelConfiguration{WorkItemTypes: &task}
 				return cfg, nil
 			},
-			GetTeamIterationsFunc: func(context.Context, work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error) {
-				return &[]work.TeamSettingsIteration{{Id: &sprintID, Path: strPtr(`P\S2W\Sprint 218`),
-					Attributes: &work.TeamIterationAttributes{StartDate: start, FinishDate: finish}}}, nil
+			GetTeamIterationsFunc: func(_ context.Context, args work.GetTeamIterationsArgs) (*[]work.TeamSettingsIteration, error) {
+				current := work.TeamSettingsIteration{Id: &sprintID, Path: strPtr(`P\S2W\Sprint 218`),
+					Attributes: &work.TeamIterationAttributes{StartDate: start, FinishDate: finish}}
+				if args.Timeframe != nil {
+					return &[]work.TeamSettingsIteration{current}, nil
+				}
+				// Listing every iteration: a closed one, a dateless one, the current one.
+				past := work.TeamSettingsIteration{Id: &sprintID, Path: strPtr(`P\S2W\Sprint 217`),
+					Attributes: &work.TeamIterationAttributes{StartDate: adoDate(2026, 9, 29), FinishDate: adoDate(2026, 10, 12)}}
+				return &[]work.TeamSettingsIteration{past, {Path: strPtr(`P\S2W\Backlog`)}, current}, nil
 			},
 			GetTeamFieldValuesFunc: func(_ context.Context, args work.GetTeamFieldValuesArgs) (*work.TeamFieldValues, error) {
 				return &work.TeamFieldValues{Field: &work.FieldReference{ReferenceName: strPtr("System.AreaPath")},
@@ -87,7 +95,9 @@ func (fx *sprintFixture) client(t *testing.T, teamIDs ...int) *Client {
 			GetClassificationNodeFunc: func(context.Context, workitemtracking.GetClassificationNodeArgs) (*workitemtracking.WorkItemClassificationNode, error) {
 				return &workitemtracking.WorkItemClassificationNode{Id: &root, Path: strPtr(`\P\Iteration`),
 					Children: &[]workitemtracking.WorkItemClassificationNode{{Id: &mid, Path: strPtr(`\P\Iteration\S2W`),
-						Children: &[]workitemtracking.WorkItemClassificationNode{{Id: &leaf, Path: strPtr(`\P\Iteration\S2W\Sprint 218`)}}}}}, nil
+						Children: &[]workitemtracking.WorkItemClassificationNode{
+							{Id: &prev, Path: strPtr(`\P\Iteration\S2W\Sprint 217`)},
+							{Id: &leaf, Path: strPtr(`\P\Iteration\S2W\Sprint 218`)}}}}}, nil
 			},
 			QueryByWiqlFunc: func(_ context.Context, args workitemtracking.QueryByWiqlArgs) (*workitemtracking.WorkItemQueryResult, error) {
 				fx.queries = append(fx.queries, *args.Wiql.Query)
@@ -108,7 +118,7 @@ func (fx *sprintFixture) client(t *testing.T, teamIDs ...int) *Client {
 				}
 				var out []workitemtracking.WorkItem
 				for _, id := range *args.Ids {
-					if fx.drop[id] {
+					if fx.drop[id] || (args.Expand != nil && fx.dropRel[id]) {
 						continue
 					}
 					id := id
@@ -138,6 +148,7 @@ func baseItems() map[int]map[string]interface{} {
 		12: {"System.WorkItemType": "Task", "System.Title": "Orphan", "System.State": "Active", "System.Parent": 99.0},
 		13: {"System.WorkItemType": "User Story", "System.Title": "Done", "System.State": "Closed",
 			"Microsoft.VSTS.Common.AcceptanceCriteria": "Given"},
+		14: {"System.WorkItemType": "User Story", "System.Title": "Gone", "System.State": "Removed"},
 	}
 }
 
@@ -180,29 +191,46 @@ func TestGetSprintItemsLive(t *testing.T) {
 }
 
 func TestGetSprintItemsHistorical(t *testing.T) {
-	now := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
-	for snap, want := range map[string]string{SnapshotBaseline: "2026-10-13T00:00:00Z", SnapshotClose: "2026-10-27T00:00:00Z"} {
-		t.Run(snap, func(t *testing.T) {
+	cases := []struct {
+		name, snap, want, iterID string
+		now                      time.Time
+	}{
+		{"baseline reads the current sprint start", SnapshotBaseline, "2026-10-13T00:00:00Z", "= 11351", time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)},
+		{"close mid-sprint reads the last closed sprint", SnapshotClose, "2026-10-13T00:00:00Z", "= 11350", time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)},
+		{"close after the current sprint ends reads it", SnapshotClose, "2026-10-27T00:00:00Z", "= 11351", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			fx := &sprintFixture{items: baseItems()}
 			c := fx.client(t, 10, 13)
-			result, _ := c.GetSprintItems(context.Background(), scrumTeams[:1], snap, now)
-			if !strings.HasSuffix(fx.queries[0], "ASOF '"+want+"'") {
-				t.Errorf("query = %s", fx.queries[0])
+			result, _ := c.GetSprintItems(context.Background(), scrumTeams[:1], tc.snap, tc.now)
+			if len(fx.queries) != 1 || !strings.HasSuffix(fx.queries[0], "ASOF '"+tc.want+"'") || !strings.Contains(fx.queries[0], tc.iterID) {
+				t.Fatalf("queries = %v failures %+v", fx.queries, result.Failures)
 			}
-			if len(fx.batches) != 1 || fx.batches[0].AsOf == nil || !fx.batches[0].AsOf.Time.Equal(mustTime(want)) {
+			if len(fx.batches) != 1 || fx.batches[0].AsOf == nil || !fx.batches[0].AsOf.Time.Equal(mustTime(tc.want)) {
 				t.Errorf("batches = %+v (no relations read historically)", fx.batches)
 			}
-			if result.Scope.AsOf != want || result.Items[0].PullRequestIDs != nil {
-				t.Errorf("scope %q pr %v", result.Scope.AsOf, result.Items[0].PullRequestIDs)
+			if result.Scope.AsOf != tc.snap || result.Scope.Teams[0].AsOf != tc.want || result.Items[0].PullRequestIDs != nil {
+				t.Errorf("scope %+v pr %v", result.Scope, result.Items[0].PullRequestIDs)
 			}
 		})
 	}
-	t.Run("close in the future is a per-team failure", func(t *testing.T) {
+	t.Run("no closed sprint yet is a per-team failure", func(t *testing.T) {
 		fx := &sprintFixture{items: baseItems()}
 		c := fx.client(t, 10)
-		result, _ := c.GetSprintItems(context.Background(), scrumTeams[:1], SnapshotClose, time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC))
-		if len(result.Failures) != 1 || !strings.Contains(result.Failures[0].Err.Error(), "has not closed") || len(fx.queries) != 0 {
+		result, _ := c.GetSprintItems(context.Background(), scrumTeams[:1], SnapshotClose, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
+		if len(result.Failures) != 1 || !strings.Contains(result.Failures[0].Err.Error(), "no closed sprint") || len(fx.queries) != 0 {
 			t.Errorf("result = %+v queries %d", result, len(fx.queries))
+		}
+	})
+	t.Run("historical query keeps the live team filter", func(t *testing.T) {
+		fx := &sprintFixture{items: baseItems()}
+		c := fx.client(t, 10)
+		now := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+		_, _ = c.GetSprintItems(context.Background(), scrumTeams[:1], SnapshotLive, now)
+		_, _ = c.GetSprintItems(context.Background(), scrumTeams[:1], SnapshotBaseline, now)
+		if !strings.HasPrefix(fx.queries[1], fx.queries[0]+" ASOF ") {
+			t.Errorf("live %q\nbaseline %q", fx.queries[0], fx.queries[1])
 		}
 	})
 }
@@ -230,5 +258,23 @@ func TestGetSprintItemsOverlap(t *testing.T) {
 	}
 	if len(fx.queries) != 2 {
 		t.Errorf("queries = %d, want one per team", len(fx.queries))
+	}
+}
+
+// TestGetSprintItemsRemovedAndUnlinked: a Removed item is still returned (no
+// state filter, DATA-01), and an item missing from the relations read has
+// unknown links (null) and is reported, not shown as having no PRs.
+func TestGetSprintItemsRemovedAndUnlinked(t *testing.T) {
+	fx := &sprintFixture{items: baseItems(), dropRel: map[int]bool{13: true}}
+	c := fx.client(t, 13, 14)
+	result, _ := c.GetSprintItems(context.Background(), scrumTeams[:1], SnapshotLive, time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC))
+	if len(result.Items) != 2 || result.Items[1].StateCategory != "Removed" || result.Items[1].Done {
+		t.Fatalf("items = %+v", result.Items)
+	}
+	if result.Items[0].PullRequestIDs != nil || result.Items[1].PullRequestIDs == nil {
+		t.Errorf("pr ids = %v / %v", result.Items[0].PullRequestIDs, result.Items[1].PullRequestIDs)
+	}
+	if result.Complete || len(result.Failures) != 1 || !strings.Contains(result.Failures[0].Err.Error(), "links not returned for 1 ids: [13]") {
+		t.Errorf("failures = %+v", result.Failures)
 	}
 }

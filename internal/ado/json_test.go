@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,7 +158,7 @@ func TestJSONFieldNames(t *testing.T) {
 		assertKeySet(t, SprintItem{}, []string{"project", "team", "id", "type", "title", "state", "state_category", "done",
 			"assigned_to", "parent_id", "points", "remaining_work", "completed_work", "original_estimate", "area_path",
 			"iteration_path", "acceptance_criteria_empty", "pull_request_ids", "tasks"})
-		assertKeySet(t, SprintTeamScope{}, []string{"project", "team", "iteration_id", "area_paths", "points_field"})
+		assertKeySet(t, SprintTeamScope{}, []string{"project", "team", "as_of", "iteration_path", "iteration_id", "area_paths", "points_field"})
 	})
 
 	// The envelope and the failure record are tagged in the same convention so
@@ -513,5 +514,14 @@ func TestNewResultScopeIsNull(t *testing.T) {
 	}
 	if string(envelope.Scope) != "null" {
 		t.Errorf("scope = %q, want null (raw: %s)", envelope.Scope, raw)
+	}
+}
+
+// TestWorkItemStoryPointsStaysInt pins DATA-02: the v1 story_points field is
+// an integer, untouched by the nullable sprint fields.
+func TestWorkItemStoryPointsStaysInt(t *testing.T) {
+	raw, _ := json.Marshal(WorkItem{StoryPoints: 3})
+	if !strings.Contains(string(raw), `"story_points":3,`) {
+		t.Errorf("json = %s", raw)
 	}
 }

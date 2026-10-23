@@ -88,7 +88,8 @@ func TestIterationIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ids[`Kinetic\S2W 2026\Sprint 218`] != 11351 || ids[`Kinetic\S2W 2026`] != 11329 {
+	// Keys are lowercased: ADO compares paths without case.
+	if ids[`kinetic\s2w 2026\sprint 218`] != 11351 || ids[`kinetic\s2w 2026`] != 11329 {
 		t.Errorf("ids = %v", ids)
 	}
 }

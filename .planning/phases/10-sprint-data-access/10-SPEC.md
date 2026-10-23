@@ -66,11 +66,12 @@ Per selected team (Phase 9 `selectTeams`):
 |---|---|---|
 | `live` | none (no `ASOF`) | relations read; `pull_request_ids` filled |
 | `baseline` | sprint start date 00:00:00Z **[D-1]** | |
-| `close` | day after finish date, 00:00:00Z **[D-2]** | finish is inclusive; if the instant is after now, per-team failure "sprint has not closed" |
+| `close` | day after finish date, 00:00:00Z **[D-2]**, of the **last closed sprint** | finish is inclusive; no closed sprint yet is a per-team failure |
 
 - Historical reads use WIQL `ASOF` plus batch `asOf` at the same instant.
 - Relations are not read historically (untested in the spike), so `pull_request_ids` is `null` there.
-- `scope.as_of` discloses the instant per team, or `"live"`.
+- Build correction (2026-10-23, review finding): the current sprint has by definition not closed, so `--at close` reads each team's most recently closed sprint (iterations listed in full, since `$timeframe` supports only `current`). `live` and `baseline` read the current sprint.
+- `scope.as_of` is the snapshot requested (`live`, `baseline`, `close`); `scope.teams[].as_of` is the instant each team was read at, with `iteration_path`, because teams' sprints can differ.
 
 ## 3. Item reads (DATA-02, DATA-03)
 
@@ -82,7 +83,7 @@ There are two batch calls per ≤200 ids, using the existing `workItemAPI.GetWor
    - `ErrorPolicy = Omit`.
 2. **Relations** (live only). `Expand = Relations`, no `Fields`, because the two are mutually exclusive (research Q2 400). Same `ErrorPolicy = Omit`.
 
-**Dropped ids.** Compare the requested ids with the returned ids after each call. ADO silently omits missing or unreadable ids under `Omit`. Any difference is a per-team `Failure` with operation `get sprint items` and a code-generated message `"N requested ids not returned: [ids]"`. The read still returns what it got, with `complete: false`.
+**Dropped ids.** Compare the requested ids with the returned ids after each call. An item missing from the relations call keeps `pull_request_ids: null` (unknown, not none) and is reported the same way. A failed batch call returns the items already read with the failure. ADO silently omits missing or unreadable ids under `Omit`. Any difference is a per-team `Failure` with operation `get sprint items` and a code-generated message `"N requested ids not returned: [ids]"`. The read still returns what it got, with `complete: false`.
 
 ## 4. Item shape
 
@@ -110,7 +111,8 @@ Rules:
 - Absent numeric fields are `null`, never 0 (research Q2: absent means the key is missing).
 - The v1 `WorkItem.story_points` int is untouched (DATA-02).
 - `state_category` and `done` come from the project's process. They are never a fixed list: the live states include custom ones such as "ON Hold" and "UAT".
-  - This replaces the roadmap note's fixed `IsDelivered (Resolved + Closed)`. "Delivered" is `state_category in {Resolved, Completed}`, derived per project. `doneStates` and `IsDoneState` (v1) are untouched.
+  - This replaces the roadmap note's fixed `IsDelivered (Resolved + Closed)`. `doneStates` and `IsDoneState` (v1) are untouched.
+  - **Live finding (2026-10-23, Kinetic Sprint 217):** the `Resolved` state maps to category `InProgress`, not `Resolved`. So "delivered" cannot be `state_category in {Resolved, Completed}`. Phase 10 exposes `state` and `state_category` only; Phase 11/12 must decide "delivered" with this in mind.
 - `ProcessFields` (Phase 9) gains `state_categories: {type: {state: category}}` for requirement and task types. That adds a key, so the contract test is updated.
 
 ## 5. Acceptance-criteria emptiness (DATA-06)

@@ -115,9 +115,10 @@ type Scope struct {
 	// Caps discloses the request-shape caps in force on a scrum read (PLAT-04).
 	Caps *config.Caps `json:"caps,omitempty"`
 	// AsOf, Teams and AreaPathsCurrent belong to sprint items (DATA-05): the
-	// instant read ("live" or RFC 3339 UTC), what selected each team's items,
-	// and that historical reads use today's team area paths, because ADO keeps
-	// no history of team settings.
+	// snapshot requested (live, baseline or close), what selected each team's
+	// items and the instant each was read at (teams can differ), and that
+	// historical reads use today's team area paths, because ADO keeps no
+	// history of team settings.
 	AsOf             string            `json:"as_of,omitempty"`
 	Teams            []SprintTeamScope `json:"teams,omitempty"`
 	AreaPathsCurrent bool              `json:"area_paths_current,omitempty"`

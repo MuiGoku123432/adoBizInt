@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"sentinovo.ai/bizInt/internal/ado"
 )
 
 // globalFlags holds the three flags every read command accepts (D-20). The
@@ -16,7 +18,7 @@ type globalFlags struct {
 	timeout  time.Duration
 	projects stringList
 	team     string // scrum verbs only (scrumCommands)
-	at       string // sprint items only: live, baseline or close
+	at       string // sprint items only: ado.SnapshotLive, SnapshotBaseline or SnapshotClose
 }
 
 // scrumCommands are the verbs that run against configured teams. They alone
@@ -230,12 +232,12 @@ func newFlagSet(name string) (*flag.FlagSet, *globalFlags, *filterFlags, *writeF
 			"restrict the read to one configured team, written project/team; default is every configured team")
 	}
 
-	gf.at = "live"
+	gf.at = ado.SnapshotLive
 	if name == "sprint items" {
 		// Validated as it parses, so a bad value exits 3 before any call.
-		fs.Func("at", "which snapshot to read: live (default), baseline (sprint start, 00:00 UTC) or close (day after the finish, 00:00 UTC)",
+		fs.Func("at", "which snapshot to read: live (default), baseline (current sprint start, 00:00 UTC) or close (last closed sprint, day after its finish, 00:00 UTC)",
 			func(v string) error {
-				if v != "live" && v != "baseline" && v != "close" {
+				if v != ado.SnapshotLive && v != ado.SnapshotBaseline && v != ado.SnapshotClose {
 					return fmt.Errorf("--at must be live, baseline or close; got %q", v)
 				}
 				gf.at = v

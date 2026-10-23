@@ -359,8 +359,25 @@ func TestSprintItemsVerb(t *testing.T) {
 		if !strings.Contains(stdout.String(), "10\tUser Story\tActive\t3\tStory") || !strings.Contains(stdout.String(), "\t  11\tTask\tClosed\t\tTask") {
 			t.Errorf("stdout = %q", stdout)
 		}
-		if !strings.Contains(stderr.String(), "as of live") || !strings.Contains(stderr.String(), "team area paths as configured today") {
+		if !strings.Contains(stderr.String(), "live snapshot") || !strings.Contains(stderr.String(), "team area paths as configured today") {
 			t.Errorf("stderr = %q", stderr)
+		}
+	})
+
+	t.Run("--team narrows sprint items", func(t *testing.T) {
+		withScrumConfig(t, scrumTestConfig())
+		captureOutput(t)
+		var at string
+		c := fake(t, &at)
+		var got []ado.Team
+		inner := c.GetSprintItemsFunc
+		c.GetSprintItemsFunc = func(ctx context.Context, teams []ado.Team, s string, n time.Time) (ado.Result[ado.SprintItem], error) {
+			got = teams
+			return inner(ctx, teams, s, n)
+		}
+		dispatch(context.Background(), c, []string{"sprint", "items", "--team", "B/Mobile"})
+		if len(got) != 1 || got[0].Team != "Mobile" {
+			t.Errorf("teams = %+v", got)
 		}
 	})
 

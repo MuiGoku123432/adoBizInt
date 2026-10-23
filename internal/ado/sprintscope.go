@@ -118,7 +118,8 @@ func asOfClause(asOf *time.Time) string {
 }
 
 // iterationIDs maps every iteration in a project, keyed by its team-style
-// path ("Kinetic\S2W 2026\Sprint 218"), to its integer id. It reads the whole
+// path lowercased ("kinetic\s2w 2026\sprint 218", as ADO compares paths
+// without case), to its integer id. It reads the whole
 // tree once, as GetRecentIterations does, rather than looking up one node by
 // path: the SDK escapes a path route value as a single segment, which the
 // spike did not verify the server accepts.
@@ -139,7 +140,7 @@ func (c *Client) iterationIDs(ctx context.Context, project string) (map[string]i
 			// paths read "Kinetic\S2W 2026".
 			segs := strings.Split(strings.TrimPrefix(*n.Path, `\`), `\`)
 			if len(segs) >= 2 {
-				ids[strings.Join(append(segs[:1:1], segs[2:]...), `\`)] = *n.Id
+				ids[strings.ToLower(strings.Join(append(segs[:1:1], segs[2:]...), `\`))] = *n.Id
 			}
 		}
 		if n.Children != nil {

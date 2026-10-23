@@ -108,7 +108,7 @@ func renderSprintItems(w io.Writer, items []ado.SprintItem) {
 	writeRows(w, items, func(b *strings.Builder, i ado.SprintItem) {
 		row(b, i.Project, i.Team, strconv.Itoa(i.ID), i.Type, i.State, pts(i.Points), i.Title)
 		for _, t := range i.Tasks {
-			row(b, "", "", "  "+strconv.Itoa(t.ID), t.Type, t.State, pts(t.RemainingWork), t.Title)
+			row(b, "", "", "  "+strconv.Itoa(t.ID), t.Type, t.State, pts(t.Points), t.Title)
 		}
 	})
 }
@@ -196,7 +196,7 @@ func renderScope(w io.Writer, s *ado.Scope) {
 		parts = append(parts, s.ApprovalStatus+" approvals only")
 	}
 	if s.AsOf != "" {
-		parts = append(parts, "as of "+s.AsOf)
+		parts = append(parts, s.AsOf+" snapshot")
 	}
 	if s.AreaPathsCurrent {
 		parts = append(parts, "team area paths as configured today")

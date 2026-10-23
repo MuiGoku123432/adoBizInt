@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7/work"
 
@@ -68,17 +69,55 @@ func (c *Client) currentSprint(ctx context.Context, team Team) (Sprint, error) {
 	if len(*its) > 1 {
 		return Sprint{}, fmt.Errorf("team has %d current iterations, want 1", len(*its))
 	}
-	it := (*its)[0]
+	return sprintFromIteration(team, (*its)[0])
+}
+
+// lastClosedSprint is the team's most recent sprint whose close instant (the
+// day after its inclusive finish, 00:00 UTC) is at or before now. The current
+// sprint has by definition not closed, so --at close reads this one.
+// $timeframe supports only "current", so every iteration is listed; ones with
+// missing dates are skipped.
+func (c *Client) lastClosedSprint(ctx context.Context, team Team, now time.Time) (Sprint, error) {
+	its, err := c.workClient.GetTeamIterations(ctx, work.GetTeamIterationsArgs{Project: &team.Project, Team: &team.TeamID})
+	if err != nil {
+		return Sprint{}, err
+	}
+	var best Sprint
+	found := false
+	if its != nil {
+		for _, it := range *its {
+			s, err := sprintFromIteration(team, it)
+			if err != nil {
+				continue
+			}
+			finish, _ := time.Parse("2006-01-02", s.FinishDate)
+			if finish.AddDate(0, 0, 1).After(now) {
+				continue
+			}
+			if !found || s.FinishDate > best.FinishDate {
+				best, found = s, true
+			}
+		}
+	}
+	if !found {
+		return Sprint{}, errors.New("team has no closed sprint")
+	}
+	return best, nil
+}
+
+// sprintFromIteration converts a team iteration to civil dates, refusing one
+// with missing or inverted dates (TEAM-03).
+func sprintFromIteration(team Team, it work.TeamSettingsIteration) (Sprint, error) {
 	a := it.Attributes
 	if a == nil || a.StartDate == nil || a.FinishDate == nil {
-		return Sprint{}, errors.New("current iteration has no start or finish date")
+		return Sprint{}, errors.New("iteration has no start or finish date")
 	}
 	// The API stores date-only values as UTC midnight. Reading them in UTC is
 	// what keeps the civil date stable in every local zone; .Local() would
 	// move it back a day west of UTC (09-RESEARCH section 3).
 	start, finish := a.StartDate.Time.UTC(), a.FinishDate.Time.UTC()
 	if finish.Before(start) {
-		return Sprint{}, errors.New("current iteration finishes before it starts")
+		return Sprint{}, errors.New("iteration finishes before it starts")
 	}
 	s := Sprint{
 		Project:    team.Project,

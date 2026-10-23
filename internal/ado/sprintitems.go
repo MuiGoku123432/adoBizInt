@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/microsoft/azure-devops-go-api/azuredevops/v7"
@@ -39,11 +40,13 @@ type SprintItem struct {
 
 // SprintTeamScope discloses, per team, exactly what selected its items.
 type SprintTeamScope struct {
-	Project     string     `json:"project"`
-	Team        string     `json:"team"`
-	IterationID int        `json:"iteration_id"`
-	AreaPaths   []AreaPath `json:"area_paths"`
-	PointsField string     `json:"points_field"`
+	Project       string     `json:"project"`
+	Team          string     `json:"team"`
+	AsOf          string     `json:"as_of"`
+	IterationPath string     `json:"iteration_path"`
+	IterationID   int        `json:"iteration_id"`
+	AreaPaths     []AreaPath `json:"area_paths"`
+	PointsField   string     `json:"points_field"`
 }
 
 // Snapshot instants (DATA-04). Live reads carry no instant.
@@ -65,16 +68,17 @@ const (
 	fieldAC        = "Microsoft.VSTS.Common.AcceptanceCriteria"
 )
 
-// GetSprintItems reads each team's current sprint at the snapshot: "live",
-// "baseline" (sprint start 00:00 UTC) or "close" (the day after the inclusive
-// finish, 00:00 UTC). now decides whether a sprint has closed. Every failure
+// GetSprintItems reads each team's sprint at the snapshot: "live" and
+// "baseline" (sprint start 00:00 UTC) read the current sprint; "close" reads
+// the most recently closed sprint at the day after its inclusive finish,
+// 00:00 UTC. now decides which sprints have closed. Every failure
 // is per team; other teams still return. Items claimed by two teams produce a
 // team_overlap finding (TEAM-06).
 func (c *Client) GetSprintItems(ctx context.Context, teams []Team, snapshot string, now time.Time) (Result[SprintItem], error) {
 	var items []SprintItem
 	var failures []Failure
 	var sets []TeamItems
-	scope := &Scope{AsOf: SnapshotLive, AreaPathsCurrent: true, Teams: []SprintTeamScope{}}
+	scope := &Scope{AsOf: snapshot, AreaPathsCurrent: true, Teams: []SprintTeamScope{}}
 
 	process := map[string]ProcessFields{}
 	processErr := map[string]error{}
@@ -105,7 +109,13 @@ func (c *Client) GetSprintItems(ctx context.Context, teams []Team, snapshot stri
 		}
 		pf := process[team.Project]
 
-		sprint, err := c.currentSprint(ctx, team)
+		var sprint Sprint
+		var err error
+		if snapshot == SnapshotClose {
+			sprint, err = c.lastClosedSprint(ctx, team, now)
+		} else {
+			sprint, err = c.currentSprint(ctx, team)
+		}
 		if err != nil {
 			fail(opGetCurrentSprint, err)
 			continue
@@ -122,35 +132,35 @@ func (c *Client) GetSprintItems(ctx context.Context, teams []Team, snapshot stri
 			fail(opResolveSprintIteration, err)
 			continue
 		}
-		iterationID, ok := iterIDs[team.Project][sprint.Path]
+		iterationID, ok := iterIDs[team.Project][strings.ToLower(sprint.Path)]
 		if !ok {
 			fail(opResolveSprintIteration, fmt.Errorf("iteration %q not found in the project's iteration tree", sprint.Path))
 			continue
 		}
 
-		asOf, err := snapshotInstant(snapshot, sprint, now)
+		asOf, err := snapshotInstant(snapshot, sprint)
 		if err != nil {
 			fail(opGetSprintItems, err)
 			continue
 		}
-		if asOf != nil {
-			scope.AsOf = asOf.Format(time.RFC3339)
-		}
-
 		areas, err := c.teamAreaPaths(ctx, team)
 		if err != nil {
 			fail(opGetTeamAreaPaths, err)
 			continue
 		}
-		scope.Teams = append(scope.Teams, SprintTeamScope{
-			Project: team.Project, Team: team.Team, IterationID: iterationID, AreaPaths: areas, PointsField: pf.PointsField,
-		})
-
 		ids, err := c.querySprintIDs(ctx, team, iterationID, areas, asOf)
 		if err != nil {
 			fail(opQuerySprintItems, err)
 			continue
 		}
+		teamAsOf := SnapshotLive
+		if asOf != nil {
+			teamAsOf = asOf.Format(time.RFC3339)
+		}
+		scope.Teams = append(scope.Teams, SprintTeamScope{
+			Project: team.Project, Team: team.Team, AsOf: teamAsOf, IterationPath: sprint.Path,
+			IterationID: iterationID, AreaPaths: areas, PointsField: pf.PointsField,
+		})
 		sets = append(sets, TeamItems{Project: team.Project, Team: team.Team, IDs: ids})
 
 		teamItems, err := c.readSprintItems(ctx, team, pf, ids, asOf)
@@ -168,7 +178,7 @@ func (c *Client) GetSprintItems(ctx context.Context, teams []Team, snapshot stri
 }
 
 // snapshotInstant turns a snapshot name into the UTC instant to read at.
-func snapshotInstant(snapshot string, sprint Sprint, now time.Time) (*time.Time, error) {
+func snapshotInstant(snapshot string, sprint Sprint) (*time.Time, error) {
 	switch snapshot {
 	case SnapshotLive:
 		return nil, nil
@@ -181,9 +191,6 @@ func snapshotInstant(snapshot string, sprint Sprint, now time.Time) (*time.Time,
 			return nil, err
 		}
 		t = t.AddDate(0, 0, 1)
-		if t.After(now) {
-			return nil, fmt.Errorf("sprint has not closed: it closes at %s", t.Format(time.RFC3339))
-		}
 		return &t, nil
 	}
 	return nil, fmt.Errorf("unknown snapshot %q", snapshot)
@@ -208,13 +215,14 @@ func (c *Client) readSprintItems(ctx context.Context, team Team, pf ProcessField
 
 	byID := map[int]*SprintItem{}
 	var order []int
+	var unlinked []int
 	for i := 0; i < len(ids); i += sprintBatchSize {
 		batch := ids[i:min(i+sprintBatchSize, len(ids))]
 		got, err := c.workitemClient.GetWorkItems(ctx, workitemtracking.GetWorkItemsArgs{
 			Ids: &batch, Project: &team.Project, Fields: &fields, AsOf: at, ErrorPolicy: &omit,
 		})
 		if err != nil {
-			return nil, err
+			return nestTasks(order, byID), err
 		}
 		if got != nil {
 			for _, wi := range *got {
@@ -239,14 +247,26 @@ func (c *Client) readSprintItems(ctx context.Context, team Team, pf ProcessField
 			Ids: &batch, Project: &team.Project, Expand: &expand, ErrorPolicy: &omit,
 		})
 		if err != nil {
-			return nil, err
+			return nestTasks(order, byID), err
 		}
+		linked := map[int]bool{}
 		if rel != nil {
 			for _, wi := range *rel {
-				if wi.Id == nil || wi.Relations == nil || byID[*wi.Id] == nil {
+				if wi.Id == nil || byID[*wi.Id] == nil {
 					continue
 				}
-				byID[*wi.Id].PullRequestIDs = pullRequestIDs(*wi.Relations)
+				linked[*wi.Id] = true
+				if wi.Relations != nil {
+					byID[*wi.Id].PullRequestIDs = pullRequestIDs(*wi.Relations)
+				}
+			}
+		}
+		// An item missing from the relations read has unknown links, not
+		// none: null, and reported with the dropped ids below.
+		for _, id := range batch {
+			if it := byID[id]; it != nil && !linked[id] {
+				it.PullRequestIDs = nil
+				unlinked = append(unlinked, id)
 			}
 		}
 	}
@@ -258,8 +278,13 @@ func (c *Client) readSprintItems(ctx context.Context, team Team, pf ProcessField
 			dropped = append(dropped, requested)
 		}
 	}
-	if len(dropped) > 0 {
+	switch {
+	case len(dropped) > 0 && len(unlinked) > 0:
+		return out, fmt.Errorf("%d requested ids not returned: %v; links not returned for %v", len(dropped), dropped, unlinked)
+	case len(dropped) > 0:
 		return out, fmt.Errorf("%d requested ids not returned: %v", len(dropped), dropped)
+	case len(unlinked) > 0:
+		return out, fmt.Errorf("links not returned for %d ids: %v", len(unlinked), unlinked)
 	}
 	return out, nil
 }
